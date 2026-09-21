@@ -27,7 +27,7 @@ describe("Command", () => {
       Effect.succeed(`selected:${userId}`)
     );
     const result = await Effect.runPromise(Command.invoke(cmd, { userId: "u1" }));
-  
+
     expect(result).toBe("selected:u1");
   });
 

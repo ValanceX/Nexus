@@ -24,7 +24,7 @@ describe("NEXUS vertical slice (§22)", () => {
       const users = yield* Effect.promise(() =>
         Nexus.Runtime.run(running.runtime, Effect.flatMap(UserRepository, (repo) => repo.listUsers()))
       );
-      
+
       if (users.length === 2) {
         log.push("user service registered");
       }

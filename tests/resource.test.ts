@@ -52,8 +52,8 @@ describe("Resource", () => {
           Effect.tap(() => events.push("acquire")),
           Effect.map(() => ({}))
         ),
-        release: () => Effect.sync(() => { 
-          events.push("release"); 
+        release: () => Effect.sync(() => {
+          events.push("release");
         }),
       }))),
       Effect.andThen(Effect.fork),
