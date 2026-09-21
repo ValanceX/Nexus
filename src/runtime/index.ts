@@ -18,18 +18,20 @@ export type RuntimeInitError = {
  * also stays in the final context, so `Event.publish`/`Event.subscribe` can be
  * run directly through `run`/`runFork` against the returned runtime.
  */
-export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.gen(function* () {
-  const runtimeScope = yield* Scope.make();
-  yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.succeed(undefined)));
-
-  const merged = Layer.provideMerge(layer, EventBusLive);
-  const context = yield* Layer.buildWithScope(merged, runtimeScope).pipe(Effect.mapError((cause): RuntimeInitError => ({ _tag: "LayerBuildFailed", cause })));
-  // The raw Context is deliberately NOT stored on NexusRuntime — runtime.md
-  // forbids exposing it for ambient lookup outside Service/Capability resolution.
-  const runtime = yield* Effect.runtime<R | EventBusShape>().pipe(Effect.provide(context));
-
-  return { scope: runtimeScope, runtime };
-});
+export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.Do.pipe(
+  Effect.bind("runtimeScope", () => Scope.make()),
+  // Tied to the *caller's* scope, so an interrupted/failed caller still closes
+  // the runtime scope rather than leaking every layer it already built.
+  Effect.tap(({ runtimeScope }) => Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.succeed(undefined)))),
+  // The built Context feeds straight into Effect.runtime and is deliberately
+  // NOT stored on NexusRuntime — runtime.md forbids exposing it for ambient
+  // lookup outside Service/Capability resolution.
+  Effect.bind("runtime", ({ runtimeScope }) => Layer.buildWithScope(Layer.provideMerge(layer, EventBusLive), runtimeScope).pipe(
+    Effect.mapError((cause): RuntimeInitError => ({ _tag: "LayerBuildFailed", cause })),
+    Effect.andThen((context) => Effect.runtime<R | EventBusShape>().pipe(Effect.provide(context)))
+  )),
+  Effect.map(({ runtimeScope, runtime }) => ({ scope: runtimeScope, runtime }))
+);
 
 export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A> => EffectRuntime.runPromise(nexusRuntime.runtime)(effect);
 

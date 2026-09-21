@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { Chunk, Effect, Fiber, Option, Stream } from "effect";
-import * as Nexus from "../src/index.js";
 import { UserState, UserRepository, UserRepositoryLive, UserSelected, buildApp, released } from "../examples/basic-app/index.js";
+import { Chunk, Effect, Fiber, Option, Stream } from "effect";
+import { describe, it, expect } from "vitest";
+
 import * as Command from "../src/command/index.js";
+import * as Nexus from "../src/index.js";
 
 describe("NEXUS vertical slice (§22)", () => {
   it("boots, executes a command, observes state, emits an event, and shuts down cleanly — with no MESH or PORT dependency", async () => {
@@ -11,6 +12,7 @@ describe("NEXUS vertical slice (§22)", () => {
 
     const program = Effect.gen(function* () {
       log.push("application starts");
+
       const usersState = yield* Nexus.State.create(UserState, { users: [], selectedUser: Option.none() });
       const { selectUser, selectedUser } = buildApp(usersState);
 
@@ -22,10 +24,16 @@ describe("NEXUS vertical slice (§22)", () => {
       const users = yield* Effect.promise(() =>
         Nexus.Runtime.run(running.runtime, Effect.flatMap(UserRepository, (repo) => repo.listUsers()))
       );
-      if (users.length === 2) log.push("user service registered");
+      
+      if (users.length === 2) {
+        log.push("user service registered");
+      }
 
       const stateBefore = yield* Nexus.State.get(usersState);
-      if (stateBefore.users.length === 0 && Option.isNone(stateBefore.selectedUser)) log.push("user state initialized");
+
+      if (stateBefore.users.length === 0 && Option.isNone(stateBefore.selectedUser)) {
+        log.push("user state initialized");
+      }
 
       // Subscribe on the APPLICATION'S OWN event bus (reachable through
       // running.runtime now that Runtime.make provide-merges EventBusLive).

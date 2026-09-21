@@ -1,6 +1,8 @@
-import { Effect, Layer, Ref, Scope } from "effect";
-import * as Capability from "../capability/index.js";
 import type { EventBusShape } from "../event/index.js";
+
+import { Effect, Exit, Layer, Ref, Scope } from "effect";
+
+import * as Capability from "../capability/index.js";
 import * as Runtime from "../runtime/index.js";
 
 export type ApplicationStatus =
@@ -46,40 +48,44 @@ export interface RunningApplication<R> {
 
 export const define = <R>(definition: ApplicationDefinition<R>): Application<R> => ({ definition });
 
-export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope> => Effect.gen(function* () {
-  const statusRef = yield* Ref.make<ApplicationStatus>({ _tag: "Created" });
-  yield* Ref.set(statusRef, { _tag: "Initializing" });
-
-  const resolutions = app.definition.environment ?? new Map<string, Capability.CapabilityResolution<unknown>>();
-  const environment: Capability.EnvironmentShape = { resolutions };
-  const environmentLayer = Capability.EnvironmentLive(resolutions);
+export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope> => Effect.Do.pipe(
+  Effect.bind("statusRef", () => Ref.make<ApplicationStatus>({ _tag: "Created" })),
+  Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Initializing" })),
+  Effect.let("resolutions", () => app.definition.environment ?? new Map<string, Capability.CapabilityResolution<unknown>>()),
+  Effect.let("environment", ({ resolutions }): Capability.EnvironmentShape => ({ resolutions })),
   // Provide-merge, not merge: Environment is resolved first and fed into the
   // user's runtime layer (so a Service/Command layer may require it), while
   // staying in the final context so Capability.resolve also works directly
   // through `RunningApplication.runtime`.
-  const fullLayer = Layer.provideMerge(app.definition.runtime, environmentLayer);
+  //
+  // `Effect.exit` rather than a plain failure so the status Ref records
+  // `Failed` before the error escapes — callers observing status after a failed
+  // `start` must not see a stale `Initializing`.
+  Effect.bind("runtime", ({ resolutions, statusRef }): Effect.Effect<Runtime.NexusRuntime<R | Capability.EnvironmentShape | EventBusShape>, ApplicationInitError, Scope.Scope> =>
+    Effect.exit(Runtime.make(Layer.provideMerge(app.definition.runtime, Capability.EnvironmentLive(resolutions)))).pipe(
+      Effect.andThen((exit) => {
+        if (Exit.isFailure(exit)) {
+          const error: ApplicationInitError = { _tag: "ServiceGraphFailed", cause: exit.cause };
 
-  const exit = yield* Effect.exit(Runtime.make(fullLayer));
-  if (exit._tag === "Failure") {
-    const error: ApplicationInitError = { _tag: "ServiceGraphFailed", cause: exit.cause };
-    yield* Ref.set(statusRef, { _tag: "Failed", error });
-    return yield* Effect.fail(error);
-  }
+          return Ref.set(statusRef, { _tag: "Failed", error }).pipe(Effect.andThen(Effect.fail(error)));
+        }
 
-  const runtime = exit.value;
-  yield* Ref.set(statusRef, { _tag: "Running" });
-
-  return {
+        return Effect.succeed(exit.value);
+      })
+    )
+  ),
+  Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Running" })),
+  Effect.map(({ statusRef, runtime, environment }): RunningApplication<R> => ({
     status: Ref.get(statusRef),
-    shutdown: Effect.gen(function* () {
-      yield* Ref.set(statusRef, { _tag: "Stopping" });
-      yield* Runtime.shutdown(runtime);
-      yield* Ref.set(statusRef, { _tag: "Stopped" });
-    }),
+    shutdown: Effect.Do.pipe(
+      Effect.andThen(Ref.set(statusRef, { _tag: "Stopping" })),
+      Effect.andThen(Runtime.shutdown(runtime)),
+      Effect.andThen(Ref.set(statusRef, { _tag: "Stopped" }))
+    ),
     runtime,
     environment,
-  };
-});
+  }))
+);
 
 export const shutdown = <R>(running: RunningApplication<R>): Effect.Effect<void> => running.shutdown;
 

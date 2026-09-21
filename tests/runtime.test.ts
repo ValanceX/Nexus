@@ -1,5 +1,6 @@
+import { Chunk, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { describe, it, expect } from "vitest";
-import { Chunk, Effect, Fiber, Layer, Schema, Stream } from "effect";
+
 import * as Event from "../src/event/index.js";
 import * as Runtime from "../src/runtime/index.js";
 import * as Service from "../src/service/index.js";
@@ -10,21 +11,22 @@ const ClockLive = Service.layerSync(Clock, () => ({ now: () => 99 }));
 
 describe("Runtime", () => {
   it("executes an effect against the built service graph", async () => {
-    const result = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const runtime = yield* Runtime.make(ClockLive);
-          return yield* Effect.promise(() => Runtime.run(runtime, Effect.map(Clock, (c) => c.now())));
-        })
-      )
-    );
+    const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.andThen(() => Runtime.make(ClockLive)),
+      Effect.andThen((runtime) => Effect.promise(() => Runtime.run(runtime, Effect.map(Clock, (c) => c.now()))))
+    )));
+
     expect(result).toBe(99);
   });
 
   it("feeds its own event bus into the layer's requirements and keeps it reachable", async () => {
+    interface NotifierShape {
+      readonly notify: (n: number) => Effect.Effect<void>
+    }
+
     const Ping = Event.define("Ping", Schema.Struct({ n: Schema.Number }));
-    interface NotifierShape { readonly notify: (n: number) => Effect.Effect<void> }
     const Notifier = Service.define<NotifierShape>("Notifier");
+
     // The layer declares EventBusShape as an INPUT requirement; Runtime.make
     // satisfies it with the runtime's own bus (provide), and the same bus stays
     // in the built context (merge), so Event.subscribe works through the runtime.
@@ -35,60 +37,58 @@ describe("Runtime", () => {
       }))
     );
 
-    const events = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const runtime = yield* Runtime.make(NotifierLive);
-          const fiber = Runtime.runFork(runtime, Stream.runCollect(Stream.take(Event.subscribe(Ping), 1)));
-          yield* Effect.sleep("1 millis");
-          yield* Effect.promise(() => Runtime.run(runtime, Effect.flatMap(Notifier, (n) => n.notify(7))));
-          return yield* Fiber.join(fiber);
-        })
-      )
-    );
+    const events = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind('runtime', () => Runtime.make(NotifierLive)),
+      Effect.let('fiber', ({ runtime }) => Runtime.runFork(runtime, Stream.runCollect(Stream.take(Event.subscribe(Ping), 1)))),
+      Effect.andThen(({ runtime, fiber }) => Effect.Do.pipe(
+        Effect.andThen(Effect.sleep('1 millis')),
+        Effect.andThen(Effect.promise(() => Runtime.run(runtime, Effect.flatMap(Notifier, (n) => n.notify(7))))),
+        Effect.andThen(Fiber.join(fiber))
+      ))
+    )));
+
     expect(Array.from(Chunk.toReadonlyArray(events))).toEqual([{ n: 7 }]);
   });
 
   it("interrupting a runFork fiber stops the running effect and runs its finalizer", async () => {
     let cleaned = false;
-    const result = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const runtime = yield* Runtime.make(ClockLive);
-          const fiber = Runtime.runFork(
-            runtime,
-            Effect.acquireUseRelease(
-              Effect.succeed("held"),
-              () => Effect.never,
-              () => Effect.sync(() => { cleaned = true; })
-            )
-          );
-          yield* Effect.sleep("10 millis");
-          yield* Fiber.interrupt(fiber);
-          return cleaned;
-        })
-      )
-    );
+
+    const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.andThen(Runtime.make(ClockLive)),
+      Effect.map((runtime) => Runtime.runFork(
+        runtime,
+        Effect.acquireUseRelease(
+          Effect.succeed("held"),
+          () => Effect.never,
+          () => Effect.sync(() => { cleaned = true; })
+        )
+      )),
+      Effect.andThen((fiber) => Effect.Do.pipe(
+        Effect.andThen(Effect.sleep('10 millis')),
+        Effect.andThen(Fiber.interrupt(fiber)),
+        Effect.map(() => cleaned)
+      ))
+    )));
+
     expect(result).toBe(true);
   });
 
   it("shutdown releases resources acquired through the service graph", async () => {
-    let released = false;
     interface HeldShape { readonly held: boolean }
+
+    let released = false;
+
     const Held = Service.define<HeldShape>("Held");
     const HeldLive = Layer.scoped(
       Held,
       Effect.acquireRelease(Effect.succeed({ held: true }), () => Effect.sync(() => { released = true; }))
     );
 
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const runtime = yield* Runtime.make(HeldLive);
-          yield* Runtime.shutdown(runtime);
-        })
-      )
-    );
+    await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.andThen(Runtime.make(HeldLive)),
+      Effect.andThen(Runtime.shutdown)
+    )));
+
     expect(released).toBe(true);
   });
 
@@ -100,6 +100,7 @@ describe("Runtime", () => {
     const exit = await Effect.runPromiseExit(
       Effect.scoped(Runtime.make(BrokenLive as unknown as Layer.Layer<BrokenShape, unknown, never>))
     );
-    expect(exit._tag).toBe("Failure");
+
+    expect(exit).is.satisfies(Exit.isFailure);
   });
 });

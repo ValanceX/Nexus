@@ -27,26 +27,24 @@ const EventBus = Context.GenericTag<EventBusShape>("nexus/EventBus");
 
 export const EventBusLive: Layer.Layer<EventBusShape, never, never> = Layer.scoped(
   EventBus,
-  Effect.gen(function* () {
-    const pubsub = yield* PubSub.unbounded<Envelope>();
-
-    return {
-      publish: (envelope: Envelope) => PubSub.publish(pubsub, envelope).pipe(Effect.map(() => undefined)),
+  Effect.Do.pipe(
+    Effect.andThen(PubSub.unbounded<Envelope>()),
+    Effect.map((pubsub): EventBusShape => ({
+      publish: (envelope: Envelope) => PubSub.publish(pubsub, envelope).pipe(Effect.asVoid),
       subscribe: PubSub.subscribe(pubsub),
-    };
-  })
+    }))
+  )
 );
 
 export const publish = <Tag extends string, Payload>(event: EventDef<Tag, Payload>, payload: Payload): Effect.Effect<void, never, EventBusShape> => Effect.flatMap(EventBus, (bus) =>
   bus.publish({ _tag: event._tag, payload })
 );
 
-export const subscribe = <Tag extends string, Payload>(event: EventDef<Tag, Payload>): Stream.Stream<Payload, never, EventBusShape> => Stream.unwrapScoped(Effect.gen(function* () {
-  const bus = yield* EventBus;
-  const dequeue = yield* bus.subscribe;
-
-  return Stream.fromQueue(dequeue).pipe(
+export const subscribe = <Tag extends string, Payload>(event: EventDef<Tag, Payload>): Stream.Stream<Payload, never, EventBusShape> => Stream.unwrapScoped(Effect.Do.pipe(
+  Effect.andThen(EventBus),
+  Effect.andThen((bus) => bus.subscribe),
+  Effect.map((dequeue) => Stream.fromQueue(dequeue).pipe(
     Stream.filter((envelope): envelope is Envelope & { readonly payload: Payload } => envelope._tag === event._tag),
     Stream.map((envelope) => envelope.payload as Payload)
-  );
-}));
+  ))
+));

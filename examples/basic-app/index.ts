@@ -18,6 +18,7 @@ export const UserState = Schema.Struct({
 export interface UserRepositoryShape {
   readonly listUsers: () => Effect.Effect<ReadonlyArray<User>>;
 }
+
 export const UserRepository = Nexus.Service.define<UserRepositoryShape>("UserRepository");
 
 export const released = { value: false };
@@ -25,11 +26,9 @@ export const released = { value: false };
 export const UserRepositoryLive = Layer.scoped(
   UserRepository,
   Nexus.Resource.acquire({
-    acquire: Effect.sync(
-      (): UserRepositoryShape => ({
-        listUsers: () => Effect.succeed([{ id: "u1", name: "Ada" }, { id: "u2", name: "Grace" }]),
-      })
-    ),
+    acquire: Effect.sync((): UserRepositoryShape => ({
+      listUsers: () => Effect.succeed([{ id: "u1", name: "Ada" }, { id: "u2", name: "Grace" }]),
+    })),
     release: () => Effect.sync(() => { released.value = true; }),
   })
 );
@@ -40,11 +39,10 @@ export const buildApp = (usersState: Nexus.State.StateHandle<Schema.Schema.Type<
   const selectUser = Nexus.Command.define(
     "users.select",
     Schema.Struct({ userId: UserId }),
-    ({ userId }) =>
-      Effect.gen(function* () {
-        yield* Nexus.State.update(usersState, (s) => Effect.succeed({ ...s, selectedUser: Option.some(userId) }));
-        yield* Nexus.Event.publish(UserSelected, { userId });
-      })
+    ({ userId }) => Effect.Do.pipe(
+      Effect.andThen(Nexus.State.update(usersState, (s) => Effect.succeed({ ...s, selectedUser: Option.some(userId) }))),
+      Effect.andThen(Nexus.Event.publish(UserSelected, { userId }))
+    )
   );
 
   const selectedUser = Nexus.Selector.define(usersState, (s) => s.selectedUser);

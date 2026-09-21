@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 
 export interface Capability<Shape> {
   readonly id: string;
@@ -30,11 +30,10 @@ export const Environment = Context.GenericTag<EnvironmentShape>("nexus/Environme
 
 export const EnvironmentLive = (resolutions: ReadonlyMap<string, CapabilityResolution<unknown>>): Layer.Layer<EnvironmentShape> => Layer.succeed(Environment, { resolutions });
 
-export const resolve = <Shape>(capability: Capability<Shape>): Effect.Effect<CapabilityResolution<Shape>, never, EnvironmentShape> => Effect.map(Environment, (env) => {
-  const found = env.resolutions.get(capability.id);
-
-  return (found ?? { _tag: "Unavailable", reason: `no resolution registered for '${capability.id}'` }) as CapabilityResolution<Shape>;
-});
+export const resolve = <Shape>(capability: Capability<Shape>): Effect.Effect<CapabilityResolution<Shape>, never, EnvironmentShape> => Effect.map(Environment, (env) => Option.Do.pipe(
+  Option.andThen(() => Option.fromNullable(env.resolutions.get(capability.id))),
+  Option.getOrElse(() => ({ _tag: "Unavailable", reason: `no resolution registered for '${capability.id}'` }))
+) as CapabilityResolution<Shape>);
 
 export const require = <Shape>(capability: Capability<Shape>): Effect.Effect<Shape, CapabilityUnavailableError, EnvironmentShape> => Effect.flatMap(resolve(capability), (resolution) =>
   resolution._tag === "Available"
