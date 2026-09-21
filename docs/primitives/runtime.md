@@ -36,23 +36,10 @@ raw `Layer`s and building its own runtime.
 
 ```ts
 namespace Runtime {
-  function make<R>(
-    layer: Layer.Layer<R, unknown, never>
-  ): Effect.Effect<NexusRuntime<R>, RuntimeInitError, Scope.Scope>;
-
-  function run<R, A, E>(
-    runtime: NexusRuntime<R>,
-    effect: Effect.Effect<A, E, R>
-  ): Promise<A>;
-
-  function runFork<R, A, E>(
-    runtime: NexusRuntime<R>,
-    effect: Effect.Effect<A, E, R>
-  ): Fiber.RuntimeFiber<A, E>;
-
-  function shutdown(
-    runtime: NexusRuntime<unknown>
-  ): Effect.Effect<void>;
+  function make<R>(layer: Layer.Layer<R, unknown, never>): Effect.Effect<NexusRuntime<R>, RuntimeInitError, Scope.Scope>;
+  function run<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A>;
+  function runFork<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E>;
+  function shutdown(runtime: NexusRuntime<unknown>): Effect.Effect<void>;
 }
 ```
 
@@ -64,8 +51,10 @@ calling into the application). `runFork` is for callers that need a
 ## Errors
 
 ```ts
-type RuntimeInitError =
-  | { readonly _tag: "LayerBuildFailed"; readonly cause: unknown };
+type RuntimeInitError = {
+  readonly _tag: "LayerBuildFailed";
+  readonly cause: unknown
+};
 ```
 
 `Runtime.run`/`runFork` do not introduce a runtime-level error channel of
@@ -92,6 +81,7 @@ const program = Effect.gen(function* () {
   const result = yield* Effect.promise(() =>
     Runtime.run(runtime, selectUser.invoke({ userId }))
   );
+
   yield* Runtime.shutdown(runtime);
 });
 ```

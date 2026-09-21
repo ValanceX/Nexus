@@ -31,9 +31,7 @@ interface ResourceOptions<A, E, R> {
 
 ```ts
 namespace Resource {
-  function acquire<A, E, R>(
-    options: ResourceOptions<A, E, R>
-  ): Effect.Effect<A, E, R | Scope.Scope>;
+  function acquire<A, E, R>(options: ResourceOptions<A, E, R>): Effect.Effect<A, E, R | Scope.Scope>;
 }
 ```
 

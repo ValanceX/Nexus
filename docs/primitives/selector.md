@@ -32,16 +32,8 @@ something you fetch with an implied side effect) — a `SelectorHandle` and a
 
 ```ts
 namespace Selector {
-  function define<A, B>(
-    state: StateHandle<A>,
-    project: (a: A) => B
-  ): SelectorHandle<B>;
-
-  function combine<A, B, C>(
-    a: SelectorHandle<A>,
-    b: SelectorHandle<B>,
-    project: (a: A, b: B) => C
-  ): SelectorHandle<C>;
+  function define<A, B>(state: StateHandle<A>, project: (a: A) => B): SelectorHandle<B>;
+  function combine<A, B, C>(a: SelectorHandle<A>, b: SelectorHandle<B>, project: (a: A, b: B) => C): SelectorHandle<C>;
 }
 ```
 

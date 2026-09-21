@@ -56,21 +56,10 @@ point for one.
 
 ```ts
 namespace Application {
-  function define<R>(
-    definition: ApplicationDefinition<R>
-  ): Application<R>;
-
-  function start<R>(
-    app: Application<R>
-  ): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope>;
-
-  function shutdown(
-    running: RunningApplication<unknown>
-  ): Effect.Effect<void>;
-
-  function status(
-    running: RunningApplication<unknown>
-  ): Effect.Effect<ApplicationStatus>;
+  function define<R>(definition: ApplicationDefinition<R>): Application<R>;
+  function start<R>(app: Application<R>): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope>;
+  function shutdown(running: RunningApplication<unknown>): Effect.Effect<void>;
+  function status(running: RunningApplication<unknown>): Effect.Effect<ApplicationStatus>;
 }
 ```
 

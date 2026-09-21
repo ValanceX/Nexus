@@ -23,13 +23,8 @@ interface EventDef<Tag extends string, Payload> {
 }
 
 interface EventBus {
-  readonly publish: <Tag extends string, Payload>(
-    event: EventDef<Tag, Payload>,
-    payload: Payload
-  ) => Effect.Effect<void>;
-  readonly subscribe: <Tag extends string, Payload>(
-    event: EventDef<Tag, Payload>
-  ) => Stream.Stream<Payload>;
+  readonly publish: <Tag extends string, Payload>(event: EventDef<Tag, Payload>, payload: Payload) => Effect.Effect<void>;
+  readonly subscribe: <Tag extends string, Payload>(event: EventDef<Tag, Payload>) => Stream.Stream<Payload>;
 }
 ```
 
@@ -43,19 +38,9 @@ that appears (§12, §2.1).
 
 ```ts
 namespace Event {
-  function define<Tag extends string, Payload>(
-    tag: Tag,
-    schema: Schema.Schema<Payload>
-  ): EventDef<Tag, Payload>;
-
-  function publish<Tag extends string, Payload>(
-    event: EventDef<Tag, Payload>,
-    payload: Payload
-  ): Effect.Effect<void, never, EventBus>;
-
-  function subscribe<Tag extends string, Payload>(
-    event: EventDef<Tag, Payload>
-  ): Stream.Stream<Payload, never, EventBus>;
+  function define<Tag extends string, Payload>(tag: Tag, schema: Schema.Schema<Payload>): EventDef<Tag, Payload>;
+  function publish<Tag extends string, Payload>(event: EventDef<Tag, Payload>, payload: Payload): Effect.Effect<void, never, EventBus>;
+  function subscribe<Tag extends string, Payload>(event: EventDef<Tag, Payload>): Stream.Stream<Payload, never, EventBus>;
 }
 ```
 
@@ -100,11 +85,10 @@ const UserSelected = Event.define(
 const selectUser = Command.define(
   "users.select",
   Schema.Struct({ userId: UserId }),
-  ({ userId }) =>
-    Effect.gen(function* () {
-      yield* State.update(usersState, (s) => Effect.succeed({ ...s, selectedUser: Option.some(userId) }));
-      yield* Event.publish(UserSelected, { userId });
-    })
+  ({ userId }) => Effect.gen(function* () {
+    yield* State.update(usersState, (s) => Effect.succeed({ ...s, selectedUser: Option.some(userId) }));
+    yield* Event.publish(UserSelected, { userId });
+  })
 );
 ```
 

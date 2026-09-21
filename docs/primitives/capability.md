@@ -42,14 +42,8 @@ which implementation (or none) backs it is discovered, not chosen.
 ```ts
 namespace Capability {
   function define<Shape>(id: string): Capability<Shape>;
-
-  function resolve<Shape>(
-    capability: Capability<Shape>
-  ): Effect.Effect<CapabilityResolution<Shape>, never, Environment>;
-
-  function require<Shape>(
-    capability: Capability<Shape>
-  ): Effect.Effect<Shape, CapabilityUnavailableError, Environment>;
+  function resolve<Shape>(capability: Capability<Shape>): Effect.Effect<CapabilityResolution<Shape>, never, Environment>;
+  function require<Shape>(capability: Capability<Shape>): Effect.Effect<Shape, CapabilityUnavailableError, Environment>;
 }
 ```
 
@@ -100,6 +94,7 @@ const Haptics = Capability.define<HapticsShape>("haptics");
 
 const notifyUser = Effect.gen(function* () {
   const resolution = yield* Capability.resolve(Haptics);
+
   if (resolution._tag === "Available") {
     yield* resolution.implementation.vibrate({ durationMs: 100 });
   } // else: degrade to a visual notification, chosen explicitly here.

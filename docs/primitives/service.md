@@ -30,16 +30,8 @@ type Service<Shape> = Context.Tag<Shape, Shape>;
 ```ts
 namespace Service {
   function define<Shape>(name: string): Service<Shape>;
-
-  function layer<Shape, R = never, E = never>(
-    service: Service<Shape>,
-    implementation: Effect.Effect<Shape, E, R>
-  ): Layer.Layer<Shape, E, R>;
-
-  function layerSync<Shape>(
-    service: Service<Shape>,
-    implementation: () => Shape
-  ): Layer.Layer<Shape>;
+  function layer<Shape, R = never, E = never>(service: Service<Shape>, implementation: Effect.Effect<Shape, E, R>): Layer.Layer<Shape, E, R>;
+  function layerSync<Shape>(service: Service<Shape>, implementation: () => Shape): Layer.Layer<Shape>;
 }
 ```
 
@@ -88,11 +80,11 @@ const UserRepositoryLive = Service.layer(
   UserRepository,
   Effect.gen(function* () {
     const http = yield* HttpClient;
+
     return {
-      getUser: (id) =>
-        http.get(`/users/${id}`).pipe(
-          Effect.mapError(() => ({ _tag: "UserNotFoundError", id }) as const)
-        ),
+      getUser: (id) => http.get(`/users/${id}`).pipe(
+        Effect.mapError(() => ({ _tag: "UserNotFoundError", id }) as const)
+      ),
     };
   })
 );

@@ -34,16 +34,8 @@ an `Application` and must not change once MPRX authors depend on it.
 
 ```ts
 namespace Command {
-  function define<Input, Output, Err, R>(
-    name: string,
-    input: Schema.Schema<Input>,
-    handler: (input: Input) => Effect.Effect<Output, Err, R>
-  ): Command<Input, Output, Err, R>;
-
-  function invoke<Input, Output, Err, R>(
-    command: Command<Input, Output, Err, R>,
-    rawInput: unknown
-  ): Effect.Effect<Output, Err | CommandValidationError, R>;
+  function define<Input, Output, Err, R>(name: string,input: Schema.Schema<Input>, handler: (input: Input) => Effect.Effect<Output, Err, R>): Command<Input, Output, Err, R>;
+  function invoke<Input, Output, Err, R>(command: Command<Input, Output, Err, R>, rawInput: unknown): Effect.Effect<Output, Err | CommandValidationError, R>;
 }
 ```
 
@@ -59,12 +51,11 @@ decode.
 ## Errors
 
 ```ts
-type CommandValidationError =
-  | {
-      readonly _tag: "CommandValidationError";
-      readonly command: string;
-      readonly issues: ReadonlyArray<Schema.ParseIssue>;
-    };
+type CommandValidationError = {
+  readonly _tag: "CommandValidationError";
+  readonly command: string;
+  readonly issues: ReadonlyArray<Schema.ParseIssue>;
+};
 ```
 
 `invoke`'s error channel is `Err | CommandValidationError` — the command's
@@ -92,10 +83,7 @@ apart from a domain failure by matching on `_tag`.
 const selectUser = Command.define(
   "users.select",
   Schema.Struct({ userId: UserId }),
-  ({ userId }) =>
-    State.update(usersState, (s) =>
-      Effect.succeed({ ...s, selectedUser: Option.some(userId) })
-    )
+  ({ userId }) => State.update(usersState, (s) =>  Effect.succeed({ ...s, selectedUser: Option.some(userId) }))
 );
 
 // From a MESH runtime adapter, given a raw MPRX event payload:

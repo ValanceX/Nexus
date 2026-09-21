@@ -21,9 +21,7 @@ Rules below for what that means concretely.
 ```ts
 interface StateHandle<A> {
   readonly get: Effect.Effect<A>;
-  readonly update: <E = never>(
-    f: (current: A) => Effect.Effect<A, E>
-  ) => Effect.Effect<A, E>;
+  readonly update: <E = never>(f: (current: A) => Effect.Effect<A, E>) => Effect.Effect<A, E>;
   readonly set: (next: A) => Effect.Effect<A>;
   readonly changes: Stream.Stream<A>;
 }
@@ -42,21 +40,9 @@ second, bespoke subscription mechanism.
 
 ```ts
 namespace State {
-  function create<A>(
-    schema: Schema.Schema<A>,
-    initial: A
-  ): Effect.Effect<StateHandle<A>, StateInitError, Scope.Scope>;
-
-  function update<A, E = never>(
-    state: StateHandle<A>,
-    f: (current: A) => Effect.Effect<A, E>
-  ): Effect.Effect<A, E>;
-
-  function set<A>(
-    state: StateHandle<A>,
-    next: A
-  ): Effect.Effect<A, StateValidationError>;
-
+  function create<A>(schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError, Scope.Scope>;
+  function update<A, E = never>(state: StateHandle<A>, f: (current: A) => Effect.Effect<A, E>): Effect.Effect<A, E>;
+  function set<A>(state: StateHandle<A>, next: A): Effect.Effect<A, StateValidationError>;
   function get<A>(state: StateHandle<A>): Effect.Effect<A>;
 }
 ```
@@ -69,11 +55,15 @@ outlive the runtime that owns it.
 ## Errors
 
 ```ts
-type StateInitError =
-  | { readonly _tag: "InitialValueInvalid"; readonly issues: ReadonlyArray<Schema.ParseIssue> };
+type StateInitError = {
+  readonly _tag: "InitialValueInvalid";
+  readonly issues: ReadonlyArray<Schema.ParseIssue>
+};
 
-type StateValidationError =
-  | { readonly _tag: "StateValidationFailed"; readonly issues: ReadonlyArray<Schema.ParseIssue> };
+type StateValidationError = {
+  readonly _tag: "StateValidationFailed";
+  readonly issues: ReadonlyArray<Schema.ParseIssue>
+};
 ```
 
 `State.set` runs the value through `schema` before committing — an
