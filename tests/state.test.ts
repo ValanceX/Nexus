@@ -56,6 +56,27 @@ describe("State", () => {
     expect(Array.from(result)).toEqual([{ count: 1 }, { count: 2 }]);
   });
 
+  it("applies concurrent updates atomically — no lost writes", async () => {
+    // Each transition yields (Effect.sleep) between reading `current` and
+    // returning the next value. A non-atomic read-modify-write interleaves
+    // there and loses writes; an atomic one serializes and lands on 50.
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const counter = yield* State.create(Counter, { count: 0 });
+          yield* Effect.all(
+            Array.from({ length: 50 }, () =>
+              State.update(counter, (s) => Effect.sleep("1 millis").pipe(Effect.as({ count: s.count + 1 })))
+            ),
+            { concurrency: "unbounded" }
+          );
+          return yield* State.get(counter);
+        })
+      )
+    );
+    expect(result).toEqual({ count: 50 });
+  });
+
   it("rejects a schema-invalid value passed to set", async () => {
     const exit = await Effect.runPromise(
       Effect.scoped(
