@@ -11,10 +11,10 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["src", "tests", "examples"]
+  "include": ["src"]
 }
