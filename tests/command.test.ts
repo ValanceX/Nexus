@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Option, Schema } from "effect";
 import * as Command from "../src/command/index.js";
+import * as Service from "../src/service/index.js";
 import * as State from "../src/state/index.js";
 
 const SelectInput = Schema.Struct({ userId: Schema.String });
@@ -47,5 +48,26 @@ describe("Command", () => {
       )
     );
     expect(result).toEqual({ selectedUser: Option.some("u1") });
+  });
+
+  it("resolves a service from its requirements and calls it through the command handler", async () => {
+    interface UserRepositoryShape {
+      readonly nameOf: (userId: string) => Effect.Effect<string>;
+    }
+    const UserRepository = Service.define<UserRepositoryShape>("UserRepository");
+    const UserRepositoryLive = Service.layerSync(UserRepository, () => ({
+      nameOf: (userId: string) => Effect.succeed(`user:${userId}`),
+    }));
+
+    // The handler declares UserRepository in its R; Command.invoke keeps that
+    // requirement, and the caller satisfies it with the service's Layer.
+    const describeUser = Command.define("users.describe", SelectInput, ({ userId }) =>
+      Effect.flatMap(UserRepository, (repo) => repo.nameOf(userId))
+    );
+
+    const result = await Effect.runPromise(
+      Command.invoke(describeUser, { userId: "u1" }).pipe(Effect.provide(UserRepositoryLive))
+    );
+    expect(result).toBe("user:u1");
   });
 });

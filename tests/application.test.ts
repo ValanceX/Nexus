@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
+import { Cause, Effect, Layer, Option } from "effect";
 import * as Application from "../src/application/index.js";
+import * as Capability from "../src/capability/index.js";
+import * as Runtime from "../src/runtime/index.js";
 import * as Service from "../src/service/index.js";
 
 interface ClockShape { readonly now: () => number }
@@ -30,10 +32,64 @@ describe("Application", () => {
       never
     >;
 
-    const exit = await Effect.runPromiseExit(
-      Effect.scoped(Application.start(Application.define({ name: "broken-app", runtime: BrokenLive })))
+    // Effect.flip surfaces the typed error value itself: if `start` ever died
+    // with a raw exception instead of failing with an ApplicationInitError,
+    // the flipped effect would reject rather than produce this value.
+    const error = await Effect.runPromise(
+      Effect.scoped(Effect.flip(Application.start(Application.define({ name: "broken-app", runtime: BrokenLive }))))
     );
-    expect(exit._tag).toBe("Failure");
+    expect(error._tag).toBe("ServiceGraphFailed");
+    expect(error).toHaveProperty("cause");
+    const cause = (error as Extract<Application.ApplicationInitError, { _tag: "ServiceGraphFailed" }>).cause;
+    expect(Cause.isCause(cause)).toBe(true);
+    // The wrapped Cause carries Runtime's own typed LayerBuildFailed, whose
+    // cause is the layer's "boom" failure — no defect anywhere in the chain.
+    expect(Option.getOrNull(Cause.failureOption(cause as Cause.Cause<unknown>))).toEqual({
+      _tag: "LayerBuildFailed",
+      cause: "boom",
+    });
+  });
+
+  it("resolves Environment before the service graph, so a user layer may require it", async () => {
+    interface FlashlightShape { readonly on: () => string }
+    const Flashlight = Capability.define<FlashlightShape>("device.flashlight");
+
+    interface ReporterShape { readonly report: () => Effect.Effect<string> }
+    const Reporter = Service.define<ReporterShape>("Reporter");
+    // The user's own layer declares Capability.EnvironmentShape as a requirement.
+    // This only compiles because start provide-merges EnvironmentLive into it.
+    const ReporterLive: Layer.Layer<ReporterShape, never, Capability.EnvironmentShape> = Layer.effect(
+      Reporter,
+      Effect.map(Capability.resolve(Flashlight), (resolution) => ({
+        report: () => Effect.succeed(resolution._tag === "Available" ? resolution.implementation.on() : "dark"),
+      }))
+    );
+
+    const environment = new Map<string, Capability.CapabilityResolution<unknown>>([
+      ["device.flashlight", { _tag: "Available", implementation: { on: () => "lit" }, source: "native" }],
+    ]);
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const running = yield* Application.start(
+            Application.define({ name: "ambient-app", runtime: ReporterLive, environment })
+          );
+          // Environment also stays in the final context: Capability.resolve runs
+          // directly against running.runtime, with nothing re-provided here.
+          const direct = yield* Effect.promise(() =>
+            Runtime.run(running.runtime, Effect.map(Capability.resolve(Flashlight), (r) => r._tag))
+          );
+          const fromService = yield* Effect.promise(() =>
+            Runtime.run(running.runtime, Effect.flatMap(Reporter, (r) => r.report()))
+          );
+          yield* Application.shutdown(running);
+          return { direct, fromService };
+        })
+      )
+    );
+    expect(result.fromService).toBe("lit");
+    expect(result.direct).toBe("Available");
   });
 
   it("transitions to Stopped and releases resources on shutdown", async () => {

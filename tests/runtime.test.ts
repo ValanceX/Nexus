@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Fiber, Layer } from "effect";
+import { Chunk, Effect, Fiber, Layer, Schema, Stream } from "effect";
+import * as Event from "../src/event/index.js";
 import * as Runtime from "../src/runtime/index.js";
 import * as Service from "../src/service/index.js";
 
@@ -18,6 +19,34 @@ describe("Runtime", () => {
       )
     );
     expect(result).toBe(99);
+  });
+
+  it("feeds its own event bus into the layer's requirements and keeps it reachable", async () => {
+    const Ping = Event.define("Ping", Schema.Struct({ n: Schema.Number }));
+    interface NotifierShape { readonly notify: (n: number) => Effect.Effect<void> }
+    const Notifier = Service.define<NotifierShape>("Notifier");
+    // The layer declares EventBusShape as an INPUT requirement; Runtime.make
+    // satisfies it with the runtime's own bus (provide), and the same bus stays
+    // in the built context (merge), so Event.subscribe works through the runtime.
+    const NotifierLive: Layer.Layer<NotifierShape, never, Event.EventBusShape> = Layer.effect(
+      Notifier,
+      Effect.map(Effect.context<Event.EventBusShape>(), (bus) => ({
+        notify: (n: number) => Event.publish(Ping, { n }).pipe(Effect.provide(bus)),
+      }))
+    );
+
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const runtime = yield* Runtime.make(NotifierLive);
+          const fiber = Runtime.runFork(runtime, Stream.runCollect(Stream.take(Event.subscribe(Ping), 1)));
+          yield* Effect.sleep("1 millis");
+          yield* Effect.promise(() => Runtime.run(runtime, Effect.flatMap(Notifier, (n) => n.notify(7))));
+          return yield* Fiber.join(fiber);
+        })
+      )
+    );
+    expect(Array.from(Chunk.toReadonlyArray(events))).toEqual([{ n: 7 }]);
   });
 
   it("interrupting a runFork fiber stops the running effect and runs its finalizer", async () => {
