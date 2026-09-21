@@ -12,21 +12,15 @@ export type CommandValidationError = {
   readonly issues: ReadonlyArray<string>;
 };
 
-export const define = <Input, Output, Err, R>(
-  name: string,
-  input: Schema.Schema<Input>,
-  handler: (input: Input) => Effect.Effect<Output, Err, R>
-): Command<Input, Output, Err, R> => ({ name, input, handler });
+export const define = <Input, Output, Err, R>(name: string, input: Schema.Schema<Input>, handler: (input: Input) => Effect.Effect<Output, Err, R>): Command<Input, Output, Err, R> => ({
+  name, input, handler
+});
 
-export const invoke = <Input, Output, Err, R>(
-  command: Command<Input, Output, Err, R>,
-  rawInput: unknown
-): Effect.Effect<Output, Err | CommandValidationError, R> =>
-  Schema.decodeUnknown(command.input)(rawInput).pipe(
-    Effect.mapError((error): CommandValidationError => ({
-      _tag: "CommandValidationError",
-      command: command.name,
-      issues: [String(error)],
-    })),
-    Effect.flatMap(command.handler)
-  );
+export const invoke = <Input, Output, Err, R>(command: Command<Input, Output, Err, R>, rawInput: unknown): Effect.Effect<Output, Err | CommandValidationError, R> => Schema.decodeUnknown(command.input)(rawInput).pipe(
+  Effect.mapError((error): CommandValidationError => ({
+    _tag: "CommandValidationError",
+    command: command.name,
+    issues: [String(error)],
+  })),
+  Effect.flatMap(command.handler)
+);
