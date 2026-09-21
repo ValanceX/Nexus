@@ -75,7 +75,8 @@ pnpm.
 
 Early scaffolding. No vertical slice yet — see
 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design this
-repo implements against.
+repo implements against, and [`docs/primitives/`](./docs/primitives/README.md)
+for each primitive's detailed spec and API.
 
 ## License
 

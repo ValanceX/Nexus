@@ -133,6 +133,8 @@ NEXUS should not duplicate Effect.
 
 ## 4. Application
 
+> Full spec + API: [`primitives/application.md`](./primitives/application.md)
+
 `Application` represents the root boundary of a NEXUS application. It is
 responsible for:
 
@@ -187,6 +189,8 @@ hidden exceptions.
 
 ## 5. Runtime
 
+> Full spec + API: [`primitives/runtime.md`](./primitives/runtime.md)
+
 `Runtime` is the execution boundary of NEXUS. It owns:
 
 * Effect execution
@@ -219,6 +223,8 @@ locator. Application dependencies should remain explicit.
 ---
 
 ## 6. Service
+
+> Full spec + API: [`primitives/service.md`](./primitives/service.md)
 
 A `Service` represents a typed application dependency.
 
@@ -263,6 +269,8 @@ A service:
 
 ## 7. State
 
+> Full spec + API: [`primitives/state.md`](./primitives/state.md)
+
 `State` represents application-owned mutable state:
 
 ```text
@@ -303,6 +311,8 @@ abstraction.
 ---
 
 ## 8. Selector
+
+> Full spec + API: [`primitives/selector.md`](./primitives/selector.md)
 
 A `Selector` derives read-only information from state or other application
 data. The canonical constructor is `Selector.define` — used consistently
@@ -349,6 +359,8 @@ Business rules belong in application/domain logic.
 ---
 
 ## 9. Command
+
+> Full spec + API: [`primitives/command.md`](./primitives/command.md)
 
 A `Command` represents an application action — "the application should
 perform this operation." `Command` is a NEXUS primitive (§3); it is
@@ -398,6 +410,8 @@ Commands are the primary application boundary for MESH.
 ---
 
 ## 10. Capability
+
+> Full spec + API: [`primitives/capability.md`](./primitives/capability.md)
 
 A `Capability` represents functionality provided by the runtime
 environment. This is a VALENCE-specific concept.
@@ -484,6 +498,8 @@ The implementation may vary by environment.
 
 ## 11. Resource
 
+> Full spec + API: [`primitives/resource.md`](./primitives/resource.md)
+
 A `Resource` represents a long-lived external resource requiring
 acquisition and release.
 
@@ -522,6 +538,8 @@ provides the required semantics.
 ---
 
 ## 12. Event
+
+> Full spec + API: [`primitives/event.md`](./primitives/event.md)
 
 An `Event` represents something that happened.
 
@@ -725,9 +743,13 @@ export {
 };
 ```
 
-Exact API design is intentionally not fixed. The implementation agent
-should derive concrete APIs from tests and the vertical slice rather than
-blindly implementing the names above.
+Concrete per-primitive APIs (constructors, data model, errors, rules) are
+now specified in [`primitives/`](./primitives/README.md) — this section
+originally called the exact API "intentionally not fixed," which no longer
+applies now that §26 item 6 has fixed it. The implementation agent should
+still expect the primitives docs to shift as tests and the vertical slice
+(§22) surface real requirements — divergence between the docs and `src/`
+is a bug in one of the two, not a sign the docs were purely aspirational.
 
 ---
 
@@ -991,3 +1013,9 @@ decision" rule:
    already exists on disk. The earlier draft's `packages/` split (either
    per-primitive or a nested `packages/nexus/`) is deferred indefinitely,
    not chosen-but-unbuilt.
+6. **Per-primitive API specs** — each primitive in §3 now has a full spec
+   (data model, API, errors, rules, example, testing notes) in
+   [`primitives/`](./primitives/README.md), superseding §18's "intentionally
+   not fixed." These are the committed starting contracts for the first
+   vertical slice (§22), expected to evolve with implementation but not to
+   be treated as placeholders.
