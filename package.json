@@ -1,0 +1,25 @@
+{
+  "name": "@valence/nexus",
+  "version": "0.0.1",
+  "description": "VALENCE application/runtime logic layer — orchestration, domain logic, commands, state, and capability resolution.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Jack Miller <jackmiller0899@gmail.com>",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "effect": "^3.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
