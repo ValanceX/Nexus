@@ -56,9 +56,13 @@ describe("Resource", () => {
       })
     );
 
-    const fiber = await Effect.runPromise(Effect.fork(program));
-    await Effect.runPromise(Effect.sleep("10 millis"));
-    await Effect.runPromise(Fiber.interrupt(fiber));
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.fork(program);
+        yield* Effect.sleep("10 millis");
+        yield* Fiber.interrupt(fiber);
+      })
+    );
 
     expect(events).toEqual(["acquire", "release"]);
   });
