@@ -1,5 +1,7 @@
 # Resource
 
+> **In plain terms:** Anything you open and must reliably close: a socket, a database connection, a camera stream. NEXUS guarantees the close happens, even if a command fails or the app is interrupted.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §11. A `Resource` is a
 long-lived external resource requiring acquisition and release
 (WebSocket, DB connection, camera, worker, file handle, ...). It is never

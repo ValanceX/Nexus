@@ -1,5 +1,7 @@
 # Runtime
 
+> **In plain terms:** The engine room. It runs your effects, keeps track of which services exist, and makes sure everything that was opened gets closed when the app stops.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §5. `Runtime` is the
 execution boundary: it owns Effect execution, the application `Scope`, the
 service dependency graph, lifecycle, cancellation, resource cleanup, and

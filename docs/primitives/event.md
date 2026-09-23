@@ -1,5 +1,7 @@
 # Event
 
+> **In plain terms:** "This happened." A typed, immutable fact that other parts of the app can listen for. Commands express what should happen, and events record what did.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §12. An `Event` represents
 something that happened — a fact, as opposed to a `Command`'s expressed
 intent. Like `Resource`, it is not an `Application`-level managed object

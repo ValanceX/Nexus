@@ -1,5 +1,7 @@
 # Application
 
+> **In plain terms:** The whole app in one value. You describe what it's made of, then `start` it and later `shutdown` it. Startup failures come back as typed errors instead of crashes, and shutdown always cleans up.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §4 for the ownership model
 this belongs to. `Application` is the composition root: it owns exactly
 `Runtime` and `Environment`, nothing else directly (§4, §14).

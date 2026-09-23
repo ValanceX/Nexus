@@ -1,5 +1,7 @@
 # Capability
 
+> **In plain terms:** Something the *device* may or may not provide, such as haptics, a camera, or local AI. NEXUS works out once, at startup, how each capability is provided (natively, via a fallback, or not at all), so feature code never has to check.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §10. A `Capability`
 represents functionality provided by the runtime *environment* — distinct
 from `Service`, which is an application dependency. Owned by `Environment`,

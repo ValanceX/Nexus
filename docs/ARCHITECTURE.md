@@ -1,14 +1,38 @@
-# NEXUS — Foundation Specification
+# NEXUS Architecture
 
-This supersedes the earlier short NEXUS excerpt. It is the authoritative
-spec for this repo. The full cross-subsystem picture still lives in the
-[VALENCE namespace folder](https://github.com/valence-ui)'s
-`docs/ARCHITECTURE.md`; this document is NEXUS-specific and goes deeper than
-that summary.
+This is the design reference for NEXUS: what each primitive is for, how the pieces fit together, and the rules that keep NEXUS independent of any UI. It's the authoritative spec for this repo. For how NEXUS fits alongside [MESH](https://github.com/ValanceX/Mesh) and [PORT](https://github.com/ValanceX/Port), start at the [ValanceX organization page](https://github.com/ValanceX).
+
+## Start here
+
+**The one-sentence version:** NEXUS is everything your application *does*, meaning its state, actions, dependencies, and device access, packaged so that it runs with no UI at all.
+
+**The nine primitives, in plain terms:**
+
+| Primitive | Think of it as… | Section |
+|---|---|---|
+| Application | The whole app: start, run, stop | §4 |
+| Runtime | The engine that runs effects and cleans up after them | §5 |
+| Service | A typed dependency you can swap (real, fake, in-memory) | §6 |
+| State | Data the app owns, changed only on purpose | §7 |
+| Selector | A read-only view computed from state | §8 |
+| Command | "Please do this." An action, often triggered by the UI | §9 |
+| Capability | Something the device might provide (camera, haptics, AI, …) | §10 |
+| Resource | Anything you open and must reliably close | §11 |
+| Event | "This happened." A typed fact | §12 |
+
+**How to read this document:**
+
+- **Evaluating NEXUS?** Read §1–§3, skim §9 (Command) and §10 (Capability), then look at §19 (Example) and §24 (the big-picture diagram).
+- **Building an app with it?** Read §4–§13 in order. Each section links to the detailed API page in [`primitives/`](./primitives/README.md).
+- **Contributing to NEXUS itself?** You'll also want §15–§17 (boundaries and layout), §20–§24 (testing, scope, and definition of done), and §26 (decisions already made).
+
+A note on tone: this spec uses **must** and **should** deliberately. *Must* is a hard rule. *Should* is a strong default you'd need a good reason to break.
+
+---
 
 ## 1. Purpose
 
-NEXUS is the application-semantic core of VALENCE.
+NEXUS is the application-semantic core of Valance.
 
 It is responsible for:
 
@@ -124,7 +148,7 @@ Effect primitives
         ↓
 NEXUS application primitives
         ↓
-VALENCE application
+Valance application
 ```
 
 NEXUS should not duplicate Effect.
@@ -316,7 +340,7 @@ abstraction.
 
 A `Selector` derives read-only information from state or other application
 data. The canonical constructor is `Selector.define` — used consistently
-everywhere in this document and in the root VALENCE architecture doc (there
+everywhere in this document and in the root Valance architecture doc (there
 is no separate `Selector.from`; earlier drafts used both names for the same
 thing, and `Selector.define` is the one that stays):
 
@@ -414,7 +438,7 @@ Commands are the primary application boundary for MESH.
 > Full spec + API: [`primitives/capability.md`](./primitives/capability.md)
 
 A `Capability` represents functionality provided by the runtime
-environment. This is a VALENCE-specific concept.
+environment. This is a Valance-specific concept.
 
 Examples: AI inference, Haptics, Camera, Microphone, Sensors, GPU
 acceleration, Specialized display, Biometric hardware, Storage, Network.
@@ -895,7 +919,7 @@ architectural independence.
 
 ---
 
-## 23. Agent Implementation Rules
+## 23. Implementation Rules (for contributors and coding agents)
 
 Before writing implementation code, inspect the repository and determine:
 

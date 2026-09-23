@@ -1,83 +1,96 @@
 # NEXUS
 
-NEXUS is the application/runtime logic layer of [VALENCE](https://github.com/valence-ui). It owns
-orchestration, domain/business logic, services, use cases, commands,
-selectors, state, dependency injection, effects, environment/capability
-resolution, and runtime context.
+**Your application logic, free of any UI framework.**
 
-**NEXUS never renders UI.** It has no knowledge of DOM, Canvas, HTML, CSS, or
-any specific rendering target — that boundary belongs to
-[`port`](https://github.com/valence-ui/port). UI structure and bindings are
-described by [`mesh`](https://github.com/valence-ui/mesh) (the MPRX
-language); NEXUS only resolves the *behavior* behind the intent MPRX
-expresses.
+NEXUS is the application core of [Valance](https://github.com/ValanceX). It holds everything your app *does*: state, commands, services, derived data, events, and access to device capabilities. It never renders a single pixel.
 
-```
-       MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT renders it
-```
-
-## What lives here
-
-- **Commands** — the behavior behind intent expressed in MPRX
-  (`on.select={selectUser($event)}` → a `Command.define(...)` resolved here).
-- **Domain/application logic** — services, use cases, repositories, normal
-  TypeScript + Effect. Not a DSL.
-- **State** — application (domain) state and environment (capability) state.
-  UI state is owned by the component/UI runtime, not NEXUS.
-- **Selectors** — derived business state (e.g. `cart.canCheckout`).
-- **Capability resolution** — hardware/environment capabilities (haptics,
-  camera, network, storage, AI, screen size, input) are resolved here and
-  exposed as structured services, never scattered as `if (device.hasX)`
-  checks through application code.
-
-## What does not live here
-
-- Rendering of any kind (that's `port`).
-- The MPRX language, parser, or compiler (that's `mesh`).
-- Arbitrary side effects hidden inside UI bindings — MPRX expressions are
-  side-effect free by design; NEXUS is where effects actually happen.
-
-## Example
-
-```ts
-const submitOrder = Effect.fn("Order.submit")(function* (orderId) {
-  const order = yield* OrderRepository.get(orderId);
-  yield* OrderValidator.validate(order);
-  const payment = yield* Payment.charge(order.total);
-  yield* OrderRepository.markPaid(order.id, payment.id);
-  return payment;
-});
-```
-
-## Dependency boundary
-
-NEXUS must **not** depend on the MESH compiler or LSP — those are
-development-time tooling. NEXUS consumes MESH output only through a stable
-Semantic IR / runtime adapter contract, never by importing Rust compiler
-internals.
+That separation is the point. A NEXUS application boots, runs, and shuts down cleanly with **no UI attached at all**. When you add a UI, [MESH](https://github.com/ValanceX/Mesh) describes it and [PORT](https://github.com/ValanceX/Port) draws it, and your business logic stays exactly where it was.
 
 ```text
-              MESH Compiler
-                    ↓
-              MESH Semantic IR
-                    ↓
-              Runtime Adapter
-                    ↓
-NEXUS ──────────────┘
+MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT renders it
 ```
 
-## Tech
+## Why NEXUS
 
-TypeScript, [Effect](https://effect.website), Effect Schema. Package manager:
-pnpm.
+- **Logic you can test without a browser.** Commands, state, and selectors are plain typed values, so you can exercise them directly in unit tests.
+- **No device checks in feature code.** Haptics, camera, storage, network, and AI are resolved once at startup into typed *capabilities*, with explicit fallbacks when they're missing. No more `if (device.hasX)`.
+- **Typed from edge to edge.** Command inputs, state, and events are validated with Effect Schema. Failures are typed errors, not surprise exceptions.
+- **Clean startup and shutdown.** Long-lived resources (sockets, devices, workers) are always released, even when something fails halfway.
+- **Built on [Effect](https://effect.website).** NEXUS adds application-level concepts on top of Effect instead of reinventing dependency injection, scopes, or concurrency.
+
+## A taste
+
+```ts
+import { Effect, Option, Schema } from "effect";
+import { Command, Event, Selector, State } from "@valence/nexus";
+
+// `users` is a State handle created with State.create(UserState, initial)
+const UserSelected = Event.define("UserSelected", Schema.Struct({ userId: UserId }));
+
+// A command is the behavior behind MPRX intent like on.select={selectUser($event)}
+const selectUser = Command.define(
+  "users.select",
+  Schema.Struct({ userId: UserId }),
+  ({ userId }) => Effect.Do.pipe(
+    Effect.andThen(State.update(users, (s) => Effect.succeed({ ...s, selectedUser: Option.some(userId) }))),
+    Effect.andThen(Event.publish(UserSelected, { userId }))
+  )
+);
+
+// A selector derives read-only data the UI can bind to
+const selectedUser = Selector.define(users, (s) => s.selectedUser);
+```
+
+For a complete runnable version, see [`examples/basic-app`](./examples/basic-app/index.ts).
+
+## The building blocks
+
+NEXUS has nine primitives, each with one job:
+
+| Primitive | In plain terms |
+|---|---|
+| [**Application**](./docs/primitives/application.md) | The whole app: starts it up, runs it, shuts it down |
+| [**Runtime**](./docs/primitives/runtime.md) | Where effects actually run, and what cleans up after them |
+| [**Service**](./docs/primitives/service.md) | A typed dependency, like a user repository or a clock |
+| [**State**](./docs/primitives/state.md) | Data your app owns, changed only through explicit updates |
+| [**Selector**](./docs/primitives/selector.md) | A read-only view computed from state |
+| [**Command**](./docs/primitives/command.md) | Something the app should *do*, triggered by the UI or anything else |
+| [**Capability**](./docs/primitives/capability.md) | Something the *device* may or may not provide |
+| [**Resource**](./docs/primitives/resource.md) | Anything that must be opened and reliably closed |
+| [**Event**](./docs/primitives/event.md) | A typed record that something happened |
+
+## Where NEXUS fits
+
+| NEXUS does | NEXUS does not |
+|---|---|
+| Run business rules, services, and use cases | Render anything (that's PORT) |
+| Own application state and derived data | Parse or compile MPRX (that's MESH) |
+| Resolve device capabilities in one place | Run hidden side effects inside UI bindings |
+
+NEXUS doesn't depend on the MESH compiler or language server. It sees MESH output only through a stable Semantic IR and runtime adapter, never through compiler internals.
+
+## Getting started
+
+```console
+$ pnpm install
+$ pnpm test        # run the test suite
+$ pnpm typecheck
+$ pnpm build
+```
 
 ## Status
 
-Early scaffolding. No vertical slice yet — see
-[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full design this
-repo implements against, and [`docs/primitives/`](./docs/primitives/README.md)
-for each primitive's detailed spec and API.
+**v0.1 primitives implemented.** All nine primitives are in place. A UI-free vertical slice runs end to end: the app boots, runs a command, updates state, derives a selector, publishes an event, shuts down, and releases its resources. All of this is covered by tests. The next milestone is connecting NEXUS to MESH through the runtime adapter.
+
+## Learn more
+
+- [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
+- [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
+
+## Tech
+
+TypeScript, [Effect](https://effect.website), and Effect Schema, with pnpm.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT. See [LICENSE](./LICENSE).

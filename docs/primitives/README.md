@@ -1,32 +1,23 @@
 # NEXUS Primitives
 
-Detailed spec + API for each primitive in the NEXUS primitive set (see
-[`../ARCHITECTURE.md`](../ARCHITECTURE.md) §3). Each doc covers:
-Responsibility, Data Model, API, Errors, Rules, an Example, and what §20's
-testing requirements mean concretely for that primitive.
+NEXUS is built from nine small primitives. Each page below explains one of them: what it's for, what it looks like in code, how it fails, and the rules it follows.
 
-| Primitive | Owns | Doc |
+New here? Read **State → Selector → Command** first. Those three are what most application code touches. The [Architecture doc](../ARCHITECTURE.md) (§3) explains how they all fit together.
+
+| Primitive | In plain terms | Owns |
 |---|---|---|
-| [Application](./application.md) | Composition root: owns `Runtime` + `Environment` | lifecycle, bootstrapping, shutdown |
-| [Runtime](./runtime.md) | Effect execution, service graph, scope | execution boundary |
-| [Service](./service.md) | Typed application dependencies | `Context`/`Layer` conventions |
-| [State](./state.md) | Application-owned mutable state | transitions, observation |
-| [Selector](./selector.md) | Read-only derived state | pure projections over `State` |
-| [Command](./command.md) | Application actions | the MESH → NEXUS boundary |
-| [Capability](./capability.md) | Environment-resolved functionality | haptics, camera, AI, storage, ... |
-| [Resource](./resource.md) | Long-lived external resources | acquire/use/release via `Scope` |
-| [Event](./event.md) | Facts that happened | typed, immutable, minimal bus |
+| [Application](./application.md) | The whole app: start, run, stop | The composition root: `Runtime` + `Environment` |
+| [Runtime](./runtime.md) | Runs effects and cleans up after them | Effect execution, service graph, scope |
+| [Service](./service.md) | A typed, swappable dependency | `Context`/`Layer` conventions |
+| [State](./state.md) | Data the app owns, changed only on purpose | Transitions, observation |
+| [Selector](./selector.md) | A read-only view computed from state | Pure projections over `State` |
+| [Command](./command.md) | "Please do this." | The MESH → NEXUS boundary |
+| [Capability](./capability.md) | Something the device may or may not provide | Haptics, camera, AI, storage, … |
+| [Resource](./resource.md) | Anything you open and must reliably close | Acquire/use/release via `Scope` |
+| [Event](./event.md) | "This happened." | Typed, immutable facts on a minimal bus |
 
-These are read together with [`../ARCHITECTURE.md`](../ARCHITECTURE.md)'s
-§14 ownership diagram — this index doesn't repeat that tree, each doc just
-says which node it is.
+Every page follows the same layout: **Responsibility**, **Data Model**, **API**, **Errors**, **Rules**, **Example**, and **Testing** (what §20's testing requirements mean for that primitive). For how the primitives own one another, see the §14 diagram in the Architecture doc. This index doesn't repeat it.
 
 ## Status
 
-These are the committed API shapes for the first vertical slice (§22),
-not the theoretical final API described more loosely in the earlier draft
-(§18 originally called this "intentionally not fixed" — these docs are
-what fixed it, per the decision record in §26). They should still be
-expected to shift as the vertical slice is implemented and tested; treat
-divergence between these docs and the actual `src/` implementation as a
-bug in one or the other, not as this doc being purely aspirational.
+These are the committed API shapes for the first vertical slice (§22), and they're implemented in `src/`. They'll keep evolving as NEXUS connects to MESH. If these docs and `src/` ever disagree, treat it as a bug in one or the other, not as the docs being aspirational.

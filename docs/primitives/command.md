@@ -1,5 +1,7 @@
 # Command
 
+> **In plain terms:** "Please do this." A command is a named, typed action. When the UI sends `on.select={selectUser($event)}`, this is what runs. Input is validated before your code sees it.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §9. A `Command` represents
 an application action — "the application should perform this operation."
 It is the primary boundary MESH crosses into NEXUS through, and it is a

@@ -1,5 +1,7 @@
 # Service
 
+> **In plain terms:** A typed dependency, such as "something that can load users". You write against the interface, and you choose the implementation (HTTP, IndexedDB, or an in-memory fake for tests) when you assemble the app.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §6. A `Service` is a typed
 application dependency — an interface, not an implementation.
 Infrastructure provides implementations as `Layer`s.

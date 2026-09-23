@@ -1,5 +1,7 @@
 # Selector
 
+> **In plain terms:** A read-only question you ask of state: "which user is selected?" or "how many items are visible?" Selectors never change anything, so they're safe to bind straight into the UI.
+
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §8. A `Selector` derives
 read-only information from `State` (or other application data). Pure,
 read-only, deterministic, side-effect free — every one of those four words
