@@ -20,4 +20,6 @@ Every page follows the same layout: **Responsibility**, **Data Model**, **API**,
 
 ## Status
 
-These are the committed API shapes for the first vertical slice (§22), and they're implemented in `src/`. v0.2 connects them to MESH through the host adapter in `src/mesh/` (ARCHITECTURE §15), which is not a primitive. If these docs and `src/` ever disagree, treat it as a bug in one or the other, not as the docs being aspirational.
+These are the committed API shapes for the first vertical slice (§22), and they're implemented in `src/`. v0.2 connects them to MESH through the host adapter in `src/mesh/` (ARCHITECTURE §15), which is not a primitive.
+
+**Contract parity.** Each page's **Data Model**, **API**, **Errors** and **Rules** sections are normative: every type, signature, error variant and field they name matches the package's exported declarations exactly. **Examples** are illustrative, but use only APIs that exist. If a page and `src/` ever disagree, that's a bug in one or the other, not the docs being aspirational, and it's fixed by a recorded decision that changes one of them, never by leaving both.

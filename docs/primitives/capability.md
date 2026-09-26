@@ -35,19 +35,34 @@ type CapabilityResolution<Shape> =
 A `Capability<Shape>` looks like a `Service<Shape>` (both wrap a
 `Context.Tag`) but resolves differently: a `Service` is provided once, at
 `Layer`-build time, by infrastructure the application author chose. A
-`Capability` is resolved once, at `Environment` startup, by *probing the
-runtime environment* — the application author declares it needs `Haptics`;
-which implementation (or none) backs it is discovered, not chosen.
+`Capability` is resolved against the application's `Environment`: the
+application author declares it needs `Haptics`, and the environment says
+which implementation (or none) backs it. Today the resolutions are supplied
+already resolved, in `ApplicationDefinition.environment`, so resolving them
+can't fail. Probing the runtime environment to discover them is future work
+(§10.1), not part of the current contract.
 
 ## API
 
 ```ts
 namespace Capability {
   function define<Shape>(id: string): Capability<Shape>;
-  function resolve<Shape>(capability: Capability<Shape>): Effect.Effect<CapabilityResolution<Shape>, never, Environment>;
-  function require<Shape>(capability: Capability<Shape>): Effect.Effect<Shape, CapabilityUnavailableError, Environment>;
+  function resolve<Shape>(capability: Capability<Shape>): Effect.Effect<CapabilityResolution<Shape>, never, EnvironmentShape>;
+  function require<Shape>(capability: Capability<Shape>): Effect.Effect<Shape, CapabilityUnavailableError, EnvironmentShape>;
 }
+
+interface EnvironmentShape {
+  readonly resolutions: ReadonlyMap<string, CapabilityResolution<unknown>>;
+}
+
+const Environment: Context.Tag<EnvironmentShape, EnvironmentShape>;
+function EnvironmentLive(resolutions: ReadonlyMap<string, CapabilityResolution<unknown>>): Layer.Layer<EnvironmentShape>;
 ```
+
+`EnvironmentShape` is the resolved environment: capability id to resolution.
+`Application.start` builds it from `ApplicationDefinition.environment` with
+`EnvironmentLive`, before the service graph (§10.1), so services and
+commands may require it.
 
 `resolve` never fails — "unavailable" is a value (`CapabilityResolution`'s
 `Unavailable` branch), not an error, because the whole point of §10 is
@@ -77,10 +92,9 @@ beyond "this specific capability isn't here."
   express "what does the app do if this isn't available" (fallback, no-op,
   alternative implementation, degraded representation, or `require`'s
   hard failure — §10.1's five strategies).
-- Resolution happens once, at `Environment` startup (§10.1) — a
-  `Capability` does not re-probe the environment on every `resolve` call;
-  `resolve`'s `Effect` is cheap/repeatable specifically because it's
-  reading an already-resolved result, not re-discovering it.
+- Resolutions are fixed when the application starts (§10.1) — `resolve`
+  reads an already-resolved result every time, which is why its `Effect` is
+  cheap and repeatable; nothing is re-discovered per call.
 - A capability's `Shape` must be a stable typed interface (§10.2) —
   resolution swaps the *implementation* behind that interface, never the
   interface itself.
@@ -105,7 +119,7 @@ const notifyUser = Effect.gen(function* () {
 
 ## Testing
 
-Covers §20 "Capability": discovery (the right source is picked when
-multiple could apply), implementation selection, fallback strategies
-actually engaging when the primary is unavailable, and the `Unavailable`/
-`require`-failure path when nothing can serve the capability.
+Covers §20 "Capability": resolution of a supplied implementation (with its
+source, including a registered fallback), the `Unavailable` value when
+nothing is registered, and the `require`-failure path when nothing can serve
+the capability. Discovery by probing is future work, with no tests yet.

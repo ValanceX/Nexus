@@ -21,34 +21,50 @@ fail independently of whether the effect runtime has started.
 ## Data Model
 
 ```ts
-interface NexusRuntime<R> {
-  readonly context: Effect.Effect<Context.Context<R>>;
-  readonly scope: Scope.Scope;
+interface NexusRuntime<in R> {
+  // opaque: no readable members
 }
 ```
 
-`NexusRuntime<R>` is a thin wrapper around Effect's own `ManagedRuntime` /
-`Runtime.Runtime<R>` plus the `Scope` the service graph was built in. It
-does not add scheduling or execution semantics beyond what Effect already
-provides (§2.2) — it exists so `Command`/`State`/`Capability` APIs have one
-consistent thing to run effects against, instead of every primitive taking
-raw `Layer`s and building its own runtime.
+A `NexusRuntime<R>` is an **opaque execution handle**. It has no readable
+member, and nothing reachable from it is the Effect `Runtime` that executes
+effects, the service `Context`, or the runtime's `Scope`. Those stay private
+to NEXUS (N3). A caller holds the handle and passes it to `Runtime.run` and
+`Runtime.runFork`, which is the only way effects reach the service graph.
+Services reach an effect only through its declared `R`.
+
+There are two kinds of runtime behind the one handle type, and they differ
+only in who owns them:
+
+- **An application runtime** is `RunningApplication.runtime`. The
+  application owns it. Callers can't shut it down: it ends only through the
+  application's lifecycle (see [application.md](./application.md)).
+- **A standalone runtime** is what `Runtime.make` returns. The caller's
+  `Scope` owns it, and it ends when that `Scope` closes.
 
 ## API
 
 ```ts
 namespace Runtime {
-  function make<R>(layer: Layer.Layer<R, unknown, never>): Effect.Effect<NexusRuntime<R>, RuntimeInitError, Scope.Scope>;
+  function make<R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope>;
   function run<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A>;
   function runFork<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E>;
-  function shutdown(runtime: NexusRuntime<unknown>): Effect.Effect<void>;
 }
 ```
 
+`make` builds the service graph from `layer`, with the runtime's own event
+bus as an ambient layer: the bus satisfies an `EventBusShape` requirement
+`layer` declares, and stays in the built context, so `Event.publish` and
+`Event.subscribe` work through `run`/`runFork`.
+
 `run` surfaces a `Promise` deliberately — it is the boundary NEXUS hands to
 non-Effect callers (a MESH host running an adapter `dispatch` that invokes
-a command, a test calling into the application). `runFork` is for callers that need a
-`Fiber` handle back, e.g. to interrupt a long-running command.
+a command, a test calling into the application). `runFork` is for callers
+that need a `Fiber` handle back, e.g. to interrupt a long-running command.
+
+There is no `shutdown`. A runtime ends when its owner ends it: the caller's
+`Scope`, for a standalone runtime; the application's lifecycle, for an
+application runtime.
 
 ## Errors
 
@@ -59,37 +75,53 @@ type RuntimeInitError = {
 };
 ```
 
-`Runtime.run`/`runFork` do not introduce a runtime-level error channel of
-their own — failures surface as whatever `E` the given effect already
-carries. `Runtime` does not swallow or rewrap command/service errors.
+`run`/`runFork` introduce no runtime-level error channel of their own. For
+Effect callers (`runFork`'s fiber, or an effect composed around `run`),
+failures surface as whatever `E` the given effect already carries;
+`Runtime` doesn't swallow or rewrap command/service errors.
+
+`run`'s `Promise` rejects with Effect's failure wrapper, not the bare `E`.
+A non-Effect caller that needs the typed `E` runs `Effect.exit` inside
+`run` and inspects the `Exit`. This is a known limitation; NEXUS has no
+separate non-Effect API.
+
+**Refusal.** Once a runtime's termination has begun, `run` and `runFork`
+don't start the effect: the call ends as a defect, with no typed failure.
+`run`'s `Promise` rejects, and `runFork`'s fiber exits with a die. A handle
+NEXUS didn't make is refused the same way.
 
 ## Rules
 
 - `Runtime.make` must fully build the service graph (`Layer` to
   `Context`) before returning — a `NexusRuntime` is only ever "ready," it
   is never in a partially-initialized state a caller could observe.
-- `shutdown` closes the `Scope`, which must trigger every `Resource`
-  release (§11) acquired anywhere in that runtime, including ones acquired
-  by commands that already completed.
-- `Runtime` must never expose the raw `Context.Context` for ambient lookup
-  outside `Service`/`Capability` resolution — see §5's "must not become a
-  global service locator."
+- **Termination happens once, in this order:** stop admitting new work;
+  close the runtime's event bus, so no event is delivered after this point
+  and every subscription ends normally; then close the runtime's `Scope`,
+  which releases every `Resource` (§11) acquired anywhere in that runtime,
+  including by commands that already completed. A termination that has
+  begun always completes.
+- Effects already running when termination begins are not interrupted by
+  it; only new work is refused.
+- `Runtime` must never expose the Effect `Runtime`, the service `Context`
+  or its `Scope` — no ambient lookup outside `Service`/`Capability`
+  resolution. See §5's "must not become a global service locator."
 
 ## Example
 
 ```ts
-const program = Effect.gen(function* () {
-  const runtime = yield* Runtime.make(UserRepositoryLive);
-  const result = yield* Effect.promise(() =>
-    Runtime.run(runtime, selectUser.invoke({ userId }))
-  );
-
-  yield* Runtime.shutdown(runtime);
-});
+const program = Effect.scoped(Effect.Do.pipe(
+  Effect.bind("runtime", () => Runtime.make(UserRepositoryLive)),
+  Effect.tap(({ runtime }) => Effect.promise(() =>
+    Runtime.run(runtime, Command.invoke(selectUser, { userId }))
+  ))
+));
+// The runtime ends, releasing its resources, when `Effect.scoped`'s scope closes.
 ```
 
 ## Testing
 
 Covers §20 "Runtime": effect execution, cancellation (interrupting a fiber
-from `runFork` actually stops work), scope lifetime, shutdown, and resource
-cleanup on both normal completion and interruption.
+from `runFork` actually stops work), scope lifetime, termination order,
+refusal after termination, the opaque handle, and resource cleanup on both
+normal completion and interruption.

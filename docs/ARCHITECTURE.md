@@ -186,6 +186,13 @@ Application
         └── Capability
 ```
 
+`State` under `Runtime` means *application-owned* state: created with
+`Application.createState`, it lives in the application runtime's own scope
+and ends when the application stops. (State a caller owns, from
+`State.create`, lives in the caller's scope instead.) `Command` under
+`Runtime` means commands *execute* within it: commands are plain values,
+run through `Runtime.run`/`Runtime.runFork`; there is no command registry.
+
 `Resource` and `Event` are deliberately not drawn as direct children of
 either box: a `Resource` is acquired *within* a `Service` implementation or
 a `Command`'s effect, scoped to the `Runtime`'s application `Scope` (see
@@ -207,7 +214,15 @@ Stopped
 ```
 
 Initialization failures must be represented as typed failures rather than
-hidden exceptions.
+hidden exceptions. A failed start (`Initializing → Failed`) returns no
+running application, so it is not a way of terminating one.
+
+A started application terminates in exactly two ways: `Application.shutdown`,
+or closing the caller's scope that `start` ran in. Both reach `Stopped`
+once, release everything, and end every observation stream over
+application-owned resources normally. Status never moves backwards, and from
+`Stopping` onward new work is refused. See
+[`primitives/application.md`](./primitives/application.md).
 
 ---
 
@@ -243,6 +258,14 @@ Runtime
 The runtime should provide a controlled environment for executing commands
 and other application effects. The runtime must not become a global service
 locator. Application dependencies should remain explicit.
+
+Concretely: a `NexusRuntime` is an **opaque handle**. Callers pass it to
+`Runtime.run`/`Runtime.runFork`, and nothing reachable from it is the
+Effect runtime, the service `Context` or the runtime's `Scope`. A runtime
+terminates once, in a fixed order: stop admitting new work, close its event
+bus, then release its resources. An application's runtime can't be shut
+down directly; a standalone runtime from `Runtime.make` ends when its
+owner's scope closes. See [`primitives/runtime.md`](./primitives/runtime.md).
 
 ---
 
@@ -482,8 +505,10 @@ Application consumes typed capability
 
 ### 10.1 Capability Resolution
 
-At application startup, `Environment` (§4) inspects the runtime and
-resolves available capabilities:
+At application startup, `Environment` (§4) resolves available capabilities.
+Today the resolutions are supplied already resolved, in the application's
+definition; discovering them by inspecting the runtime is the intended
+future shape, below, and isn't built yet:
 
 ```text
 Environment
@@ -606,7 +631,13 @@ const UserId = Schema.String.pipe(
 ```
 
 Schemas should prevent invalid data from entering important application
-boundaries.
+boundaries. The boundary is where untrusted data *enters*: `Command.invoke`
+decodes its `unknown` input, `State.set` validates what it commits. Events
+are a *potential* boundary: an `EventDef`'s schema describes its payload,
+and is used to validate or serialize events where they cross an untyped or
+serialization boundary (persistence, synchronization), not at publication.
+`Event.publish` is type-directed and doesn't decode (see
+[`primitives/event.md`](./primitives/event.md)).
 
 ---
 
@@ -693,7 +724,7 @@ host.dispatch(render, handler, payload);    // Effect<Dispatched, MeshDiagnostic
 | a `toInput` throw | defect | a broken binding |
 | `TypeError`, `MeshVersionError`, `MeshInternalError`, or any other runtime rejection | defect | a programming, package or runtime defect |
 
-**`renders` lifecycle.** `renders` emits one `Render` per future commit of the scope selector, in commit order. A render diagnostic is terminal: the stream fails with `MeshDiagnostics` and ends. It emits nothing for that commit, doesn't re-emit an earlier render, and ignores later commits. A caller that wants to recover subscribes again or calls `render`. This is the v0.2 NEXUS stream contract, not a MESH requirement. The adapter owns no scope. When the scope that owns the underlying `State` closes (for example on `Application.shutdown`, for state created in the application's runtime scope), `changes` completes, and so does `renders`, without error.
+**`renders` lifecycle.** `renders` emits one `Render` per future commit of the scope selector, in commit order. A render diagnostic is terminal: the stream fails with `MeshDiagnostics` and ends. It emits nothing for that commit, doesn't re-emit an earlier render, and ignores later commits. A caller that wants to recover subscribes again or calls `render`. This is the v0.2 NEXUS stream contract, not a MESH requirement. The adapter owns no scope. When the scope that owns the underlying `State` closes (for example on `Application.shutdown`, for state created with `Application.createState`), `changes` completes, and so does `renders`, without error.
 
 **Packaging.** `@valancex/mesh-runtime` is a regular dependency. Splitting the adapter into an optional subpath or package is deferred until there's a demonstrated need to support NEXUS installations that don't use MESH (§26, decision 8).
 
@@ -893,12 +924,13 @@ effects.
 **Command** — input validation, execution, typed failures, state
 interaction, service interaction.
 
-**Capability** — capability discovery, implementation selection, fallback,
+**Capability** — resolution of supplied implementations, fallback,
 unavailable capability.
 
 **Resource** — acquisition, usage, release, interruption cleanup.
 
-**Event** — typed event creation, publication, consumption, lifecycle
+**Event** — typed event definition, publication (type-directed, no runtime
+validation), consumption, lifecycle (the bus closes with its owner)
 behavior.
 
 ---
@@ -1104,3 +1136,26 @@ decision" rule:
    is deferred until there's a demonstrated need to support NEXUS installations
    that don't use MESH. This is a v0.2 scope decision, not a final long-term
    packaging choice.
+9. **Lifecycle and ownership closure, and contract reconciliation** (v0.3;
+   see `superpowers/specs/2026-09-26-nexus-v0.3-outline.md`).
+   - `NexusRuntime` is an opaque handle; the Effect runtime, service
+     `Context` and runtime `Scope` are unreachable (N3). `Runtime.shutdown`
+     is removed: an application's runtime ends only through its lifecycle, a
+     standalone runtime when its owner's scope closes.
+   - A started application terminates in exactly two ways, once, with
+     monotonic status and an idempotent `shutdown`; new work, including
+     `Application.createState`, is refused as a defect from `Stopping` on
+     (N2; Q1, and Q2 = A).
+   - Application-owned State comes from `Application.createState`, whose
+     only typed error is `StateInitError` (D1).
+   - A runtime's event bus closes before any resource is released; every
+     subscription ends normally and nothing is delivered after (N1, D4).
+   - `Event.publish` is type-directed, with no runtime validation;
+     `EventDef.schema` describes the payload (Q3 = B).
+   - `ApplicationInitError` is exactly `ServiceGraphFailed`; command names are
+     unique by convention, with no registry; every primitive doc matches the
+     exported types (N4).
+   - This is an intentional breaking change within v0.x: `NexusRuntime.scope`,
+     `NexusRuntime.runtime`, `Runtime.shutdown`, `RunningApplication.shutdown`
+     and `EnvironmentResolutionFailed` are removed, with no compatibility
+     wrappers.
