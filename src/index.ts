@@ -7,3 +7,4 @@ export * as Command from "./command/index.js";
 export * as Capability from "./capability/index.js";
 export * as Resource from "./resource/index.js";
 export * as Event from "./event/index.js";
+export * as Mesh from "./mesh/index.js";

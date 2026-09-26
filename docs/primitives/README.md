@@ -11,7 +11,7 @@ New here? Read **State → Selector → Command** first. Those three are what mo
 | [Service](./service.md) | A typed, swappable dependency | `Context`/`Layer` conventions |
 | [State](./state.md) | Data the app owns, changed only on purpose | Transitions, observation |
 | [Selector](./selector.md) | A read-only view computed from state | Pure projections over `State` |
-| [Command](./command.md) | "Please do this." | The MESH → NEXUS boundary |
+| [Command](./command.md) | "Please do this." | What MESH command intents reach, through adapter bindings |
 | [Capability](./capability.md) | Something the device may or may not provide | Haptics, camera, AI, storage, … |
 | [Resource](./resource.md) | Anything you open and must reliably close | Acquire/use/release via `Scope` |
 | [Event](./event.md) | "This happened." | Typed, immutable facts on a minimal bus |
@@ -20,4 +20,4 @@ Every page follows the same layout: **Responsibility**, **Data Model**, **API**,
 
 ## Status
 
-These are the committed API shapes for the first vertical slice (§22), and they're implemented in `src/`. They'll keep evolving as NEXUS connects to MESH. If these docs and `src/` ever disagree, treat it as a bug in one or the other, not as the docs being aspirational.
+These are the committed API shapes for the first vertical slice (§22), and they're implemented in `src/`. v0.2 connects them to MESH through the host adapter in `src/mesh/` (ARCHITECTURE §15), which is not a primitive. If these docs and `src/` ever disagree, treat it as a bug in one or the other, not as the docs being aspirational.

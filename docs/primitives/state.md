@@ -50,9 +50,13 @@ namespace State {
 ```
 
 `create` is scoped: a `StateHandle` lives as long as the `Scope` it was
-created in (ordinarily the `Application`'s own scope via `Runtime`), and
-its `changes` stream completes when that scope closes — state does not
-outlive the runtime that owns it.
+created in. While that scope is open, `changes` stays open. When the scope
+closes, every `changes` subscriber, and every stream derived from it such as
+`Selector.changes`, completes normally, without an error, so state does not
+outlive the scope that owns it. To tie state to an application's lifetime,
+create it in the application's runtime scope
+(`Scope.extend(State.create(...), running.runtime.scope)`). `Application.shutdown`
+then ends its `changes`.
 
 ## Errors
 
@@ -87,9 +91,10 @@ every `State.update` call.
 - `changes` must emit the *new* value only after `update`/`set` has fully
   committed (schema-valid, observers see a consistent value), never an
   intermediate one.
-- MESH may read (`get`, subscribe to `changes` indirectly through a
-  `Selector`) but must never call `update`/`set` directly — see
-  [ARCHITECTURE.md §15](../ARCHITECTURE.md#15-mesh-integration-boundary).
+- MESH never reads or writes `State`. The MESH adapter renders a
+  `Selector`'s value as a snapshot, and state changes only through a
+  `Command` that an explicit adapter binding invokes. See
+  [ARCHITECTURE.md §15](../ARCHITECTURE.md#15-mesh-host-adapter).
 
 ## Example
 

@@ -1,4 +1,4 @@
-import { Effect, Schema, Scope, Stream, SubscriptionRef } from "effect";
+import { Deferred, Effect, Schema, Scope, Stream, SubscriptionRef } from "effect";
 
 export interface StateHandle<A> {
   readonly get: Effect.Effect<A>;
@@ -24,7 +24,12 @@ export const create = <A>(schema: Schema.Schema<A>, initial: A): Effect.Effect<S
     issues: [String(error)],
   })),
   Effect.andThen(SubscriptionRef.make),
-  Effect.map((ref) => ({
+  Effect.bindTo("ref"),
+  // Completed by the owning scope's finalizer, which ends every `changes`
+  // subscriber normally: state does not outlive the scope that owns it.
+  Effect.bind("closed", () => Deferred.make<void>()),
+  Effect.tap(({ closed }) => Effect.addFinalizer(() => Deferred.succeed(closed, undefined))),
+  Effect.map(({ ref, closed }) => ({
     get: SubscriptionRef.get(ref),
     // Atomic read-modify-write: SubscriptionRef.updateAndGetEffect runs the
     // transition under the ref's semaphore, so two concurrent fibers cannot both
@@ -40,7 +45,7 @@ export const create = <A>(schema: Schema.Schema<A>, initial: A): Effect.Effect<S
     ),
     // Dropped because SubscriptionRef.changes replays the current value on
     // subscribe, and `changes` is specified as future commits only.
-    changes: Stream.drop(ref.changes, 1),
+    changes: Stream.drop(ref.changes, 1).pipe(Stream.interruptWhenDeferred(closed)),
   }))
 );
 

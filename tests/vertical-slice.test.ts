@@ -83,16 +83,4 @@ describe("NEXUS vertical slice (§22)", () => {
       "application shuts down",
     ]);
   });
-
-  it("has no import of any mesh or port package anywhere under src/ or examples/", async () => {
-    // Dynamic import, not require() — this repo's package.json sets "type": "module",
-    // so a bare CJS require() would throw "require is not defined" at runtime here.
-    const { execSync } = await import("node:child_process");
-    const repoRoot = new URL("..", import.meta.url).pathname;
-    const output = execSync(
-      String.raw`grep -rlE "from ['\"](\.\./)*(mesh|port)/|@valence/(mesh|port)" src examples || true`,
-      { cwd: repoRoot }
-    ).toString();
-    expect(output.trim()).toBe("");
-  });
 });

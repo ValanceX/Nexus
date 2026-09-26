@@ -13,8 +13,8 @@ is a constraint on the API, not just prose (see Rules).
   business rules that involve a decision (§8's "should this user be
   allowed to delete the account?") do not belong here; that's a `Command`
   reading `State` and applying domain logic, not a `Selector`.
-- Give MESH something to bind to (`disabled={!canCheckout}`) without MESH
-  ever touching `State` directly.
+- Supply MESH's snapshot: the MESH adapter renders a selector's value as
+  the snapshot (ARCHITECTURE §15), so MESH never touches `State` directly.
 
 ## Data Model
 
@@ -28,7 +28,7 @@ interface SelectorHandle<B> {
 Mirrors `StateHandle`'s `get`/`changes` shape deliberately (`value` instead
 of `get`, since a selector is always "the current derived value," not
 something you fetch with an implied side effect) — a `SelectorHandle` and a
-`StateHandle` should feel interchangeable to a MESH-facing reader.
+`StateHandle` should feel interchangeable to a reader.
 
 ## API
 
