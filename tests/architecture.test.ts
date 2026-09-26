@@ -102,3 +102,44 @@ describe("Architecture: no PORT anywhere, no MESH in examples", () => {
     )).toEqual([]);
   });
 });
+
+// v0.4 D13: the semantic model is a leaf. It imports nothing, nothing but the
+// package entry imports it, and the entry exports it once, as `Semantic`.
+describe("Architecture: the semantic model is a leaf (v0.4 D13)", () => {
+  const semanticDir = join(src, "semantic");
+  const semanticIndex = join(semanticDir, "index.ts");
+  const semanticSources = () => sources.filter((file) => isInside(semanticDir, file));
+
+  it("finds what it checks", () => {
+    expect(sources).toContain(semanticIndex);
+  });
+
+  it("is one file with no imports", () => {
+    expect(semanticSources()).toEqual([semanticIndex]);
+    expect(specifiersOf(semanticIndex)).toEqual([]);
+  });
+
+  it("is imported by nothing under src/ except the package entry", () => {
+    const others = sources.filter((file) => file !== entry && !isInside(semanticDir, file));
+
+    expect(violations(others, (file, specifier) => isInside(semanticDir, target(file, specifier)))).toEqual([]);
+  });
+
+  it("is exported by the entry exactly once, as Semantic", () => {
+    const intoSemantic = specifiersOf(entry).filter((specifier) => isInside(semanticDir, target(entry, specifier)));
+    const text = readFileSync(entry, "utf8");
+
+    expect(intoSemantic).toEqual(["./semantic/index.js"]);
+    expect(text.match(/^export \* as Semantic from "\.\/semantic\/index\.js";$/gm)).toHaveLength(1);
+  });
+
+  it("adds no other public namespace or value to the entry", () => {
+    const lines = readFileSync(entry, "utf8").split("\n").map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("//"));
+    const existing = ["Application", "Runtime", "Service", "State", "Selector", "Command", "Capability", "Resource", "Event", "Mesh"];
+
+    expect(lines).toEqual([
+      ...existing.map((name) => `export * as ${name} from "./${name.toLowerCase()}/index.js";`),
+      `export * as Semantic from "./semantic/index.js";`,
+    ]);
+  });
+});
