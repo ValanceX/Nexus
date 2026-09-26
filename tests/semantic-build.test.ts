@@ -363,6 +363,112 @@ describe("Semantic.build: may-flow (C11; I21, I22)", () => {
   });
 });
 
+describe("Semantic.build: pure, deterministic, plain (C10, D26; I11)", () => {
+  const dataFlowContext = (): Semantic.AnalysisContext => ({
+    values: [{ id: "cart", name: "Cart", provenance: span("v.ts", 0, 4) }, { id: "user" }],
+    declarations: [
+      { id: "add", provenance: span("a.ts", 0, 9), requirements: { completeness: "complete", capabilities: [{ capability: "fs" }] }, inputs: complete("user"), outputs: complete({ value: "cart", provenance: span("a.ts", 1, 2) }) },
+      { id: "checkout", inputs: partial("cart") },
+    ],
+    profile: { name: "web", provided: ["fs"], notProvided: [] },
+    require: ["target-compatibility"],
+  });
+
+  it("reads only modeled fields, and never enumerates or writes", () => {
+    const modeled = new Set([
+      "values", "declarations", "profile", "require",
+      "id", "name", "provenance", "requirements", "inputs", "outputs",
+      "completeness", "capabilities", "capability", "references", "value",
+      "provided", "notProvided", "source", "start", "end", "length",
+    ]);
+    const events: Array<string> = [];
+    const wrap = <T>(value: T): T => {
+      if (typeof value !== "object" || value === null) return value;
+      const wrapped = Array.isArray(value) ? value.map(wrap) : Object.fromEntries(Object.entries(value).map(([k, v]) => [k, wrap(v)]));
+      return new Proxy(wrapped, {
+        get: (target, key, receiver) => { events.push(`get:${String(key)}`); return Reflect.get(target, key, receiver); },
+        has: (target, key) => { events.push(`has:${String(key)}`); return Reflect.has(target, key); },
+        ownKeys: (target) => { events.push("ownKeys"); return Reflect.ownKeys(target); },
+        getOwnPropertyDescriptor: (target, key) => { events.push(`descriptor:${String(key)}`); return Reflect.getOwnPropertyDescriptor(target, key); },
+        set: (target, key, v) => { events.push(`set:${String(key)}`); return Reflect.set(target, key, v); },
+        defineProperty: (target, key, d) => { events.push(`define:${String(key)}`); return Reflect.defineProperty(target, key, d); },
+        deleteProperty: (target, key) => { events.push(`delete:${String(key)}`); return Reflect.deleteProperty(target, key); },
+      }) as T;
+    };
+
+    expect(buildAndRecord(wrap(dataFlowContext()))._tag).toBe("Built");
+    expect(events.filter((e) => !e.startsWith("get:") || (!modeled.has(e.slice(4)) && !/^\d+$/.test(e.slice(4))))).toEqual([]);
+  });
+
+  it("never invokes a value it is given", () => {
+    let calls = 0;
+    const trap = () => { calls++; throw new Error("called"); };
+    const armed = <T extends object>(value: T): T => Object.assign(value, { then: trap, toJSON: trap, valueOf: trap, toString: trap });
+    const input = armed({
+      values: [armed({ id: "cart" })],
+      declarations: [armed({ id: "a", inputs: armed({ completeness: "complete" as const, references: [armed({ value: "cart" })] }), outputs: armed({ completeness: "partial" as const, references: [] }) })],
+      profile: armed({ name: "p", provided: [], notProvided: [] }),
+    });
+
+    expect(buildAndRecord(input)._tag).toBe("Built");
+    expect(Semantic.analyze(input)._tag).toBe("Analyzed");
+    expect(calls).toBe(0);
+  });
+
+  it("never mutates its input: a deep-frozen context builds, and is unchanged", () => {
+    const deepFreeze = <T>(value: T): T => {
+      if (typeof value === "object" && value !== null) {
+        for (const v of Object.values(value)) deepFreeze(v);
+        Object.freeze(value);
+      }
+      return value;
+    };
+    const input = deepFreeze(dataFlowContext());
+    const before = structuredClone(input);
+
+    expect(buildAndRecord(input)._tag).toBe("Built");
+    expect(input).toStrictEqual(before);
+  });
+
+  it("the same context gives the same Built, and nothing is kept between calls", () => {
+    const first = buildAndRecord(dataFlowContext());
+    buildAndRecord({ values: values("z"), declarations: [{ id: "z", outputs: complete("z") }], profile: profile() });
+
+    expect(buildAndRecord(dataFlowContext())).toStrictEqual(first);
+  });
+
+  it("mutating the input after build doesn't change Built", () => {
+    type Mutable = { values: Array<{ id: string }>; declarations: Array<{ id: string; outputs: { references: Array<{ value: string }> } }> };
+    const input = structuredClone(dataFlowContext());
+    const built = buildAndRecord(input);
+    const before = structuredClone(built);
+    const mutable = input as unknown as Mutable;
+
+    mutable.values[0]!.id = "changed";
+    mutable.declarations[0]!.id = "changed";
+    mutable.declarations[0]!.outputs.references.push({ value: "user" });
+
+    expect(built).toStrictEqual(before);
+  });
+
+  it("is synchronous: the result is a plain outcome, not a thenable", () => {
+    const outcome = buildAndRecord(dataFlowContext());
+
+    expect("then" in outcome).toBe(false);
+  });
+
+  it("never throws on malformed data-flow input", () => {
+    const garbage = {
+      values: [{ id: undefined }, { id: 3 }, { id: "v", provenance: { source: "", start: NaN, end: -0 } }],
+      declarations: [{ id: "a", inputs: { completeness: "complete", references: [{ value: undefined }, { value: {} }] }, outputs: { completeness: "partial", references: [] } }],
+      profile: { name: "p", provided: [], notProvided: [] },
+    } as unknown as Semantic.AnalysisContext;
+
+    expect(() => buildAndRecord(garbage)).not.toThrow();
+    expect(buildAndRecord(garbage)._tag).toBe("Rejected");
+  });
+});
+
 describe("Semantic.build: plain data (C10)", () => {
   // Keep this block last: it checks every outcome built above.
   it("every recorded outcome survives a JSON round trip", () => {
