@@ -264,13 +264,6 @@ const distinctIds = (requirements: TargetRequirements): ReadonlyArray<string> =>
   return ids;
 };
 
-const allProvided = (ids: ReadonlyArray<string>, decisions: Decisions): boolean => {
-  for (let i = 0; i < ids.length; i++) {
-    if (!decisions.provided.has(ids[i] as string)) return false;
-  }
-  return true;
-};
-
 // The ids a predicate selects, in order.
 const selectIds = (ids: ReadonlyArray<string>, keep: (id: string) => boolean): ReadonlyArray<string> => {
   const selected: Array<string> = [];
@@ -281,18 +274,22 @@ const selectIds = (ids: ReadonlyArray<string>, keep: (id: string) => boolean): R
   return selected;
 };
 
-// C4. The provisional case (a complete set with a not-provided id and nothing
-// undecided) is opaque until the incompatible step is in place, never incompatible (I12).
+// C4: the first matching step applies, and the five steps are exhaustive.
+// Only a declared requirement the profile explicitly doesn't provide is
+// incompatible (I16); missing or undecided information is opaque (I12).
 const verdictOf = (requirements: TargetRequirements | undefined, decisions: Decisions): Verdict => {
+  const ids = requirements !== undefined ? distinctIds(requirements) : [];
+
+  const notProvided = selectIds(ids, (id) => decisions.notProvided.has(id));
+  if (notProvided.length > 0) return { _tag: "Incompatible", notProvided };
+
   if (requirements === undefined) return { _tag: "Undetermined", cause: "operation", requirements: "undeclared" };
   if (requirements.completeness === "partial") return { _tag: "Undetermined", cause: "operation", requirements: "partial" };
 
-  const ids = distinctIds(requirements);
-  const undecided = selectIds(ids, (id) => !decisions.provided.has(id) && !decisions.notProvided.has(id));
+  const undecided = selectIds(ids, (id) => !decisions.provided.has(id));
   if (undecided.length > 0) return { _tag: "Undetermined", cause: "target", undecided };
 
-  if (allProvided(ids, decisions)) return { _tag: "Compatible" };
-  return { _tag: "Undetermined", cause: "operation", requirements: "undeclared" };
+  return { _tag: "Compatible" };
 };
 
 const classificationOf = (verdict: Verdict): Classification =>

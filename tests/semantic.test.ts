@@ -322,3 +322,45 @@ describe("Semantic: opaque (C4 undetermined, C5; I12, I14, I16)", () => {
       .toEqual({ _tag: "Undetermined", cause: "operation", requirements: "undeclared" });
   });
 });
+
+describe("Semantic: incompatible (C4 incompatible; I16)", () => {
+  const operationsOf = (context: Semantic.AnalysisContext) => analyzedOf(analyzeAndRecord(context)).operations;
+  const incompatible = (id: string, notProvided: ReadonlyArray<string>): Semantic.OperationResult =>
+    ({ id, known: ["target-requirements"], verdict: { _tag: "Incompatible", notProvided }, classification: "incompatible" });
+
+  it("a complete set with a not-provided id is incompatible", () => {
+    expect(operationsOf({ declarations: [{ id: "a", requirements: complete("fs", "net") }], profile: profile(["net"], ["fs"]) }))
+      .toEqual([incompatible("a", ["fs"])]);
+  });
+
+  it("a partial set with a not-provided id is incompatible", () => {
+    expect(operationsOf({ declarations: [{ id: "a", requirements: partial("fs") }], profile: profile([], ["fs"]) }))
+      .toEqual([incompatible("a", ["fs"])]);
+  });
+
+  it("not-provided and undecided ids together: incompatible, listing only the not-provided", () => {
+    expect(operationsOf({ declarations: [{ id: "a", requirements: complete("gpu", "fs") }], profile: profile([], ["fs"]) }))
+      .toEqual([incompatible("a", ["fs"])]);
+  });
+
+  it("duplicate not-provided ids are listed once, in order of first occurrence", () => {
+    expect(operationsOf({ declarations: [{ id: "a", requirements: complete("fs", "net", "fs", "db") }], profile: profile(["net"], ["db", "fs"]) }))
+      .toEqual([incompatible("a", ["fs", "db"])]);
+  });
+
+  it("incompatibility needs proof: an unmentioned id is undecided, an explicitly not-provided one is incompatible", () => {
+    const declarations = [{ id: "a", requirements: complete("gpu") }];
+
+    expect(operationsOf({ declarations, profile: profile() })[0]?.verdict).toEqual({ _tag: "Undetermined", cause: "target", undecided: ["gpu"] });
+    expect(operationsOf({ declarations, profile: profile([], ["gpu"]) })[0]?.verdict).toEqual({ _tag: "Incompatible", notProvided: ["gpu"] });
+  });
+
+  it("DoD 8: the same declarations against two contrasting profiles give each profile's verdicts", () => {
+    const declarations = [{ id: "a", requirements: complete("fs") }];
+    const a = analyzedOf(analyzeAndRecord({ declarations, profile: profile(["fs"], [], { name: "with-fs" }) }));
+    const b = analyzedOf(analyzeAndRecord({ declarations, profile: profile([], ["fs"], { name: "without-fs" }) }));
+
+    expect([a.profile, a.operations[0]?.classification]).toEqual(["with-fs", "supported"]);
+    expect([b.profile, b.operations[0]?.classification]).toEqual(["without-fs", "incompatible"]);
+  });
+});
