@@ -1,5 +1,5 @@
 import { Chunk, Context, Duration, Effect, Exit, Fiber, Layer, Queue, Ref, Schedule, Schema, Scope, Stream } from "effect";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 
 import * as EventModule from "../src/event/index.js";
 
@@ -44,6 +44,23 @@ describe("Event", () => {
     ));
 
     expect(Array.from(result)).toEqual([{ userId: "u1" }]);
+  });
+
+  it("publishes without runtime validation: a payload past the types is delivered as given (Q3 = B)", async () => {
+    expectTypeOf<Effect.Effect.Error<ReturnType<typeof EventModule.publish<"UserSelected", { readonly userId: string }>>>>().toEqualTypeOf<never>();
+
+    // Only an untyped escape hatch can produce this; publish neither decodes nor rejects it.
+    const malformed = { userId: 42 } as unknown as { readonly userId: string };
+
+    const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind("fiber", () => Effect.fork(Stream.runCollect(Stream.take(EventModule.subscribe(UserSelected), 1)))),
+      Effect.tap(() => Effect.sleep("1 millis")),
+      Effect.bind("published", () => Effect.exit(EventModule.publish(UserSelected, malformed))),
+      Effect.bind("received", ({ fiber }) => Fiber.join(fiber))
+    )).pipe(Effect.provide(EventModule.EventBusLive)));
+
+    expect(Exit.isSuccess(result.published)).toBe(true);
+    expect(Chunk.toReadonlyArray(result.received)).toEqual([{ userId: 42 }]);
   });
 
   describe("closing (N1, D4)", () => {

@@ -84,6 +84,10 @@ describe("Application lifecycle (N2)", () => {
     expect(result.released).toBe(1);
   });
 
+  it("has exactly one initialization failure: ServiceGraphFailed", () => {
+    expectTypeOf<Application.ApplicationInitError["_tag"]>().toEqualTypeOf<"ServiceGraphFailed">();
+  });
+
   it("a failed start is a typed ServiceGraphFailed, with no handle, and releases what it built", async () => {
     interface BrokenShape { readonly value: number }
 

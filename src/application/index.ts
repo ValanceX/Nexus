@@ -17,9 +17,9 @@ export type ApplicationStatus =
   | { readonly _tag: "Stopped" }
   | { readonly _tag: "Failed"; readonly error: ApplicationInitError };
 
-export type ApplicationInitError =
-  | { readonly _tag: "EnvironmentResolutionFailed"; readonly cause: unknown }
-  | { readonly _tag: "ServiceGraphFailed"; readonly cause: unknown };
+// The one initialization failure. Environment resolutions are supplied already
+// resolved by the definition, so resolving them can't fail.
+export type ApplicationInitError = { readonly _tag: "ServiceGraphFailed"; readonly cause: unknown };
 
 /**
  * The ambient services an application always resolves before its own service
