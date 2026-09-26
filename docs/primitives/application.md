@@ -91,8 +91,7 @@ a thrown exception or an `unknown` rejection reaching the caller.
   capabilities.
 - `Application` must never be reachable from `Command`/`Service`/`State`
   code — those only ever see `RunningApplication`'s narrower surface
-  (state reads, selector reads, command invocation — see
-  [MESH Host Adapter](../ARCHITECTURE.md#15-mesh-host-adapter)).
+  (state reads, selector reads, command invocation).
 
 ## Example
 
