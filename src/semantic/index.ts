@@ -338,77 +338,6 @@ const relationshipSet = (operations: ReadonlyArray<BuiltOperation>, side: "input
   return openedBy.length === 0 ? { _tag: "Closed", members } : { _tag: "Open", members, openedBy };
 };
 
-// D6: every malformation, in the fixed traversal order.
-const rejectionIssues = (context: AnalysisContext): ReadonlyArray<RejectionIssue> => {
-  const issues: Array<RejectionIssue> = [];
-  const checkSpan = (span: Span | undefined, path: Path) => {
-    if (span !== undefined && !isValidSpan(span)) issues.push({ reason: "invalid-span", path });
-  };
-
-  const identities = new Set<string>();
-  const declarations = context.declarations;
-  for (let i = 0; i < declarations.length; i++) {
-    const declaration = declarations[i] as Declaration;
-    const id = declaration.id;
-
-    if (typeof id !== "string" || id === "") {
-      issues.push({ reason: "missing-identity", path: ["declarations", i, "id"] });
-    } else if (identities.has(id)) {
-      issues.push({ reason: "duplicate-identity", path: ["declarations", i, "id"] });
-    } else {
-      identities.add(id);
-    }
-
-    checkSpan(declaration.provenance, ["declarations", i, "provenance"]);
-
-    const requirements = declaration.requirements;
-    if (requirements !== undefined) {
-      const capabilities = requirements.capabilities;
-      for (let j = 0; j < capabilities.length; j++) {
-        const requirement = capabilities[j] as Requirement;
-
-        if (requirement.capability === "") {
-          issues.push({ reason: "empty-capability", path: ["declarations", i, "requirements", "capabilities", j, "capability"] });
-        }
-        checkSpan(requirement.provenance, ["declarations", i, "requirements", "capabilities", j, "provenance"]);
-      }
-    }
-  }
-
-  const profile = context.profile;
-  checkSpan(profile.provenance, ["profile", "provenance"]);
-
-  const provided = new Set<string>();
-  const providedList = profile.provided;
-  for (let k = 0; k < providedList.length; k++) {
-    const capability = providedList[k] as string;
-
-    if (capability === "") issues.push({ reason: "empty-capability", path: ["profile", "provided", k] });
-    else provided.add(capability);
-  }
-
-  const notProvidedList = profile.notProvided;
-  const notProvided: Array<string> = [];
-  for (let k = 0; k < notProvidedList.length; k++) {
-    const capability = notProvidedList[k] as string;
-
-    if (capability === "") issues.push({ reason: "empty-capability", path: ["profile", "notProvided", k] });
-    notProvided.push(capability);
-  }
-
-  const conflicts = new Set<string>();
-  for (let k = 0; k < notProvided.length; k++) {
-    const capability = notProvided[k] as string;
-
-    if (capability !== "" && provided.has(capability) && !conflicts.has(capability)) {
-      conflicts.add(capability);
-      issues.push({ reason: "conflicting-decision", path: ["profile", "notProvided", k] });
-    }
-  }
-
-  return issues;
-};
-
 const requiresCompatibility = (require: ReadonlyArray<RequiredFact> | undefined): boolean => {
   if (require === undefined) return false;
   for (let i = 0; i < require.length; i++) {
@@ -423,24 +352,21 @@ interface Decisions {
   readonly notProvided: ReadonlySet<string>;
 }
 
-const decisionsOf = (profile: TargetProfile): Decisions => {
+const decisionsOf = (profile: BuiltProfile): Decisions => {
   const provided = new Set<string>();
   const notProvided = new Set<string>();
-  const providedList = profile.provided;
-  const notProvidedList = profile.notProvided;
-  for (let k = 0; k < providedList.length; k++) provided.add(providedList[k] as string);
-  for (let k = 0; k < notProvidedList.length; k++) notProvided.add(notProvidedList[k] as string);
+  for (let k = 0; k < profile.provided.length; k++) provided.add(profile.provided[k] as string);
+  for (let k = 0; k < profile.notProvided.length; k++) notProvided.add(profile.notProvided[k] as string);
 
   return { provided, notProvided };
 };
 
 // The distinct required ids, in order of first occurrence (plan P7).
-const distinctIds = (requirements: TargetRequirements): ReadonlyArray<string> => {
+const distinctIds = (capabilities: ReadonlyArray<BuiltRequirement>): ReadonlyArray<string> => {
   const seen = new Set<string>();
   const ids: Array<string> = [];
-  const capabilities = requirements.capabilities;
   for (let j = 0; j < capabilities.length; j++) {
-    const capability = (capabilities[j] as Requirement).capability;
+    const capability = (capabilities[j] as BuiltRequirement).capability;
     if (!seen.has(capability)) {
       seen.add(capability);
       ids.push(capability);
@@ -462,13 +388,13 @@ const selectIds = (ids: ReadonlyArray<string>, keep: (id: string) => boolean): R
 // C4: the first matching step applies, and the five steps are exhaustive.
 // Only a declared requirement the profile explicitly doesn't provide is
 // incompatible (I16); missing or undecided information is opaque (I12).
-const verdictOf = (requirements: TargetRequirements | undefined, decisions: Decisions): Verdict => {
-  const ids = requirements !== undefined ? distinctIds(requirements) : [];
+const verdictOf = (requirements: BuiltRequirements, decisions: Decisions): Verdict => {
+  const ids = requirements._tag === "Declared" ? distinctIds(requirements.capabilities) : [];
 
   const notProvided = selectIds(ids, (id) => decisions.notProvided.has(id));
   if (notProvided.length > 0) return { _tag: "Incompatible", notProvided };
 
-  if (requirements === undefined) return { _tag: "Undetermined", cause: "operation", requirements: "undeclared" };
+  if (requirements._tag === "Unknown") return { _tag: "Undetermined", cause: "operation", requirements: "undeclared" };
   if (requirements.completeness === "partial") return { _tag: "Undetermined", cause: "operation", requirements: "partial" };
 
   const undecided = selectIds(ids, (id) => !decisions.provided.has(id));
@@ -480,32 +406,32 @@ const verdictOf = (requirements: TargetRequirements | undefined, decisions: Deci
 const classificationOf = (verdict: Verdict): Classification =>
   verdict._tag === "Compatible" ? "supported" : verdict._tag === "Incompatible" ? "incompatible" : "opaque";
 
-const analyzeDeclaration = (declaration: Declaration, decisions: Decisions): OperationResult => {
-  const requirements = declaration.requirements;
-  const verdict = verdictOf(requirements, decisions);
+// C12: reads requirements only. Data-flow facts never reach a verdict.
+const analyzeOperation = (operation: BuiltOperation, decisions: Decisions): OperationResult => {
+  const verdict = verdictOf(operation.requirements, decisions);
 
   return {
-    id: declaration.id,
-    known: requirements !== undefined ? ["target-requirements"] : [],
+    id: operation.id,
+    known: operation.requirements._tag === "Declared" ? ["target-requirements"] : [],
     verdict,
     classification: classificationOf(verdict),
   };
 };
 
 // The spans of the requirement occurrences whose ids are selected, in list order.
-const requirementSpans = (requirements: TargetRequirements | undefined, selected: ReadonlyArray<string>): Array<RelatedSpan> => {
+const requirementSpans = (requirements: BuiltRequirements, selected: ReadonlyArray<string>): Array<RelatedSpan> => {
   const related: Array<RelatedSpan> = [];
-  if (requirements === undefined) return related;
+  if (requirements._tag === "Unknown") return related;
 
   const ids = new Set<string>();
   for (let i = 0; i < selected.length; i++) ids.add(selected[i] as string);
 
   const capabilities = requirements.capabilities;
   for (let j = 0; j < capabilities.length; j++) {
-    const requirement = capabilities[j] as Requirement;
+    const requirement = capabilities[j] as BuiltRequirement;
     const provenance = requirement.provenance;
-    if (provenance !== undefined && ids.has(requirement.capability)) {
-      related.push({ span: copySpan(provenance), label: "requirement declared here" });
+    if (provenance._tag === "Span" && ids.has(requirement.capability)) {
+      related.push({ span: copySpan(provenance.span), label: "requirement declared here" });
     }
   }
   return related;
@@ -518,22 +444,20 @@ const quoted = (ids: ReadonlyArray<string>): string => {
 };
 
 // C5 emission and C6. Messages explain; their wording is not a contract.
-const diagnosticOf = (declaration: Declaration, verdict: Verdict, profile: TargetProfile, required: boolean): Diagnostic | undefined => {
+const diagnosticOf = (operation: BuiltOperation, verdict: Verdict, profile: BuiltProfile, required: boolean): Diagnostic | undefined => {
   if (verdict._tag === "Compatible") return undefined;
   if (verdict._tag === "Undetermined" && !required) return undefined;
 
-  const id = declaration.id;
-  const name = declaration.name;
-  const label = name !== undefined && name !== "" ? name : id;
-  const provenance = declaration.provenance;
-  const location: Location = provenance !== undefined ? { _tag: "Span", span: copySpan(provenance) } : { _tag: "Unlocated" };
+  const id = operation.id;
+  const name = operation.name;
+  const label = name._tag === "Named" && name.name !== "" ? name.name : id;
+  const location = copyLocation(operation.provenance);
   const profileName = profile.name;
-  const requirements = declaration.requirements;
+  const requirements = operation.requirements;
 
   if (verdict._tag === "Incompatible") {
     const related = requirementSpans(requirements, verdict.notProvided);
-    const profileProvenance = profile.provenance;
-    if (profileProvenance !== undefined) related.push({ span: copySpan(profileProvenance), label: "target profile declared here" });
+    if (profile.provenance._tag === "Span") related.push({ span: copySpan(profile.provenance.span), label: "target profile declared here" });
 
     return {
       code: "nexus-incompatible-target-capability",
@@ -572,23 +496,20 @@ const diagnosticOf = (declaration: Declaration, verdict: Verdict, profile: Targe
   };
 };
 
-/** Analyzes declarations against one target profile, without executing anything (C7). */
-export const analyze = (context: AnalysisContext): AnalysisOutcome => {
-  const issues = rejectionIssues(context);
-  if (issues.length > 0) return { _tag: "Rejected", issues };
-
-  const profile = context.profile;
+// C12: the compatibility pass. Its only input is Built.
+const compatibility = (built: Built): AnalysisOutcome => {
+  const profile = built.profile;
   const decisions = decisionsOf(profile);
-  const required = requiresCompatibility(context.require);
+  const required = built.required.length > 0;
   const operations: Array<OperationResult> = [];
   const diagnostics: Array<Diagnostic> = [];
-  const declarations = context.declarations;
-  for (let i = 0; i < declarations.length; i++) {
-    const declaration = declarations[i] as Declaration;
-    const operation = analyzeDeclaration(declaration, decisions);
-    const diagnostic = diagnosticOf(declaration, operation.verdict, profile, required);
 
-    operations.push(operation);
+  for (let i = 0; i < built.operations.length; i++) {
+    const operation = built.operations[i] as BuiltOperation;
+    const result = analyzeOperation(operation, decisions);
+    const diagnostic = diagnosticOf(operation, result.verdict, profile, required);
+
+    operations.push(result);
     if (diagnostic !== undefined) diagnostics.push(diagnostic);
   }
 
@@ -602,6 +523,17 @@ export const analyze = (context: AnalysisContext): AnalysisOutcome => {
   };
 };
 
+/**
+ * Analyzes a context against its target profile, without executing anything
+ * (C7, C12): build, then the compatibility pass over Built. A rejection is
+ * returned unchanged.
+ */
+export const analyze = (context: AnalysisContext): AnalysisOutcome => {
+  const built = build(context);
+  return built._tag === "Rejected" ? built : compatibility(built);
+};
+
+// build stays declared after analyze: tests/semantic.test.ts pins the runtime export order.
 /**
  * Validates a context once and builds its semantic IR (C9, C10, D24). The only
  * place a context is validated or a Built is constructed.

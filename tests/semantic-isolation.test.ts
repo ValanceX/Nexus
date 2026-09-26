@@ -32,12 +32,13 @@ const context = (): Semantic.AnalysisContext => ({
   require: ["target-compatibility"],
 });
 
-// The fields the analysis may read (plan: "Reads").
+// The fields the analysis may read (plan: "Reads"; v0.5 D28 adds the data-flow fields).
 const modeled = new Set([
   "declarations", "profile", "require",
   "id", "name", "provenance", "requirements",
   "completeness", "capabilities", "capability",
   "provided", "notProvided",
+  "values", "inputs", "outputs", "references", "value",
   "source", "start", "end",
   "length",
 ]);
