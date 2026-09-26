@@ -13,7 +13,9 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+const repo = fileURLToPath(new URL("../", import.meta.url));
 const src = fileURLToPath(new URL("../src/", import.meta.url));
+const examples = fileURLToPath(new URL("../examples/", import.meta.url));
 const meshDir = join(src, "mesh");
 const entry = join(src, "index.ts");
 
@@ -38,9 +40,12 @@ const isInside = (dir: string, path: string) => path === dir || path.startsWith(
 // Where a relative specifier points, as a source path; bare specifiers stay as they are.
 const target = (file: string, specifier: string) => specifier.startsWith(".") ? resolve(dirname(file), specifier) : specifier;
 
-const sources = readdirSync(src, { recursive: true, encoding: "utf8" })
+const sourcesUnder = (dir: string): ReadonlyArray<string> => readdirSync(dir, { recursive: true, encoding: "utf8" })
   .filter((path) => path.endsWith(".ts"))
-  .map((path) => join(src, path));
+  .map((path) => join(dir, path));
+
+const sources = sourcesUnder(src);
+const exampleSources = sourcesUnder(examples);
 
 const core = sources.filter((file) => file !== entry && !isInside(meshDir, file));
 const adapter = sources.filter((file) => isInside(meshDir, file));
@@ -48,7 +53,7 @@ const adapter = sources.filter((file) => isInside(meshDir, file));
 const violations = (files: ReadonlyArray<string>, forbidden: (file: string, specifier: string) => boolean) => files.flatMap((file) =>
   specifiersOf(file)
     .filter((specifier) => forbidden(file, specifier))
-    .map((specifier) => `${relative(src, file)} imports "${specifier}"`)
+    .map((specifier) => `${relative(repo, file)} imports "${specifier}"`)
 );
 
 describe("Architecture: the MESH import boundary (spec test 9)", () => {
@@ -76,5 +81,24 @@ describe("Architecture: the MESH import boundary (spec test 9)", () => {
 
   it("keeps the adapter off the MESH compiler (M4)", () => {
     expect(violations(adapter, (_file, specifier) => specifier.startsWith("@valancex/mesh-compiler"))).toEqual([]);
+  });
+});
+
+// What v0.1's "no UI" guard still means in v0.2. The MESH boundary inside src/ is test 9's job above.
+describe("Architecture: no PORT anywhere, no MESH in examples", () => {
+  it("finds the examples it checks", () => {
+    expect(exampleSources).toContain(join(examples, "basic-app", "index.ts"));
+  });
+
+  it("imports PORT nowhere under src/ or examples/ (NEXUS never depends on PORT, §16)", () => {
+    expect(violations([...sources, ...exampleSources], (file, specifier) =>
+      specifier.startsWith("@valancex/port") || (specifier.startsWith(".") && relative(repo, target(file, specifier)).split(sep).includes("port"))
+    )).toEqual([]);
+  });
+
+  it("imports no MESH package or adapter internals under examples/", () => {
+    expect(violations(exampleSources, (file, specifier) =>
+      specifier.startsWith("@valancex/mesh-") || isInside(meshDir, target(file, specifier))
+    )).toEqual([]);
   });
 });
