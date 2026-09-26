@@ -147,6 +147,28 @@ describe("Application lifecycle (N2)", () => {
     }
   });
 
+  it("a concurrent shutdown returns only once the application is Stopped", async () => {
+    const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind("releasing", () => Deferred.make<void>()),
+      Effect.bind("gate", () => Deferred.make<void>()),
+      Effect.bind("running", ({ releasing, gate }) => Application.start(Application.define({
+        name: "gated",
+        runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
+      }))),
+      Effect.bind("first", ({ running }) => Effect.fork(Application.shutdown(running))),
+      Effect.tap(({ releasing }) => Deferred.await(releasing)),
+      Effect.bind("second", ({ running }) => Effect.fork(Application.shutdown(running).pipe(Effect.andThen(Application.status(running))))),
+      Effect.tap(() => Effect.repeatN(Effect.yieldNow(), 20)),
+      Effect.bind("secondBeforeRelease", ({ second }) => Fiber.poll(second)),
+      Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
+      Effect.tap(({ first }) => Fiber.join(first)),
+      Effect.bind("secondReturnedAt", ({ second }) => Fiber.join(second))
+    )));
+
+    expect(Option.isNone(result.secondBeforeRelease)).toBe(true);
+    expect(result.secondReturnedAt).toEqual({ _tag: "Stopped" });
+  });
+
   it("refuses new work while Stopping", async () => {
     let ran = false;
 

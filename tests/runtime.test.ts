@@ -253,6 +253,26 @@ describe("Runtime", () => {
       expect(Exit.isInterrupted(result.publisherExit)).toBe(true);
     });
 
+    it("a second termination waits for the first to finish releasing", async () => {
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("releasing", () => Deferred.make<void>()),
+        Effect.bind("gate", () => Deferred.make<void>()),
+        Effect.let("GatedLive", ({ releasing, gate }) => Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate)))))),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("runtime", ({ scope, GatedLive }) => Scope.extend(Runtime.make(GatedLive), scope)),
+        Effect.bind("first", ({ runtime }) => Effect.fork(terminate(runtime))),
+        Effect.tap(({ releasing }) => Deferred.await(releasing)),
+        Effect.bind("second", ({ runtime }) => Effect.fork(terminate(runtime))),
+        Effect.tap(() => Effect.repeatN(Effect.yieldNow(), 20)),
+        Effect.bind("secondBeforeRelease", ({ second }) => Fiber.poll(second)),
+        Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
+        Effect.tap(({ first, second }) => Effect.all([Fiber.join(first), Fiber.join(second)])),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void))
+      ));
+
+      expect(Option.isNone(result.secondBeforeRelease)).toBe(true);
+    });
+
     it("terminates once, however often termination is requested", async () => {
       const releases = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("count", () => Ref.make(0)),
