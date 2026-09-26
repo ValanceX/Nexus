@@ -22,7 +22,7 @@ MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT rende
 
 ```ts
 import { Effect, Option, Schema } from "effect";
-import { Command, Event, Selector, State } from "@valence/nexus";
+import { Command, Event, Selector, State } from "@valancex/nexus";
 
 // `users` is a State handle created with State.create(UserState, initial)
 const UserSelected = Event.define("UserSelected", Schema.Struct({ userId: UserId }));

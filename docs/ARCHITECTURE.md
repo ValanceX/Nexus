@@ -738,7 +738,7 @@ nexus/
 
 This is the committed decision, not one of several options: **do not**
 introduce a `packages/` directory or split primitives into separately
-published packages (`@valence/nexus-state`, `@valence/nexus-command`, etc.)
+published packages (`@valancex/nexus-state`, `@valancex/nexus-command`, etc.)
 for the first implementation. Add per-primitive subdirectories under
 `src/` as the primitive set (§3) is implemented. Extract a primitive into
 its own package only when a concrete dependency boundary — e.g. something

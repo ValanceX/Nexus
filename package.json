@@ -1,5 +1,5 @@
 {
-  "name": "@valence/nexus",
+  "name": "@valancex/nexus",
   "version": "0.0.1",
   "description": "Valance application/runtime logic layer — orchestration, domain logic, commands, state, and capability resolution.",
   "type": "module",
@@ -10,6 +10,9 @@
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.typecheck.json",
