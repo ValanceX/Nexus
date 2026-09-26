@@ -86,7 +86,7 @@ $ pnpm build
 - **Opaque runtime:** the runtime handle exposes no Effect internals.
 - **Docs match the code:** every primitive doc now matches the exported types.
 
-**v0.4 (unreleased): a semantic analysis foundation.** `Semantic.analyze` checks plain-data declarations of operations against an explicit target profile, without executing anything, and classifies each operation as supported, opaque or incompatible, with structured diagnostics. It is purely additive, and nothing executes differently. See [`docs/semantic.md`](./docs/semantic.md).
+**v0.4: a semantic analysis foundation.** `Semantic.analyze` checks plain-data declarations of operations against an explicit target profile, without executing anything, and classifies each operation as supported, opaque or incompatible, with structured diagnostics. It is purely additive, and nothing executes differently. See [`docs/semantic.md`](./docs/semantic.md).
 
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 

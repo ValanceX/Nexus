@@ -1246,4 +1246,5 @@ decision" rule:
     - The module is a leaf, exported as the one non-primitive namespace
       `Semantic` (D13); PORT and MESH are untouched (D14, D15).
     - Purely additive: no existing export, type, error channel or behaviour
-      changes. `FUTURE_DIRECTION.md` is synchronized after release (D16).
+      changes. I11–I19 are synchronized into `FUTURE_DIRECTION.md` §18 at
+      release (D16).
