@@ -532,3 +532,124 @@ describe("Semantic: diagnostics (C5 emission, C6; I12, I17)", () => {
     }
   });
 });
+
+describe("Semantic: fresh, plain, deterministic output (I13, I17)", () => {
+  const spansOf = (d: Semantic.Diagnostic) => [...(d.location._tag === "Span" ? [d.location.span] : []), ...d.related.map((r) => r.span)];
+
+  it("every output span is a fresh { source, start, end }", () => {
+    const declarationSpan = span("app.ts", 0, 10);
+    const requirementSpan = span("app.ts", 2, 4);
+    const profileSpan = span("profile.json", 0, 3);
+    const outcome = analyzedOf(analyzeAndRecord({
+      declarations: [{ id: "a", provenance: declarationSpan, requirements: complete({ capability: "fs", provenance: requirementSpan }) }],
+      profile: profile([], ["fs"], { provenance: profileSpan }),
+    }));
+    const [location, requirement, prof] = spansOf(outcome.diagnostics[0] as Semantic.Diagnostic);
+
+    expect([location, requirement, prof]).toEqual([declarationSpan, requirementSpan, profileSpan]);
+    expect(location).not.toBe(declarationSpan);
+    expect(requirement).not.toBe(requirementSpan);
+    expect(prof).not.toBe(profileSpan);
+    for (const s of [location, requirement, prof]) expect(Object.keys(s ?? {})).toEqual(["source", "start", "end"]);
+  });
+
+  it("forged extra properties on an input span are not propagated, and never called", () => {
+    let called = 0;
+    const forged = { ...span("app.ts", 1, 2), label: "x", excerpt: "fs()", nested: { a: 1 }, toJSON: () => { called++; return {}; } };
+    const outcome = analyzedOf(analyzeAndRecord({ declarations: [{ id: "a", provenance: forged, requirements: complete("fs") }], profile: profile([], ["fs"]) }));
+
+    expect(outcome.diagnostics[0]?.location).toStrictEqual({ _tag: "Span", span: { source: "app.ts", start: 1, end: 2 } });
+    expect(called).toBe(0);
+  });
+
+  it("mutating the input after analysis doesn't change the outcome", () => {
+    const provenance = { source: "app.ts", start: 1, end: 2 };
+    const capabilities = [{ capability: "fs", provenance: { source: "app.ts", start: 3, end: 4 } }];
+    const provided = ["net"];
+    const notProvided = ["fs"];
+    const declaration = { id: "a", name: "Save", provenance, requirements: { completeness: "complete" as const, capabilities } };
+    const outcome = analyzeAndRecord({ declarations: [declaration], profile: { name: "p", provided, notProvided } });
+    const before = structuredClone(outcome);
+
+    provenance.start = 99; provenance.source = "changed";
+    capabilities[0]!.provenance.end = 99; capabilities.push({ capability: "gpu", provenance: { source: "x", start: 0, end: 0 } });
+    provided.push("fs"); notProvided.length = 0;
+    declaration.id = "changed"; declaration.name = "changed";
+
+    expect(outcome).toStrictEqual(before);
+  });
+
+  it("the same context gives the same outcome, and nothing is kept between calls", () => {
+    const build = (): Semantic.AnalysisContext => ({ declarations: matrixDeclarations.map((d) => ({ ...d })), profile: { ...matrixProfile }, require: ["target-compatibility"] });
+    const other: Semantic.AnalysisContext = { declarations: [{ id: "z", requirements: complete("q") }], profile: profile([], ["q"]) };
+
+    const first = analyzeAndRecord(build());
+    expect(analyzeAndRecord(build())).toStrictEqual(first);
+    analyzeAndRecord(other);
+    expect(analyzeAndRecord(build())).toStrictEqual(first);
+  });
+
+  describe("span semantics (C2, P4)", () => {
+    const cited = (s: Semantic.Span) =>
+      analyzedOf(analyzeAndRecord({ declarations: [{ id: "a", provenance: s, requirements: complete("fs") }], profile: profile([], ["fs"]) })).diagnostics[0]?.location;
+
+    it("carries zero-based and point spans unchanged", () => {
+      expect(cited(span("f", 0, 3))).toEqual({ _tag: "Span", span: span("f", 0, 3) });
+      expect(cited(span("f", 7, 7))).toEqual({ _tag: "Span", span: span("f", 7, 7) });
+    });
+
+    it("carries accepted finite negative, fractional and beyond-source offsets unchanged (D6)", () => {
+      for (const s of [span("f", -3, -1), span("f", 0.5, 2.25), span("f", 0, 1e9)]) expect(cited(s)).toEqual({ _tag: "Span", span: s });
+    });
+
+    it("is half-open: { start: 0, end: 2 } covers the first two code units", () => {
+      const text = "fs();";
+      const s = span("f", 0, 2);
+
+      expect(cited(s)).toEqual({ _tag: "Span", span: s });
+      expect(text.slice(s.start, s.end)).toBe("fs");
+    });
+
+    it("counts UTF-16 code units, not scalar values or graphemes", () => {
+      const text = 'const e = "😀"; fs();';
+      const start = text.indexOf("fs()");
+      const s = span("app.ts", start, start + 4);
+      const outcome = analyzedOf(analyzeAndRecord({
+        declarations: [{ id: "a", requirements: complete({ capability: "fs", provenance: s }) }],
+        profile: profile([], ["fs"]),
+      }));
+
+      expect(outcome.diagnostics[0]?.related).toEqual([{ span: s, label: "requirement declared here" }]);
+      expect(text.slice(s.start, s.end)).toBe("fs()");
+      expect([...text.slice(0, s.start)].length).toBe(s.start - 1);
+    });
+  });
+
+  describe("rendering is the consumer's (DoD 7)", () => {
+    // Throwaway test renderers, not deliverables.
+    const plainText = (d: Semantic.Diagnostic) => d.location._tag === "Span"
+      ? `${d.location.span.source}:${d.location.span.start}-${d.location.span.end} ${d.severity} ${d.code}`
+      : `${d.subject} (no source span) ${d.severity} ${d.code}`;
+    const structured = (ds: ReadonlyArray<Semantic.Diagnostic>) =>
+      ds.map((d) => ({ code: d.code, severity: d.severity, subject: d.subject, where: d.location._tag === "Span" ? d.location.span : null }));
+
+    it("two renderers render the same diagnostics without altering them", () => {
+      const diagnostics = [
+        ...matrix(["target-compatibility"]).diagnostics,
+        ...analyzedOf(analyzeAndRecord({ declarations: [{ id: "u" }], profile: profile(), require: ["target-compatibility"] })).diagnostics,
+      ];
+      const before = structuredClone(diagnostics);
+
+      expect(diagnostics.map(plainText)).toHaveLength(4);
+      expect(structured(diagnostics)).toHaveLength(4);
+      expect(plainText(diagnostics[3] as Semantic.Diagnostic)).toBe("u (no source span) warning nexus-opaque-operation");
+      expect(diagnostics).toStrictEqual(before);
+    });
+  });
+
+  // Runs last in this file: every outcome recorded above.
+  it("every outcome produced in this file survives a JSON round trip unchanged", () => {
+    expect(recorded.length).toBeGreaterThan(50);
+    for (const outcome of recorded) expect(JSON.parse(JSON.stringify(outcome))).toStrictEqual(outcome);
+  });
+});
