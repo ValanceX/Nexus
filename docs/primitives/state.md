@@ -50,9 +50,13 @@ namespace State {
 ```
 
 `create` is scoped: a `StateHandle` lives as long as the `Scope` it was
-created in (ordinarily the `Application`'s own scope via `Runtime`), and
-its `changes` stream completes when that scope closes — state does not
-outlive the runtime that owns it.
+created in. While that scope is open, `changes` stays open. When the scope
+closes, every `changes` subscriber, and every stream derived from it such as
+`Selector.changes`, completes normally, without an error, so state does not
+outlive the scope that owns it. To tie state to an application's lifetime,
+create it in the application's runtime scope
+(`Scope.extend(State.create(...), running.runtime.scope)`). `Application.shutdown`
+then ends its `changes`.
 
 ## Errors
 
