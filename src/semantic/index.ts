@@ -137,4 +137,126 @@ export type AnalysisOutcome =
     }
   | { readonly _tag: "Rejected"; readonly issues: ReadonlyArray<RejectionIssue> };
 
-export const analyze = (_context: AnalysisContext): AnalysisOutcome => ({ _tag: "Rejected", issues: [] });
+// Implementation notes. Caller arrays are walked only by index over `length`,
+// and caller objects are read only through the fields the types above declare:
+// nothing from the input is iterated, enumerated, spread, called or written.
+// Every output value is built fresh.
+
+type Path = ReadonlyArray<string | number>;
+
+// D6 case 3: finite offsets other than -0, end >= start, and a non-empty source.
+const isValidSpan = (span: Span): boolean => {
+  const source = span.source;
+  const start = span.start;
+  const end = span.end;
+
+  return Number.isFinite(start) && Number.isFinite(end) && !Object.is(start, -0) && !Object.is(end, -0) && !(end < start) && source !== "";
+};
+
+// D6: every malformation, in the fixed traversal order.
+const rejectionIssues = (context: AnalysisContext): ReadonlyArray<RejectionIssue> => {
+  const issues: Array<RejectionIssue> = [];
+  const checkSpan = (span: Span | undefined, path: Path) => {
+    if (span !== undefined && !isValidSpan(span)) issues.push({ reason: "invalid-span", path });
+  };
+
+  const identities = new Set<string>();
+  const declarations = context.declarations;
+  for (let i = 0; i < declarations.length; i++) {
+    const declaration = declarations[i] as Declaration;
+    const id = declaration.id;
+
+    if (typeof id !== "string" || id === "") {
+      issues.push({ reason: "missing-identity", path: ["declarations", i, "id"] });
+    } else if (identities.has(id)) {
+      issues.push({ reason: "duplicate-identity", path: ["declarations", i, "id"] });
+    } else {
+      identities.add(id);
+    }
+
+    checkSpan(declaration.provenance, ["declarations", i, "provenance"]);
+
+    const requirements = declaration.requirements;
+    if (requirements !== undefined) {
+      const capabilities = requirements.capabilities;
+      for (let j = 0; j < capabilities.length; j++) {
+        const requirement = capabilities[j] as Requirement;
+
+        if (requirement.capability === "") {
+          issues.push({ reason: "empty-capability", path: ["declarations", i, "requirements", "capabilities", j, "capability"] });
+        }
+        checkSpan(requirement.provenance, ["declarations", i, "requirements", "capabilities", j, "provenance"]);
+      }
+    }
+  }
+
+  const profile = context.profile;
+  checkSpan(profile.provenance, ["profile", "provenance"]);
+
+  const provided = new Set<string>();
+  const providedList = profile.provided;
+  for (let k = 0; k < providedList.length; k++) {
+    const capability = providedList[k] as string;
+
+    if (capability === "") issues.push({ reason: "empty-capability", path: ["profile", "provided", k] });
+    else provided.add(capability);
+  }
+
+  const notProvidedList = profile.notProvided;
+  const notProvided: Array<string> = [];
+  for (let k = 0; k < notProvidedList.length; k++) {
+    const capability = notProvidedList[k] as string;
+
+    if (capability === "") issues.push({ reason: "empty-capability", path: ["profile", "notProvided", k] });
+    notProvided.push(capability);
+  }
+
+  const conflicts = new Set<string>();
+  for (let k = 0; k < notProvided.length; k++) {
+    const capability = notProvided[k] as string;
+
+    if (capability !== "" && provided.has(capability) && !conflicts.has(capability)) {
+      conflicts.add(capability);
+      issues.push({ reason: "conflicting-decision", path: ["profile", "notProvided", k] });
+    }
+  }
+
+  return issues;
+};
+
+const requiresCompatibility = (require: ReadonlyArray<RequiredFact> | undefined): boolean => {
+  if (require === undefined) return false;
+  for (let i = 0; i < require.length; i++) {
+    if (require[i] === "target-compatibility") return true;
+  }
+  return false;
+};
+
+// Provisional until the verdict steps are in place: opaque, never incompatible (I12).
+const analyzeDeclaration = (declaration: Declaration): OperationResult => ({
+  id: declaration.id,
+  known: [],
+  verdict: { _tag: "Undetermined", cause: "operation", requirements: "undeclared" },
+  classification: "opaque",
+});
+
+/** Analyzes declarations against one target profile, without executing anything (C7). */
+export const analyze = (context: AnalysisContext): AnalysisOutcome => {
+  const issues = rejectionIssues(context);
+  if (issues.length > 0) return { _tag: "Rejected", issues };
+
+  const operations: Array<OperationResult> = [];
+  const declarations = context.declarations;
+  for (let i = 0; i < declarations.length; i++) {
+    operations.push(analyzeDeclaration(declarations[i] as Declaration));
+  }
+
+  return {
+    _tag: "Analyzed",
+    properties: ["target-requirements"],
+    required: requiresCompatibility(context.require) ? ["target-compatibility"] : [],
+    profile: context.profile.name,
+    operations,
+    diagnostics: [],
+  };
+};
