@@ -269,3 +269,56 @@ describe("Semantic: supported (C4 compatible, C5)", () => {
     expect(outcome.operations.map((o) => [o.id, o.classification])).toEqual([["a", "supported"], ["b", "opaque"]]);
   });
 });
+
+describe("Semantic: opaque (C4 undetermined, C5; I12, I14, I16)", () => {
+  const verdictsOf = (context: Semantic.AnalysisContext) => analyzedOf(analyzeAndRecord(context)).operations;
+
+  it("a partial set with every id provided is opaque, operation-side, partial", () => {
+    expect(verdictsOf({ declarations: [{ id: "a", requirements: partial("fs") }], profile: profile(["fs"]) })).toEqual([
+      { id: "a", known: ["target-requirements"], verdict: { _tag: "Undetermined", cause: "operation", requirements: "partial" }, classification: "opaque" },
+    ]);
+  });
+
+  it("an empty partial list is opaque, operation-side, partial (DoD 1)", () => {
+    expect(verdictsOf({ declarations: [{ id: "a", requirements: partial() }], profile: profile() })).toEqual([
+      { id: "a", known: ["target-requirements"], verdict: { _tag: "Undetermined", cause: "operation", requirements: "partial" }, classification: "opaque" },
+    ]);
+  });
+
+  it("a complete set with an undecided id is opaque, target-side", () => {
+    expect(verdictsOf({ declarations: [{ id: "a", requirements: complete("fs", "gpu") }], profile: profile(["fs"]) })).toEqual([
+      { id: "a", known: ["target-requirements"], verdict: { _tag: "Undetermined", cause: "target", undecided: ["gpu"] }, classification: "opaque" },
+    ]);
+  });
+
+  it("operation-side wins: a partial set with an undecided id is partial", () => {
+    expect(verdictsOf({ declarations: [{ id: "a", requirements: partial("gpu") }], profile: profile() })[0]?.verdict)
+      .toEqual({ _tag: "Undetermined", cause: "operation", requirements: "partial" });
+  });
+
+  it("duplicate undecided ids are listed once", () => {
+    expect(verdictsOf({ declarations: [{ id: "a", requirements: complete("gpu", "net", "gpu") }], profile: profile(["net"]) })).toEqual([
+      { id: "a", known: ["target-requirements"], verdict: { _tag: "Undetermined", cause: "target", undecided: ["gpu"] }, classification: "opaque" },
+    ]);
+  });
+
+  it("undeclared requirements are unknown: opaque, operation-side, undeclared", () => {
+    expect(verdictsOf({ declarations: [{ id: "a" }], profile: profile(["fs"], ["net"]) })).toEqual([
+      { id: "a", known: [], verdict: { _tag: "Undetermined", cause: "operation", requirements: "undeclared" }, classification: "opaque" },
+    ]);
+  });
+
+  it("unknown is not empty: undeclared is opaque, an empty complete set is supported", () => {
+    expect(verdictsOf({ declarations: [{ id: "a" }, { id: "b", requirements: complete() }], profile: profile() }).map((o) => o.classification))
+      .toEqual(["opaque", "supported"]);
+  });
+
+  it("DoD 3: no facts, against a profile that provides nothing it mentions, is opaque, never incompatible", () => {
+    expect(verdictsOf({ declarations: [{ id: "a" }], profile: profile([], ["fs", "net", "gpu"]) })[0]?.classification).toBe("opaque");
+  });
+
+  it("names don't create knowledge (I14)", () => {
+    expect(verdictsOf({ declarations: [{ id: "filesystem", name: "filesystem" }], profile: profile([], ["filesystem"]) })[0]?.verdict)
+      .toEqual({ _tag: "Undetermined", cause: "operation", requirements: "undeclared" });
+  });
+});

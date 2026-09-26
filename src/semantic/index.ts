@@ -271,11 +271,27 @@ const allProvided = (ids: ReadonlyArray<string>, decisions: Decisions): boolean 
   return true;
 };
 
-// C4. Provisional where the verdict steps aren't in place yet: opaque, never incompatible (I12).
-const verdictOf = (requirements: TargetRequirements | undefined, decisions: Decisions): Verdict => {
-  if (requirements !== undefined && requirements.completeness === "complete" && allProvided(distinctIds(requirements), decisions)) {
-    return { _tag: "Compatible" };
+// The ids a predicate selects, in order.
+const selectIds = (ids: ReadonlyArray<string>, keep: (id: string) => boolean): ReadonlyArray<string> => {
+  const selected: Array<string> = [];
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i] as string;
+    if (keep(id)) selected.push(id);
   }
+  return selected;
+};
+
+// C4. The provisional case (a complete set with a not-provided id and nothing
+// undecided) is opaque until the incompatible step is in place, never incompatible (I12).
+const verdictOf = (requirements: TargetRequirements | undefined, decisions: Decisions): Verdict => {
+  if (requirements === undefined) return { _tag: "Undetermined", cause: "operation", requirements: "undeclared" };
+  if (requirements.completeness === "partial") return { _tag: "Undetermined", cause: "operation", requirements: "partial" };
+
+  const ids = distinctIds(requirements);
+  const undecided = selectIds(ids, (id) => !decisions.provided.has(id) && !decisions.notProvided.has(id));
+  if (undecided.length > 0) return { _tag: "Undetermined", cause: "target", undecided };
+
+  if (allProvided(ids, decisions)) return { _tag: "Compatible" };
   return { _tag: "Undetermined", cause: "operation", requirements: "undeclared" };
 };
 
