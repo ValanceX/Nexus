@@ -169,6 +169,64 @@ describe("Application lifecycle (N2)", () => {
     expect(result.secondReturnedAt).toEqual({ _tag: "Stopped" });
   });
 
+  // B4: a release that throws during termination must not strand the lifecycle.
+  for (const performer of ["shutdown", "scope"] as const) {
+    it(`a release that throws still completes the lifecycle: the performer (${performer === "shutdown" ? "route 1" : "route 2"}) gets the failure, everyone else completes`, async () => {
+      const blowUp = new Error("release blew up");
+
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("releases", () => Ref.make(0)),
+        Effect.bind("releasing", () => Deferred.make<void>()),
+        Effect.bind("gate", () => Deferred.make<void>()),
+        Effect.bind("scope", () => Scope.make()),
+        // 1. The one resource counts its release, signals, waits for the gate, then dies.
+        Effect.bind("running", ({ scope, releases, releasing, gate }) => Scope.extend(Application.start(Application.define({
+          name: "throws-on-release",
+          runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1).pipe(
+            Effect.andThen(Deferred.succeed(releasing, undefined)),
+            Effect.andThen(Deferred.await(gate)),
+            Effect.andThen(Effect.die(blowUp))
+          ))),
+        })), scope)),
+        // The performer starts the termination; it's held inside the release.
+        Effect.bind("performing", ({ running, scope }) => Effect.fork(Effect.exit(performer === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void)))),
+        Effect.tap(({ releasing }) => Deferred.await(releasing)),
+        // 4. A concurrent shutdown, issued while the release is in progress.
+        Effect.bind("concurrent", ({ running }) => Effect.fork(Effect.exit(Application.shutdown(running)))),
+        Effect.tap(() => settle),
+        Effect.bind("concurrentWhileReleasing", ({ concurrent }) => Fiber.poll(concurrent)),
+        Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
+        // 2. The performer receives the original failure.
+        Effect.bind("performerExit", ({ performing }) => Fiber.join(performing)),
+        Effect.tap(() => settle),
+        Effect.bind("concurrentExit", ({ concurrent }) => Fiber.poll(concurrent))
+      ).pipe(
+        // 3. The lifecycle reached Stopped.
+        Effect.bind("status", ({ running }) => Application.status(running)),
+        // 5. A later shutdown completes.
+        Effect.bind("later", ({ running }) => Effect.fork(Effect.exit(Application.shutdown(running)))),
+        Effect.tap(() => settle),
+        Effect.bind("laterExit", ({ later }) => Fiber.poll(later)),
+        // 6. Closing the owning scope completes (for the route 1 performer, this is its first close).
+        Effect.bind("closing", ({ scope }) => Effect.fork(Effect.exit(Scope.close(scope, Exit.void)))),
+        Effect.tap(() => settle),
+        Effect.bind("closingExit", ({ closing }) => Fiber.poll(closing)),
+        // 7. The release ran once.
+        Effect.bind("released", ({ releases }) => Ref.get(releases))
+      ));
+
+      const completedNormally = (polled: Option.Option<Exit.Exit<Exit.Exit<void>>>) => Option.map(polled, (fiberExit) => Exit.isSuccess(fiberExit) && Exit.isSuccess(fiberExit.value));
+
+      expect(Option.isNone(result.concurrentWhileReleasing)).toBe(true);
+      expect(Exit.isFailure(result.performerExit) && Option.getOrUndefined(Cause.dieOption(result.performerExit.cause))).toBe(blowUp);
+      expect(result.status).toEqual({ _tag: "Stopped" });
+      expect(completedNormally(result.concurrentExit)).toEqual(Option.some(true));
+      expect(completedNormally(result.laterExit)).toEqual(Option.some(true));
+      expect(completedNormally(result.closingExit)).toEqual(Option.some(true));
+      expect(result.released).toBe(1);
+    });
+  }
+
   it("refuses new work while Stopping", async () => {
     let ran = false;
 

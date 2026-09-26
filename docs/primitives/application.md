@@ -100,7 +100,12 @@ exception or an `unknown` rejection reaching the caller. A failed `start`
 returns no `RunningApplication`, and releases whatever it had built no later
 than when the caller's scope closes.
 
-`shutdown` and `status` never fail. `createState`'s only typed error is
+`status` never fails, and `shutdown` has no typed error. A resource release
+that dies during termination doesn't stop it: the application still reaches
+`Stopped`, and every other `shutdown` call (and closing the start scope)
+completes normally. Only the call that performed the termination, the
+`shutdown` or the closing of the start scope that claimed it, then re-raises
+the release's original failure, as a defect. `createState`'s only typed error is
 `StateInitError`, for an invalid initial value. Using an application whose
 termination has begun is misuse, and is reported as a defect, never a typed
 error: `createState` is refused (it creates no `State`), and so is work run
@@ -119,7 +124,8 @@ through its `runtime` (see [runtime.md](./runtime.md)).
   ended normally. A failed start is an initialization outcome, not a way to
   terminate.
 - `shutdown` is idempotent and safe to call concurrently: the application
-  terminates once, and every call returns once the status is `Stopped`.
+  terminates once, and every call returns once the status is `Stopped`,
+  even when a resource release fails (see Errors).
 - **New work is admitted only while `Running` and no termination has been
   requested.** From the moment either termination route starts, `createState`
   and anything run through `running.runtime` are refused as defects, even

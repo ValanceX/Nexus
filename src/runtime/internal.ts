@@ -94,9 +94,10 @@ export const setHooks = (handle: NexusRuntime<never>, hooks: Lifecycle["hooks"])
  *    *begins*;
  * 3. closes the bus, so no event is delivered after this (D4);
  * 4. closes the scope, releasing every resource;
- * 5. runs `onEnd` (an application's `Stopped`).
- * Every other caller waits until all of that is done. Uninterruptible, so a
- * termination that has been claimed always completes.
+ * 5. runs `onEnd` (an application's `Stopped`), even when a release failed.
+ * Every other caller waits until all of that is done, then completes normally.
+ * If a release failed, the claimer alone then re-raises that failure's cause.
+ * Uninterruptible, so a termination that has been claimed always completes.
  */
 export const terminateLifecycle = (lifecycle: Lifecycle): Effect.Effect<void> => Effect.uninterruptible(Effect.suspend(() => {
   if (lifecycle.state.claimed) {
@@ -110,10 +111,11 @@ export const terminateLifecycle = (lifecycle: Lifecycle): Effect.Effect<void> =>
     Effect.andThen(lifecycle.hooks.onBegin),
     Effect.andThen(Effect.sync(() => { lifecycle.state.accepting = false; })),
     Effect.andThen(lifecycle.bus.close),
-    Effect.andThen(Scope.close(lifecycle.scope, Exit.void)),
-    Effect.andThen(lifecycle.hooks.onEnd),
-    Effect.andThen(Deferred.succeed(lifecycle.terminated, undefined)),
-    Effect.asVoid
+    // A failed release must not strand the lifecycle: finish it, then re-raise.
+    Effect.andThen(Effect.exit(Scope.close(lifecycle.scope, Exit.void))),
+    Effect.tap(() => lifecycle.hooks.onEnd),
+    Effect.tap(() => Deferred.succeed(lifecycle.terminated, undefined)),
+    Effect.flatMap((released) => released)
   );
 }));
 

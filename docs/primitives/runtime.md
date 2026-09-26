@@ -105,7 +105,9 @@ NEXUS didn't make is refused the same way.
   and every subscription ends normally; then close the runtime's `Scope`,
   which releases every `Resource` (§11) acquired anywhere in that runtime,
   including by commands that already completed. A termination that has
-  begun always completes.
+  begun always completes, even when a release fails: every waiting caller
+  completes normally, and only the caller that performed the termination
+  re-raises the release's original failure, as a defect.
 - Effects already running when termination begins are not interrupted by
   it; only new work is refused.
 - `Runtime` must never expose the Effect `Runtime`, the service `Context`

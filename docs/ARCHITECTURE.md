@@ -220,7 +220,9 @@ running application, so it is not a way of terminating one.
 A started application terminates in exactly two ways: `Application.shutdown`,
 or closing the caller's scope that `start` ran in. Both reach `Stopped`
 once, release everything, and end every observation stream over
-application-owned resources normally. Status never moves backwards, and from
+application-owned resources normally, even when a resource release fails
+(only the call that performed the termination then re-raises that failure).
+Status never moves backwards, and from
 `Stopping` onward new work is refused. See
 [`primitives/application.md`](./primitives/application.md).
 
@@ -1145,7 +1147,8 @@ decision" rule:
      is removed: an application's runtime ends only through its lifecycle, a
      standalone runtime when its owner's scope closes.
    - A started application terminates in exactly two ways, once, with
-     monotonic status and an idempotent `shutdown`; new work, including
+     monotonic status and an idempotent `shutdown` that completes even when
+     a release fails (B4); new work, including
      `Application.createState`, is refused as a defect from `Stopping` on
      (N2; Q1, and Q2 = A).
    - Application-owned State comes from `Application.createState`, whose
