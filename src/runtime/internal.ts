@@ -24,8 +24,17 @@ export interface Lifecycle {
   readonly bus: Bus;
   /** Orders admission (`admit`) against the start of termination. */
   readonly admission: Effect.Semaphore;
+  /** Completed the moment termination begins: admission has stopped. */
+  readonly begun: Deferred.Deferred<void>;
   readonly terminated: Deferred.Deferred<void>;
   readonly state: { accepting: boolean; claimed: boolean };
+  /**
+   * An owner's lifecycle transitions, run by whichever caller performs the
+   * termination: `onBegin` atomically with the end of admission, `onEnd` after
+   * every resource is released and before any caller returns. An application
+   * uses them for `Stopping` and `Stopped`.
+   */
+  hooks: { readonly onBegin: Effect.Effect<void>; readonly onEnd: Effect.Effect<void> };
 }
 
 export interface RuntimeRecord {
@@ -53,15 +62,35 @@ export const refusal = (reason: string): Error => new Error(`NEXUS: ${reason}`);
 export const makeLifecycle = (bus: Bus): Effect.Effect<Lifecycle> => Effect.Do.pipe(
   Effect.bind("scope", () => Scope.make()),
   Effect.bind("admission", () => Effect.makeSemaphore(1)),
+  Effect.bind("begun", () => Deferred.make<void>()),
   Effect.bind("terminated", () => Deferred.make<void>()),
-  Effect.map(({ scope, admission, terminated }): Lifecycle => ({ scope, bus, admission, terminated, state: { accepting: true, claimed: false } }))
+  Effect.map(({ scope, admission, begun, terminated }): Lifecycle => ({
+    scope, bus, admission, begun, terminated,
+    state: { accepting: true, claimed: false },
+    hooks: { onBegin: Effect.void, onEnd: Effect.void },
+  }))
 );
 
+/** Gives a runtime's owner its lifecycle transitions (see `Lifecycle.hooks`). */
+export const setHooks = (handle: NexusRuntime<never>, hooks: Lifecycle["hooks"]): void => {
+  const record = recordOf(handle);
+
+  if (record !== undefined) {
+    record.lifecycle.hooks = hooks;
+  }
+};
+
 /**
- * Terminates a runtime, once: stop admitting new work, close the bus (no event
- * is delivered after this, D4), then close the scope, releasing every resource.
- * A second call waits for the first to finish. Uninterruptible, so a termination
- * that has begun always completes.
+ * Terminates a runtime, once. The first caller claims the termination, then:
+ * 1. waits for work already admitted (it holds the admission permit) to finish;
+ * 2. under that permit, in one step: runs `onBegin` (an application's
+ *    `Running → Stopping`) and stops admitting. This is the moment termination
+ *    *begins*: no new work starts after it;
+ * 3. closes the bus, so no event is delivered after this (D4);
+ * 4. closes the scope, releasing every resource;
+ * 5. runs `onEnd` (an application's `Stopped`).
+ * Every other caller waits until all of that is done. Uninterruptible, so a
+ * termination that has been claimed always completes.
  */
 export const terminateLifecycle = (lifecycle: Lifecycle): Effect.Effect<void> => Effect.uninterruptible(Effect.suspend(() => {
   if (lifecycle.state.claimed) {
@@ -71,9 +100,11 @@ export const terminateLifecycle = (lifecycle: Lifecycle): Effect.Effect<void> =>
   lifecycle.state.claimed = true;
 
   return Effect.Do.pipe(
-    Effect.andThen(lifecycle.admission.withPermits(1)(Effect.sync(() => { lifecycle.state.accepting = false; }))),
+    Effect.andThen(lifecycle.admission.withPermits(1)(lifecycle.hooks.onBegin.pipe(Effect.andThen(Effect.sync(() => { lifecycle.state.accepting = false; }))))),
+    Effect.andThen(Deferred.succeed(lifecycle.begun, undefined)),
     Effect.andThen(lifecycle.bus.close),
     Effect.andThen(Scope.close(lifecycle.scope, Exit.void)),
+    Effect.andThen(lifecycle.hooks.onEnd),
     Effect.andThen(Deferred.succeed(lifecycle.terminated, undefined)),
     Effect.asVoid
   );
@@ -88,14 +119,25 @@ export const terminate = (handle: NexusRuntime<never>): Effect.Effect<void> => {
 /**
  * Runs `effect` only if the runtime is still admitting work, and otherwise dies
  * with the refusal. Admission and the start of termination are totally ordered:
- * `effect` either completes before termination begins, or doesn't run.
+ * `effect` either runs to completion before termination begins, or doesn't run.
+ *
+ * A request made once termination has been claimed but hasn't yet begun (it's
+ * waiting for work already admitted) doesn't compete with it for the permit,
+ * which the permit's non-FIFO wake-up would otherwise allow: it waits until
+ * termination begins, then is refused.
  */
 export const admit = <A, E>(handle: NexusRuntime<never>, effect: Effect.Effect<A, E>): Effect.Effect<A, E> => {
   const record = recordOf(handle);
 
-  return record === undefined
-    ? Effect.die(refusal("not a runtime NEXUS made"))
-    : record.lifecycle.admission.withPermits(1)(Effect.suspend(() => record.lifecycle.state.accepting
+  if (record === undefined) {
+    return Effect.die(refusal("not a runtime NEXUS made"));
+  }
+
+  const { lifecycle } = record;
+
+  return Effect.suspend(() => lifecycle.state.claimed
+    ? Deferred.await(lifecycle.begun).pipe(Effect.andThen(Effect.die(refusal("the runtime has begun terminating"))))
+    : lifecycle.admission.withPermits(1)(Effect.suspend(() => lifecycle.state.accepting
       ? effect
-      : Effect.die(refusal("the runtime has begun terminating"))));
+      : Effect.die(refusal("the runtime has begun terminating")))));
 };

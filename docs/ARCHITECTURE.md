@@ -262,8 +262,9 @@ locator. Application dependencies should remain explicit.
 Concretely: a `NexusRuntime` is an **opaque handle**. Callers pass it to
 `Runtime.run`/`Runtime.runFork`, and nothing reachable from it is the
 Effect runtime, the service `Context` or the runtime's `Scope`. A runtime
-terminates once, in a fixed order: stop admitting new work, close its event
-bus, then release its resources. An application's runtime can't be shut
+terminates once, in a fixed order: wait for work already admitted, stop
+admitting new work (for an application, atomically with entering
+`Stopping`), close its event bus, then release its resources. An application's runtime can't be shut
 down directly; a standalone runtime from `Runtime.make` ends when its
 owner's scope closes. See [`primitives/runtime.md`](./primitives/runtime.md).
 

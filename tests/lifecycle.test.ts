@@ -1,5 +1,5 @@
 // v0.3: the application lifecycle (N1, N2) and application-owned State (D1).
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Schedule, Schema, Scope, Stream, Runtime as EffectRuntime } from "effect";
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, ParseResult, Ref, Schedule, Schema, Scope, Stream, Runtime as EffectRuntime } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
@@ -208,8 +208,30 @@ describe("Application lifecycle (N2)", () => {
 
 const Counter = Schema.Struct({ count: Schema.Number });
 
-// 0–3 scheduler yields, so each side of a race may start first.
-const jitter = Effect.suspend(() => Effect.repeatN(Effect.yieldNow(), Math.floor(Math.random() * 4)));
+// A Number schema whose decode signals `entered`, then waits for `gate`. A
+// createState using it holds the runtime's admission until the test opens the gate.
+const gatedNumber = (entered: Deferred.Deferred<void>, gate: Deferred.Deferred<void>) => Schema.transformOrFail(Schema.Number, Schema.Number, {
+  strict: true,
+  decode: (n) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(gate)), Effect.as(n)),
+  encode: (n) => ParseResult.succeed(n),
+});
+
+// An application whose one resource counts its release, signals `releasing`, and
+// then holds termination in `Stopping` until `gate` opens.
+const gatedRelease = (releases: Ref.Ref<number>, releasing: Deferred.Deferred<void>, gate: Deferred.Deferred<void>) => Application.define({
+  name: "gated",
+  runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1).pipe(
+    Effect.andThen(Deferred.succeed(releasing, undefined)),
+    Effect.andThen(Deferred.await(gate))
+  ))),
+});
+
+// Lets forked fibers run until they block. Scheduling, not time: no sleeps.
+const settle = Effect.repeatN(Effect.yieldNow(), 20);
+
+// Route 1 or route 2, as an effect, for one application and its caller's start scope.
+const terminateBy = <R>(route: "shutdown" | "scope", running: Application.RunningApplication<R>, scope: Scope.CloseableScope) =>
+  route === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void);
 
 describe("Application-owned State (D1, Q2 = A)", () => {
   it("lives in the application: its changes and a derived selector end on either route", async () => {
@@ -263,39 +285,89 @@ describe("Application-owned State (D1, Q2 = A)", () => {
     expect(isRefusal(result.onceStopped)).toBe(true);
   });
 
-  it("racing termination, either creates a State that ends with the application or refuses: never a third outcome", async () => {
-    const outcomes = { created: 0, refused: 0 };
+  // B1: construction holding admission when termination is requested. Deterministic: gates, no randomness.
+  for (const route of ["shutdown", "scope"] as const) {
+    it(`construction holding admission finishes first; termination waits, then refuses new work from Stopping (route ${route === "shutdown" ? "1" : "2"})`, async () => {
+      let ran = false;
 
-    for (const route of ["shutdown", "scope"] as const) {
-      for (let i = 0; i < 200; i++) {
-        const outcome = await Effect.runPromise(Effect.Do.pipe(
-          Effect.bind("scope", () => Scope.make()),
-          Effect.bind("running", ({ scope }) => Scope.extend(Application.start(Application.define({ name: "race", runtime: Layer.empty })), scope)),
-          Effect.bind("raced", ({ running, scope }) => Effect.all([
-            jitter.pipe(Effect.andThen(Effect.exit(Application.createState(running, Counter, { count: 0 })))),
-            jitter.pipe(Effect.andThen(route === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void))),
-          ], { concurrency: "unbounded" })),
-          Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
-          Effect.flatMap(({ raced: [exit] }): Effect.Effect<"created" | "refused" | "other", unknown> => {
-            if (Exit.isSuccess(exit)) {
-              // A created State is bound to the (now stopped) application, so its changes have ended.
-              const state: StateHandle<{ readonly count: number }> = exit.value;
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("releases", () => Ref.make(0)),
+        Effect.bind("releasing", () => Deferred.make<void>()),
+        Effect.bind("releaseGate", () => Deferred.make<void>()),
+        Effect.bind("entered", () => Deferred.make<void>()),
+        Effect.bind("decodeGate", () => Deferred.make<void>()),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.extend(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
+        // Construction is admitted, and holds admission inside its decode.
+        Effect.bind("creating", ({ running, entered, decodeGate }) => Effect.fork(Effect.exit(Application.createState(running, gatedNumber(entered, decodeGate), 1)))),
+        Effect.tap(({ entered }) => Deferred.await(entered)),
+        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        // A construction requested once termination is pending must not overtake it.
+        Effect.bind("late", ({ running }) => Effect.fork(Effect.exit(Application.createState(running, Counter, { count: 0 })))),
+        Effect.tap(() => settle),
+        // Termination is waiting for the admitted construction: it hasn't begun.
+        Effect.bind("statusWhileAdmitted", ({ running }) => Application.status(running)),
+        Effect.bind("terminatingWhileAdmitted", ({ terminating }) => Fiber.poll(terminating)),
+        Effect.bind("lateWhileAdmitted", ({ late }) => Fiber.poll(late)),
+        Effect.bind("releasedWhileAdmitted", ({ releases }) => Ref.get(releases))
+      ).pipe(
+        Effect.tap(({ decodeGate }) => Deferred.succeed(decodeGate, undefined)),
+        Effect.bind("created", ({ creating }) => Fiber.join(creating)),
+        // Termination has begun and is releasing: the application is Stopping.
+        Effect.tap(({ releasing }) => Deferred.await(releasing)),
+        Effect.bind("statusAtStopping", ({ running }) => Application.status(running)),
+        Effect.bind("forkAtStopping", ({ running }) => Fiber.await(Runtime.runFork(running.runtime, Effect.sync(() => { ran = true; })))),
+        Effect.bind("createAtStopping", ({ running }) => Effect.exit(Application.createState(running, Counter, { count: 0 }))),
+        Effect.bind("lateExit", ({ late }) => Fiber.join(late)),
+        Effect.tap(({ releaseGate }) => Deferred.succeed(releaseGate, undefined)),
+        Effect.tap(({ terminating }) => Fiber.join(terminating)),
+        Effect.bind("changesEnd", ({ created }): Effect.Effect<Exit.Exit<unknown, unknown>> => Exit.isSuccess(created)
+          ? Effect.exit(Stream.runDrain(created.value.changes).pipe(Effect.timeout(Duration.seconds(1))))
+          : Effect.succeed(Exit.fail("not created"))),
+        Effect.bind("finalStatus", ({ running }) => Application.status(running)),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+        Effect.bind("released", ({ releases }) => Ref.get(releases))
+      ));
 
-              return Stream.runDrain(state.changes).pipe(Effect.timeout(Duration.seconds(1)), Effect.as("created" as const));
-            }
+      expect(result.statusWhileAdmitted).toEqual({ _tag: "Running" });
+      expect(Option.isNone(result.terminatingWhileAdmitted)).toBe(true);
+      expect(Option.isNone(result.lateWhileAdmitted)).toBe(true);
+      expect(result.releasedWhileAdmitted).toBe(0);
+      expect(Exit.isSuccess(result.created)).toBe(true);
+      expect(result.statusAtStopping).toEqual({ _tag: "Stopping" });
+      expect(isRefusal(result.forkAtStopping)).toBe(true);
+      expect(ran).toBe(false);
+      expect(isRefusal(result.createAtStopping)).toBe(true);
+      expect(isRefusal(result.lateExit)).toBe(true);
+      expect(Exit.isSuccess(result.changesEnd)).toBe(true);
+      expect(result.finalStatus).toEqual({ _tag: "Stopped" });
+      expect(result.released).toBe(1);
+    });
 
-            return Effect.succeed(isRefusal(exit) ? "refused" as const : "other" as const);
-          })
-        ));
+    it(`construction requested once termination has begun is refused (route ${route === "shutdown" ? "1" : "2"})`, async () => {
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("releases", () => Ref.make(0)),
+        Effect.bind("releasing", () => Deferred.make<void>()),
+        Effect.bind("releaseGate", () => Deferred.make<void>()),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.extend(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
+        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        // Termination has begun and is held in Stopping by the gated release.
+        Effect.tap(({ releasing }) => Deferred.await(releasing)),
+        Effect.bind("statusAtStopping", ({ running }) => Application.status(running)),
+        Effect.bind("construction", ({ running }) => Effect.exit(Application.createState(running, Counter, { count: 0 }))),
+        Effect.tap(({ releaseGate }) => Deferred.succeed(releaseGate, undefined)),
+        Effect.tap(({ terminating }) => Fiber.join(terminating)),
+        Effect.bind("finalStatus", ({ running }) => Application.status(running)),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+        Effect.bind("released", ({ releases }) => Ref.get(releases))
+      ));
 
-        expect(outcome).not.toBe("other");
-        outcomes[outcome as "created" | "refused"] += 1;
-      }
-    }
-
-    // Both sides of the race were exercised.
-    expect(outcomes.created).toBeGreaterThan(0);
-    expect(outcomes.refused).toBeGreaterThan(0);
-  });
+      expect(result.statusAtStopping).toEqual({ _tag: "Stopping" });
+      expect(isRefusal(result.construction)).toBe(true);
+      expect(result.finalStatus).toEqual({ _tag: "Stopped" });
+      expect(result.released).toBe(1);
+    });
+  }
 });
 

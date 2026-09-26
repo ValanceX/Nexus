@@ -103,7 +103,10 @@ that itself), not to `publish`.
   application), the bus closes when termination begins, *before* any other
   resource is released. From then on, no event is delivered to any
   subscription, and every existing `Event.subscribe` stream ends normally
-  (it emits nothing further and signals its end).
+  (it emits nothing further and signals its end). An event a subscriber is
+  already handling may finish; events still queued for it are discarded,
+  never handed over after the close. (A subscription takes one event at a
+  time, only when its subscriber asks for the next.)
 - **Publishing keeps working.** `publish` never fails: an effect still
   running after the bus has closed can publish, and the event reaches no
   subscriber, as a publish with no subscribers always has.

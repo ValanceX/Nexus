@@ -1,12 +1,12 @@
 import type { EventBusShape } from "../event/index.js";
 
-import { Deferred, Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
+import { Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
 
 import type { StateHandle, StateInitError } from "../state/index.js";
 
 import * as Capability from "../capability/index.js";
 import * as Runtime from "../runtime/index.js";
-import { admit, refusal, scopeOf, terminate } from "../runtime/internal.js";
+import { admit, refusal, scopeOf, setHooks, terminate } from "../runtime/internal.js";
 import * as State from "../state/index.js";
 
 export type ApplicationStatus =
@@ -51,32 +51,10 @@ export interface RunningApplication<R> {
 // forge a lifecycle transition.
 interface AppRecord {
   readonly statusRef: Ref.Ref<ApplicationStatus>;
-  readonly stopped: Deferred.Deferred<void>;
   readonly runtime: Runtime.NexusRuntime<never>;
 }
 
 const apps = new WeakMap<object, AppRecord>();
-
-/**
- * Terminates the application, once (N2). The first caller claims the termination
- * (`Running` → `Stopping`), terminates the runtime (no new work, bus closed,
- * resources released), then sets `Stopped`. Every other caller waits for
- * `Stopped`; none writes a status. Uninterruptible, so a started termination
- * always completes.
- */
-const terminateApplication = (record: AppRecord): Effect.Effect<void> => Effect.uninterruptible(
-  Ref.modify(record.statusRef, (current): [boolean, ApplicationStatus] => current._tag === "Running"
-    ? [true, { _tag: "Stopping" }]
-    : [false, current]
-  ).pipe(Effect.andThen((claimed) => claimed
-    ? terminate(record.runtime).pipe(
-      Effect.andThen(Ref.set(record.statusRef, { _tag: "Stopped" })),
-      Effect.andThen(Deferred.succeed(record.stopped, undefined)),
-      Effect.asVoid
-    )
-    : Deferred.await(record.stopped)
-  ))
-);
 
 export const define = <R>(definition: ApplicationDefinition<R>): Application<R> => ({ definition });
 
@@ -107,12 +85,16 @@ export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<
     )
   ),
   Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Running" })),
-  Effect.bind("stopped", () => Deferred.make<void>()),
-  Effect.let("record", ({ statusRef, stopped, runtime }): AppRecord => ({ statusRef, stopped, runtime })),
-  // Route 2: closing the caller's start scope terminates the application exactly
-  // as Application.shutdown does. Added after Runtime.make's own finalizer, so it
-  // runs first; that one then finds the runtime already terminated.
-  Effect.tap(({ record }) => Effect.addFinalizer(() => terminateApplication(record))),
+  // The application's lifecycle is its runtime's (N2). The runtime's termination
+  // runs these hooks, whichever route triggers it: `Stopping` atomically with the
+  // end of admission, `Stopped` once everything is released. Route 2 is the
+  // runtime's own finalizer on the caller's start scope; route 1 is
+  // Application.shutdown. Both are the same single, claimed termination.
+  Effect.tap(({ statusRef, runtime }) => Effect.sync(() => setHooks(runtime, {
+    onBegin: Ref.update(statusRef, (current): ApplicationStatus => current._tag === "Running" ? { _tag: "Stopping" } : current),
+    onEnd: Ref.set(statusRef, { _tag: "Stopped" }),
+  }))),
+  Effect.let("record", ({ statusRef, runtime }): AppRecord => ({ statusRef, runtime })),
   Effect.map(({ statusRef, runtime, environment, record }): RunningApplication<R> => {
     const running: RunningApplication<R> = Object.freeze({ status: Ref.get(statusRef), runtime, environment });
 
@@ -126,7 +108,7 @@ export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<
 export const shutdown = <R>(running: RunningApplication<R>): Effect.Effect<void> => {
   const record = apps.get(running);
 
-  return record === undefined ? Effect.die(refusal("not an application NEXUS started")) : terminateApplication(record);
+  return record === undefined ? Effect.die(refusal("not an application NEXUS started")) : terminate(record.runtime);
 };
 
 export const status = <R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus> => running.status;

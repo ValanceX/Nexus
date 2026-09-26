@@ -253,6 +253,35 @@ describe("Runtime", () => {
       expect(Exit.isInterrupted(result.publisherExit)).toBe(true);
     });
 
+    it("hands no buffered event to a subscriber once resource release has begun (B2)", async () => {
+      const log: Array<string> = [];
+
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.let("LoggedLive", () => Layer.scopedDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); })))),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("runtime", ({ scope, LoggedLive }) => Scope.extend(Runtime.make(LoggedLive), scope)),
+        Effect.bind("busy", () => Deferred.make<void>()),
+        Effect.bind("handling1", () => Deferred.make<void>()),
+        Effect.bind("hold1", () => Deferred.make<void>()),
+        Effect.let("consumer", ({ runtime, busy, handling1, hold1 }) => Runtime.runFork(runtime, Stream.runForEach(Event.subscribe(Ping), ({ n }) =>
+          Effect.sync(() => { log.push(`delivered ${n}`); }).pipe(Effect.andThen(
+            n === 0 ? Deferred.await(busy) : n === 1 ? Deferred.succeed(handling1, undefined).pipe(Effect.andThen(Deferred.await(hold1))) : Effect.void
+          ))
+        ))),
+        Effect.tap(() => Effect.repeatN(Effect.yieldNow(), 20)),
+        Effect.tap(({ runtime }) => Effect.promise(() => Runtime.run(runtime, Effect.forEach([0, 1, 2, 3, 4, 5], (n) => Event.publish(Ping, { n }), { discard: true })))),
+        Effect.tap(({ busy }) => Deferred.succeed(busy, undefined)),
+        Effect.tap(({ handling1 }) => Deferred.await(handling1)),
+        // Terminate while event 1 is being handled and 2..5 are buffered: the bus closes, then resources release.
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+        Effect.tap(({ hold1 }) => Deferred.succeed(hold1, undefined)),
+        Effect.bind("consumerExit", ({ consumer }) => Fiber.await(consumer).pipe(Effect.timeout(Duration.seconds(1))))
+      ));
+
+      expect(log).toEqual(["delivered 0", "delivered 1", "released"]);
+      expect(Exit.isSuccess(result.consumerExit)).toBe(true);
+    });
+
     it("a second termination waits for the first to finish releasing", async () => {
       const result = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("releasing", () => Deferred.make<void>()),

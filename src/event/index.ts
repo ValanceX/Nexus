@@ -39,7 +39,10 @@ export const publish = <Tag extends string, Payload>(event: EventDef<Tag, Payloa
 export const subscribe = <Tag extends string, Payload>(event: EventDef<Tag, Payload>): Stream.Stream<Payload, never, EventBusShape> => Stream.unwrapScoped(Effect.Do.pipe(
   Effect.andThen(EventBus),
   Effect.andThen((bus) => bus.subscribe),
-  Effect.map((dequeue) => Stream.fromQueue(dequeue).pipe(
+  // One event per pull (D4): an event is taken from the queue only when the
+  // subscriber asks for the next one, so events still buffered when the bus
+  // closes stay in the queue and are discarded with it, never handed over later.
+  Effect.map((dequeue) => Stream.fromQueue(dequeue, { maxChunkSize: 1 }).pipe(
     Stream.filter((envelope): envelope is Envelope & { readonly payload: Payload } => envelope._tag === event._tag),
     Stream.map((envelope) => envelope.payload as Payload)
   ))

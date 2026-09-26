@@ -122,8 +122,12 @@ through its `runtime` (see [runtime.md](./runtime.md)).
   terminates once, and every call returns once the status is `Stopped`.
 - **New work is admitted only while `Running`.** From `Stopping` onward,
   `createState` and anything run through `running.runtime` are refused as
-  defects. Effects already running when termination begins aren't
-  interrupted by it.
+  defects. Termination waits for work already admitted (a `createState` in
+  progress) to finish before it enters `Stopping`, so a `State` either exists
+  before termination begins, and then ends with the application, or its
+  construction is refused. A `createState` requested while a termination is
+  waiting is refused once `Stopping` begins. Effects already running when
+  termination begins aren't interrupted by it.
 - `start` must resolve `Environment` (§10.1) before the service graph is
   considered ready, since services may themselves depend on resolved
   capabilities.
