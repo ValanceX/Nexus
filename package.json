@@ -1,6 +1,6 @@
 {
   "name": "@valancex/nexus",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Valance application/runtime logic layer — orchestration, domain logic, commands, state, and capability resolution.",
   "type": "module",
   "license": "MIT",
