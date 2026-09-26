@@ -19,10 +19,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@valancex/mesh-runtime": "^0.5.0",
     "effect": "^3.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "@valancex/mesh-compiler": "^0.5.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

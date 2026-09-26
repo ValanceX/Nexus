@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@valancex/mesh-runtime':
+        specifier: ^0.5.0
+        version: 0.5.0
       effect:
         specifier: ^3.10.0
         version: 3.22.2
@@ -15,6 +18,9 @@ importers:
       '@types/node':
         specifier: ^26.6.2
         version: 26.6.2
+      '@valancex/mesh-compiler':
+        specifier: ^0.5.0
+        version: 0.5.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -318,6 +324,14 @@ packages:
 
   '@types/node@26.6.2':
     resolution: {integrity: sha512-X1P21scMv4zGKLYqjdGjaKa7COa0RKVYYZZN/NfvLQ1JegxFhdhpZG/Lyn8AXx6CDUavKAd11v6BvfpkDByK8g==}
+
+  '@valancex/mesh-compiler@0.5.0':
+    resolution: {integrity: sha512-FD+DfU8LdljAQou72WZ/Ya6j6CyUlcdLED/Z56/qQvfGzp66ioHgBawrb8sel2mH4N13Dyu6KrbZUjdmGpzOzA==}
+    engines: {node: '>=22'}
+
+  '@valancex/mesh-runtime@0.5.0':
+    resolution: {integrity: sha512-t8K/Fq8/lQWb1gJa+wsW4qvlYAvwcxsfsfHPhDH1+v9GpTsTARLOenCE67CMWO5gnmTngckWQ8XpSM8lx+llsg==}
+    engines: {node: '>=22'}
 
   '@vitest/expect@2.1.9':
     resolution: {integrity: sha512-UJCIkTBenHeKT1TTlKMJWy1laZewsRIzYighyYiJKZreqtdxSos/S1t+ktRMQWu2CKqaarrkeszJx1cgC5tGZw==}
@@ -703,6 +717,10 @@ snapshots:
   '@types/node@26.6.2':
     dependencies:
       undici-types: 8.9.0
+
+  '@valancex/mesh-compiler@0.5.0': {}
+
+  '@valancex/mesh-runtime@0.5.0': {}
 
   '@vitest/expect@2.1.9':
     dependencies:
