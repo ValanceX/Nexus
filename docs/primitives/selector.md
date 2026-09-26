@@ -47,10 +47,14 @@ without reaching for a general n-ary combinator before one is needed
 (§2.1's YAGNI stance).
 
 No `memoize`/dependency-tracking API yet — §8 is explicit that
-sophisticated memoization waits for a concrete requirement. `define`'s
-naive implementation (recompute `project` on every `state.changes` event,
-dedupe with `Stream.changes` if `B` has an `Equal` instance) is the
-starting point.
+sophisticated memoization waits for a concrete requirement. `define`
+recomputes `project` on every `state.changes` event and does **not**
+deduplicate: `changes` emits once per underlying commit, even when the
+projected value is unchanged. (MESH's `renders`, one render per commit,
+relies on exactly this.)
+
+A selector's `changes` completes when its underlying `State`'s does.
+`combine`'s completes as soon as either side's does.
 
 ## Errors
 

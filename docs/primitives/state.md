@@ -24,7 +24,7 @@ Rules below for what that means concretely.
 interface StateHandle<A> {
   readonly get: Effect.Effect<A>;
   readonly update: <E = never>(f: (current: A) => Effect.Effect<A, E>) => Effect.Effect<A, E>;
-  readonly set: (next: A) => Effect.Effect<A>;
+  readonly set: (next: A) => Effect.Effect<A, StateValidationError>;
   readonly changes: Stream.Stream<A>;
 }
 ```
@@ -53,24 +53,31 @@ namespace State {
 created in. While that scope is open, `changes` stays open. When the scope
 closes, every `changes` subscriber, and every stream derived from it such as
 `Selector.changes`, completes normally, without an error, so state does not
-outlive the scope that owns it. To tie state to an application's lifetime,
-create it in the application's runtime scope
-(`Scope.extend(State.create(...), running.runtime.scope)`). `Application.shutdown`
-then ends its `changes`.
+outlive the scope that owns it. A subscription started after the scope has
+closed completes immediately.
+
+`create` is for state its caller owns. For state the **application** owns,
+use `Application.createState(running, schema, initial)` (see
+[application.md](./application.md)): it lives in the application runtime's
+own scope, needs no `Scope` from the caller, and its `changes` end when the
+application stops, by either of its termination routes.
 
 ## Errors
 
 ```ts
 type StateInitError = {
   readonly _tag: "InitialValueInvalid";
-  readonly issues: ReadonlyArray<Schema.ParseIssue>
+  readonly issues: ReadonlyArray<string>
 };
 
 type StateValidationError = {
   readonly _tag: "StateValidationFailed";
-  readonly issues: ReadonlyArray<Schema.ParseIssue>
+  readonly issues: ReadonlyArray<string>
 };
 ```
+
+`issues` are human-readable messages describing why the value failed its
+schema.
 
 `State.set` runs the value through `schema` before committing — an
 invalid `next` never reaches `changes` or a subsequent `get`.

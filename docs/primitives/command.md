@@ -28,10 +28,11 @@ interface Command<Input, Output, Err, R> {
 }
 ```
 
-`name` is a stable, namespaced string (`"users.select"`, `"order.submit"`)
-— this is the identity MESH's command bindings and any future analytics/
-persistence of "which commands ran" key off, so it must be unique within
-an `Application` and must not change once MPRX authors depend on it.
+`name` is a stable, namespaced string (`"users.select"`, `"order.submit"`).
+It is the command's identity in diagnostics (`CommandValidationError.command`)
+and for any future record of "which commands ran", so keep it stable. MESH
+doesn't key off it: an adapter binding takes the `Command` value itself,
+and MESH intents are matched by their `component/name` in the binding table.
 
 ## API
 
@@ -57,14 +58,15 @@ decode.
 type CommandValidationError = {
   readonly _tag: "CommandValidationError";
   readonly command: string;
-  readonly issues: ReadonlyArray<Schema.ParseIssue>;
+  readonly issues: ReadonlyArray<string>;
 };
 ```
 
 `invoke`'s error channel is `Err | CommandValidationError` — the command's
 own typed failures are never conflated with "the input didn't match the
 schema." A caller (the MESH adapter, a test) can always tell input rejection
-apart from a domain failure by matching on `_tag`.
+apart from a domain failure by matching on `_tag`. `issues` are
+human-readable messages describing why the input failed its schema.
 
 ## Rules
 
@@ -73,9 +75,9 @@ apart from a domain failure by matching on `_tag`.
   PORT boundary NEXUS has no dependency on (§16).
 - `invoke` must run schema decoding before the handler observes anything —
   a handler never sees a partially-invalid `Input`.
-- Two commands must not share a `name`; `Command.define` should fail fast
-  (at registration/composition time, not at first invocation) if an
-  `Application`'s command set has a collision.
+- Command names should be unique within an application, by convention.
+  NEXUS doesn't enforce it: commands are plain values, and there is no
+  command registry to check them against.
 - Commands are the *only* thing MESH can reach (§15), and only through an
   explicit adapter binding. MESH must never be handed a `Service` tag or a
   `StateHandle`'s `update` directly.
