@@ -1,10 +1,8 @@
 import { Effect, Exit, Fiber, Layer, Runtime as EffectRuntime, Scope } from "effect";
 import { EventBusLive, type EventBusShape } from "../event/index.js";
+import { recordOf, refusal, register, type NexusRuntime } from "./internal.js";
 
-export interface NexusRuntime<R> {
-  readonly scope: Scope.CloseableScope;
-  readonly runtime: EffectRuntime.Runtime<R>;
-}
+export type { NexusRuntime };
 
 export type RuntimeInitError = {
   readonly _tag: "LayerBuildFailed";
@@ -30,11 +28,22 @@ export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.E
     Effect.mapError((cause): RuntimeInitError => ({ _tag: "LayerBuildFailed", cause })),
     Effect.andThen((context) => Effect.runtime<R | EventBusShape>().pipe(Effect.provide(context)))
   )),
-  Effect.map(({ runtimeScope, runtime }) => ({ scope: runtimeScope, runtime }))
+  Effect.map(({ runtimeScope, runtime }) => register<R | EventBusShape>({ scope: runtimeScope, runtime }))
 );
 
-export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A> => EffectRuntime.runPromise(nexusRuntime.runtime)(effect);
+// A handle this module didn't make is refused as a defect; the effect never starts.
+export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A> => {
+  const record = recordOf(nexusRuntime);
 
-export const runFork = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E> => EffectRuntime.runFork(nexusRuntime.runtime)(effect);
+  return record === undefined
+    ? Effect.runPromise(Effect.die(refusal("not a runtime NEXUS made")))
+    : EffectRuntime.runPromise(record.runtime as EffectRuntime.Runtime<R>)(effect);
+};
 
-export const shutdown = <R>(nexusRuntime: NexusRuntime<R>): Effect.Effect<void> => Scope.close(nexusRuntime.scope, Exit.succeed(undefined));
+export const runFork = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E> => {
+  const record = recordOf(nexusRuntime);
+
+  return record === undefined
+    ? Effect.runFork(Effect.die(refusal("not a runtime NEXUS made")))
+    : EffectRuntime.runFork(record.runtime as EffectRuntime.Runtime<R>)(effect);
+};

@@ -102,7 +102,7 @@ interface Slice {
 const runSlice = <A, E>(body: (slice: Slice) => Effect.Effect<A, E, Scope.Scope>): Promise<A> => Effect.runPromise(Effect.scoped(Effect.Do.pipe(
   Effect.bind("running", () => Nexus.Application.start(Nexus.Application.define({ name: "mesh-slice", runtime: Layer.empty }))),
   // In the application's runtime scope, so Application.shutdown ends its changes (state.md).
-  Effect.bind("team", ({ running }) => Scope.extend(Nexus.State.create(Team, initialTeam), running.runtime.scope)),
+  Effect.bind("team", ({ running }) => Nexus.Application.createState(running, Team, initialTeam)),
   Effect.bind("result", ({ running, team }) => body({ running, team })),
   Effect.tap(({ running }) => Nexus.Application.shutdown(running)),
   Effect.bind("status", ({ running }) => Nexus.Application.status(running)),

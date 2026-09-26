@@ -1,9 +1,13 @@
 import type { EventBusShape } from "../event/index.js";
 
-import { Effect, Exit, Layer, Ref, Scope } from "effect";
+import { Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
+
+import type { StateHandle, StateInitError } from "../state/index.js";
 
 import * as Capability from "../capability/index.js";
 import * as Runtime from "../runtime/index.js";
+import { refusal, scopeOf, terminate } from "../runtime/internal.js";
+import * as State from "../state/index.js";
 
 export type ApplicationStatus =
   | { readonly _tag: "Created" }
@@ -79,7 +83,7 @@ export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<
     status: Ref.get(statusRef),
     shutdown: Effect.Do.pipe(
       Effect.andThen(Ref.set(statusRef, { _tag: "Stopping" })),
-      Effect.andThen(Runtime.shutdown(runtime)),
+      Effect.andThen(terminate(runtime)),
       Effect.andThen(Ref.set(statusRef, { _tag: "Stopped" }))
     ),
     runtime,
@@ -90,3 +94,15 @@ export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<
 export const shutdown = <R>(running: RunningApplication<R>): Effect.Effect<void> => running.shutdown;
 
 export const status = <R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus> => running.status;
+
+/**
+ * Application-owned State (D1): created in the application runtime's own scope,
+ * so it ends with the application. The caller supplies no Scope.
+ */
+export const createState = <R, A>(running: RunningApplication<R>, schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError> => {
+  const scope = scopeOf(running.runtime);
+
+  return scope === undefined
+    ? Effect.die(refusal("not an application NEXUS started"))
+    : Scope.extend(State.create(schema, initial), scope);
+};
