@@ -439,3 +439,40 @@ describe("Semantic types: outputs and inputs are plain data (I13, I18)", () => {
     expectTypeOf<IsPlainData<{ readonly a: () => void }>>().toEqualTypeOf<false>();
   });
 });
+
+// v0.5: the IR is plain data with no optional field (C10, D26).
+// True when T, or anything inside it, has an optional field.
+type HasOptional<T, D extends number = 10> =
+  [D] extends [never] ? false
+    : T extends string | number | boolean ? false
+    : T extends ReadonlyArray<infer E> ? HasOptional<E, Depth[D]>
+    : T extends object ? (true extends { [K in keyof T]-?: {} extends Pick<T, K> ? true : HasOptional<T[K], Depth[D]> }[keyof T] ? true : false)
+    : false;
+
+describe("Semantic types: the v0.5 IR (C8, C10, D26)", () => {
+  it("the new inputs and the IR are plain data", () => {
+    expectTypeOf<IsPlainData<Semantic.BuildOutcome>>().toEqualTypeOf<true>();
+    expectTypeOf<IsPlainData<Semantic.ValueDeclaration>>().toEqualTypeOf<true>();
+    expectTypeOf<IsPlainData<Semantic.DataFlow>>().toEqualTypeOf<true>();
+  });
+
+  it("Built has no optional field anywhere", () => {
+    expectTypeOf<HasOptional<Semantic.Built>>().toEqualTypeOf<false>();
+    // Control: the input model does have optional fields.
+    expectTypeOf<HasOptional<Semantic.Declaration>>().toEqualTypeOf<true>();
+  });
+
+  it("build is a plain synchronous function from the context to BuildOutcome (D11, D22)", () => {
+    expectTypeOf<typeof Semantic.build>().parameter(0).toEqualTypeOf<Semantic.AnalysisContext>();
+    expectTypeOf<typeof Semantic.build>().returns.toEqualTypeOf<Semantic.BuildOutcome>();
+  });
+
+  it("the new input slots reject executable values", () => {
+    // @ts-expect-error: a function is not a value identity
+    accept<Semantic.ValueDeclaration["id"]>(aFunction);
+    // @ts-expect-error: an Effect is not a value reference
+    accept<Semantic.ValueReference["value"]>(anEffect);
+    // @ts-expect-error: a Command is not a data-flow fact
+    accept<Semantic.Declaration["inputs"]>(aCommand);
+  });
+});

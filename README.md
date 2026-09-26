@@ -88,6 +88,8 @@ $ pnpm build
 
 **v0.4: a semantic analysis foundation.** `Semantic.analyze` checks plain-data declarations of operations against an explicit target profile, without executing anything, and classifies each operation as supported, opaque or incompatible, with structured diagnostics. It is purely additive, and nothing executes differently. See [`docs/semantic.md`](./docs/semantic.md).
 
+**v0.5: semantic IR.** `Semantic.build` turns declarations into a validated, plain-data IR with value-based data flow; `Semantic.analyze` now runs on it, with identical results. See [`docs/semantic.md`](./docs/semantic.md).
+
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 
 Requires Node 22 or later. Not yet published to npm. See the [release notes](./docs/releases/) for what changed in each version.
@@ -96,7 +98,7 @@ Requires Node 22 or later. Not yet published to npm. See the [release notes](./d
 
 - [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
 - [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
-- [**Semantic analysis**](./docs/semantic.md): the v0.4 semantic model and `Semantic.analyze`
+- [**Semantic analysis**](./docs/semantic.md): the semantic model, `Semantic.build`, the IR and `Semantic.analyze`
 
 ## Tech
 

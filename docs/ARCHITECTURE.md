@@ -781,13 +781,18 @@ NEXUS → browser rendering APIs
 PORT → NEXUS
 ```
 
-### 16.1 Semantic analysis boundary (v0.4)
+### 16.1 Semantic analysis boundary (v0.4, v0.5)
 
 `Semantic` (see [`semantic.md`](./semantic.md)) evaluates explicitly
 declared facts about operations against an explicitly supplied target
 profile, without executing anything, and reports a classification per
 operation (supported, opaque or incompatible) plus diagnostics.
 
+- **One pipeline (v0.5).** `declarations → Semantic.build (validation) →
+  Built IR → analysis passes`. Raw declarations are an input format; `Built`
+  is the semantic representation; passes read only `Built` (I25). Data flow
+  is recorded as values with producer and consumer sets; may-flow edges are
+  derived, never stored, and never mean ordering (I21, I22).
 - **Declaration-level only.** NEXUS reasons only about operations presented
   to it with plain-data declarations. It reads no source and inspects no
   closure; a whole handler declared as one operation is one semantic unit.
@@ -1283,3 +1288,9 @@ decision" rule:
     - Purely additive: no existing export, type, error channel or behaviour
       changes. I11–I19 are synchronized into `FUTURE_DIRECTION.md` §18 at
       release (D16).
+11. **Analysis runs on a built IR** (v0.5 D24, amending v0.4 D5; see
+    `superpowers/specs/2026-09-26-nexus-v0.5-outline.md`). v0.4 analyzed raw
+    declarations directly. From v0.5, `Semantic.build` validates once and
+    produces `Built`, and `Semantic.analyze` is `build` plus a compatibility
+    pass over `Built`. New passes read `Built`; new input fields extend
+    `build`.
