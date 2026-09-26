@@ -307,24 +307,114 @@ const analyzeDeclaration = (declaration: Declaration, decisions: Decisions): Ope
   };
 };
 
+const copySpan = (span: Span): Span => ({ source: span.source, start: span.start, end: span.end });
+
+// The spans of the requirement occurrences whose ids are selected, in list order.
+const requirementSpans = (requirements: TargetRequirements | undefined, selected: ReadonlyArray<string>): Array<RelatedSpan> => {
+  const related: Array<RelatedSpan> = [];
+  if (requirements === undefined) return related;
+
+  const ids = new Set<string>();
+  for (let i = 0; i < selected.length; i++) ids.add(selected[i] as string);
+
+  const capabilities = requirements.capabilities;
+  for (let j = 0; j < capabilities.length; j++) {
+    const requirement = capabilities[j] as Requirement;
+    const provenance = requirement.provenance;
+    if (provenance !== undefined && ids.has(requirement.capability)) {
+      related.push({ span: copySpan(provenance), label: "requirement declared here" });
+    }
+  }
+  return related;
+};
+
+const quoted = (ids: ReadonlyArray<string>): string => {
+  let text = "";
+  for (let i = 0; i < ids.length; i++) text += (i === 0 ? "" : ", ") + "\"" + (ids[i] as string) + "\"";
+  return text;
+};
+
+// C5 emission and C6. Messages explain; their wording is not a contract.
+const diagnosticOf = (declaration: Declaration, verdict: Verdict, profile: TargetProfile, required: boolean): Diagnostic | undefined => {
+  if (verdict._tag === "Compatible") return undefined;
+  if (verdict._tag === "Undetermined" && !required) return undefined;
+
+  const id = declaration.id;
+  const name = declaration.name;
+  const label = name !== undefined && name !== "" ? name : id;
+  const provenance = declaration.provenance;
+  const location: Location = provenance !== undefined ? { _tag: "Span", span: copySpan(provenance) } : { _tag: "Unlocated" };
+  const profileName = profile.name;
+  const requirements = declaration.requirements;
+
+  if (verdict._tag === "Incompatible") {
+    const related = requirementSpans(requirements, verdict.notProvided);
+    const profileProvenance = profile.provenance;
+    if (profileProvenance !== undefined) related.push({ span: copySpan(profileProvenance), label: "target profile declared here" });
+
+    return {
+      code: "nexus-incompatible-target-capability",
+      severity: "error",
+      message: `Operation "${label}" requires target capabilities that target profile "${profileName}" does not provide.`,
+      location,
+      subject: id,
+      related,
+      notes: [`Not provided by target profile "${profileName}": ${quoted(verdict.notProvided)}.`],
+    };
+  }
+
+  if (verdict.cause === "operation") {
+    return {
+      code: "nexus-opaque-operation",
+      severity: "warning",
+      message: `NEXUS cannot establish target compatibility for operation "${label}".`,
+      location,
+      subject: id,
+      related: [],
+      notes: [
+        verdict.requirements === "undeclared" ? "Its target requirements are undeclared." : "Its target requirements are declared as partial.",
+        "The operation still executes normally.",
+      ],
+    };
+  }
+
+  return {
+    code: "nexus-undetermined-target-capability",
+    severity: "warning",
+    message: `NEXUS cannot establish target compatibility for operation "${label}" against target profile "${profileName}".`,
+    location,
+    subject: id,
+    related: requirementSpans(requirements, verdict.undecided),
+    notes: [`Not decided by target profile "${profileName}": ${quoted(verdict.undecided)}.`],
+  };
+};
+
 /** Analyzes declarations against one target profile, without executing anything (C7). */
 export const analyze = (context: AnalysisContext): AnalysisOutcome => {
   const issues = rejectionIssues(context);
   if (issues.length > 0) return { _tag: "Rejected", issues };
 
-  const decisions = decisionsOf(context.profile);
+  const profile = context.profile;
+  const decisions = decisionsOf(profile);
+  const required = requiresCompatibility(context.require);
   const operations: Array<OperationResult> = [];
+  const diagnostics: Array<Diagnostic> = [];
   const declarations = context.declarations;
   for (let i = 0; i < declarations.length; i++) {
-    operations.push(analyzeDeclaration(declarations[i] as Declaration, decisions));
+    const declaration = declarations[i] as Declaration;
+    const operation = analyzeDeclaration(declaration, decisions);
+    const diagnostic = diagnosticOf(declaration, operation.verdict, profile, required);
+
+    operations.push(operation);
+    if (diagnostic !== undefined) diagnostics.push(diagnostic);
   }
 
   return {
     _tag: "Analyzed",
     properties: ["target-requirements"],
-    required: requiresCompatibility(context.require) ? ["target-compatibility"] : [],
-    profile: context.profile.name,
+    required: required ? ["target-compatibility"] : [],
+    profile: profile.name,
     operations,
-    diagnostics: [],
+    diagnostics,
   };
 };

@@ -364,3 +364,171 @@ describe("Semantic: incompatible (C4 incompatible; I16)", () => {
     expect([b.profile, b.operations[0]?.classification]).toEqual(["without-fs", "incompatible"]);
   });
 });
+
+// The Task 7 matrix: one declaration per classification (and cause), each with provenance.
+const matrixDeclarations: ReadonlyArray<Semantic.Declaration> = [
+  { id: "supported", provenance: span("app.ts", 0, 10), requirements: complete("fs") },
+  { id: "opaque-operation", provenance: span("app.ts", 10, 20), requirements: partial("fs") },
+  { id: "opaque-target", provenance: span("app.ts", 20, 30), requirements: complete({ capability: "gpu", provenance: span("app.ts", 22, 25) }) },
+  { id: "incompatible", provenance: span("app.ts", 30, 40), requirements: complete({ capability: "net", provenance: span("app.ts", 32, 35) }) },
+];
+const matrixProfile = profile(["fs"], ["net"], { name: "matrix", provenance: span("profile.json", 0, 50) });
+const matrix = (require?: ReadonlyArray<Semantic.RequiredFact>) =>
+  analyzedOf(analyzeAndRecord(require === undefined ? { declarations: matrixDeclarations, profile: matrixProfile } : { declarations: matrixDeclarations, profile: matrixProfile, require }));
+const summary = (outcome: { readonly diagnostics: ReadonlyArray<Semantic.Diagnostic> }) => outcome.diagnostics.map((d) => [d.code, d.severity, d.subject]);
+
+describe("Semantic: diagnostics (C5 emission, C6; I12, I17)", () => {
+  it("emits exactly C5's diagnostics when nothing is required", () => {
+    expect(summary(matrix())).toEqual([["nexus-incompatible-target-capability", "error", "incompatible"]]);
+    expect(summary(matrix([]))).toEqual([["nexus-incompatible-target-capability", "error", "incompatible"]]);
+  });
+
+  it("emits exactly C5's diagnostics when target compatibility is required", () => {
+    expect(summary(matrix(["target-compatibility"]))).toEqual([
+      ["nexus-opaque-operation", "warning", "opaque-operation"],
+      ["nexus-undetermined-target-capability", "warning", "opaque-target"],
+      ["nexus-incompatible-target-capability", "error", "incompatible"],
+    ]);
+  });
+
+  it("an undeclared operation warns (operation-side) only when compatibility is required", () => {
+    const context = { declarations: [{ id: "a" }], profile: profile() };
+
+    expect(summary(analyzedOf(analyzeAndRecord(context)))).toEqual([]);
+    expect(summary(analyzedOf(analyzeAndRecord({ ...context, require: ["target-compatibility"] }))))
+      .toEqual([["nexus-opaque-operation", "warning", "a"]]);
+  });
+
+  it("uses exactly the three codes and two severities; errors only with proof, warnings only for opaque", () => {
+    const outcome = matrix(["target-compatibility"]);
+    const byId = new Map(outcome.operations.map((o) => [o.id, o.classification]));
+
+    expect(new Set(outcome.diagnostics.map((d) => d.code))).toEqual(new Set(["nexus-incompatible-target-capability", "nexus-opaque-operation", "nexus-undetermined-target-capability"]));
+    expect(new Set(outcome.diagnostics.map((d) => d.severity))).toEqual(new Set(["warning", "error"]));
+    for (const d of outcome.diagnostics) {
+      expect(byId.get(d.subject)).toBe(d.severity === "error" ? "incompatible" : "opaque");
+    }
+  });
+
+  it("gives at most one diagnostic per operation, duplicates included", () => {
+    const outcome = analyzedOf(analyzeAndRecord({
+      declarations: [{ id: "a", requirements: complete("net", "net") }, { id: "b", requirements: complete("gpu", "gpu") }],
+      profile: profile([], ["net"]),
+      require: ["target-compatibility"],
+    }));
+
+    expect(summary(outcome)).toEqual([
+      ["nexus-incompatible-target-capability", "error", "a"],
+      ["nexus-undetermined-target-capability", "warning", "b"],
+    ]);
+  });
+
+  it("follows declaration order", () => {
+    const reversed = analyzedOf(analyzeAndRecord({ declarations: [...matrixDeclarations].reverse(), profile: matrixProfile, require: ["target-compatibility"] }));
+
+    expect(summary(reversed)).toHaveLength(3);
+    expect(summary(reversed)).toEqual([...summary(matrix(["target-compatibility"]))].reverse());
+  });
+
+  it("every subject is its operation's identity, and joins to the operations", () => {
+    const outcome = matrix(["target-compatibility"]);
+    const ids = outcome.operations.map((o) => o.id);
+
+    expect(outcome.diagnostics).toHaveLength(3);
+    for (const d of outcome.diagnostics) expect(ids).toContain(d.subject);
+  });
+
+  it("the primary location is the declaration's span, or explicitly unlocated", () => {
+    const located = matrix(["target-compatibility"]);
+    for (const d of located.diagnostics) {
+      expect(d.location).toEqual({ _tag: "Span", span: matrixDeclarations.find((x) => x.id === d.subject)?.provenance });
+    }
+
+    const unlocated = analyzedOf(analyzeAndRecord({
+      declarations: [{ id: "a", requirements: complete({ capability: "net", provenance: span("app.ts", 1, 2) }) }],
+      profile: profile([], ["net"], { provenance: span("profile.json", 0, 5) }),
+    }));
+    expect(unlocated.diagnostics).toHaveLength(1);
+    expect(unlocated.diagnostics[0]?.location).toEqual({ _tag: "Unlocated" });
+    expect(unlocated.diagnostics[0]?.subject).toBe("a");
+    expect(Object.keys(unlocated.diagnostics[0] ?? {}).sort()).toEqual(["code", "location", "message", "notes", "related", "severity", "subject"]);
+  });
+
+  it("related spans: an error cites each not-provided occurrence in order, then the profile", () => {
+    const outcome = analyzedOf(analyzeAndRecord({
+      declarations: [{
+        id: "a",
+        requirements: complete(
+          { capability: "fs", provenance: span("app.ts", 1, 2) },
+          { capability: "ok", provenance: span("app.ts", 3, 4) },
+          { capability: "net" },
+          { capability: "fs", provenance: span("app.ts", 5, 6) },
+        ),
+      }],
+      profile: profile(["ok"], ["fs", "net"], { provenance: span("profile.json", 0, 9) }),
+    }));
+
+    expect(outcome.diagnostics[0]?.related).toEqual([
+      { span: span("app.ts", 1, 2), label: "requirement declared here" },
+      { span: span("app.ts", 5, 6), label: "requirement declared here" },
+      { span: span("profile.json", 0, 9), label: "target profile declared here" },
+    ]);
+  });
+
+  it("related spans: an error against a profile without provenance cites only requirements", () => {
+    const outcome = analyzedOf(analyzeAndRecord({ declarations: [{ id: "a", requirements: complete("fs") }], profile: profile([], ["fs"]) }));
+
+    expect(outcome.diagnostics[0]?.related).toEqual([]);
+  });
+
+  it("related spans: a target-side warning cites each undecided occurrence, and nothing else", () => {
+    const outcome = analyzedOf(analyzeAndRecord({
+      declarations: [{
+        id: "a",
+        requirements: complete(
+          { capability: "gpu", provenance: span("app.ts", 1, 2) },
+          { capability: "fs", provenance: span("app.ts", 3, 4) },
+          { capability: "gpu", provenance: span("app.ts", 5, 6) },
+        ),
+      }],
+      profile: profile(["fs"], [], { provenance: span("profile.json", 0, 9) }),
+      require: ["target-compatibility"],
+    }));
+
+    expect(outcome.diagnostics[0]?.related).toEqual([
+      { span: span("app.ts", 1, 2), label: "requirement declared here" },
+      { span: span("app.ts", 5, 6), label: "requirement declared here" },
+    ]);
+  });
+
+  it("related spans: an operation-side warning cites nothing", () => {
+    expect(matrix(["target-compatibility"]).diagnostics.find((d) => d.code === "nexus-opaque-operation")?.related).toEqual([]);
+  });
+
+  it("fabricates no span (I17)", () => {
+    const inputSpans = [
+      ...matrixDeclarations.flatMap((d) => [d.provenance, ...(d.requirements?.capabilities.map((r) => r.provenance) ?? [])]),
+      matrixProfile.provenance,
+    ].filter((s) => s !== undefined);
+    const diagnostics = matrix(["target-compatibility"]).diagnostics;
+
+    expect(diagnostics).toHaveLength(3);
+    for (const d of diagnostics) {
+      const spans = [...(d.location._tag === "Span" ? [d.location.span] : []), ...d.related.map((r) => r.span)];
+      for (const s of spans) expect(inputSpans).toContainEqual(s);
+    }
+  });
+
+  it("states findings as data: seven parts, a non-empty message and non-empty notes", () => {
+    const diagnostics = matrix(["target-compatibility"]).diagnostics;
+
+    expect(diagnostics).toHaveLength(3);
+    for (const d of diagnostics) {
+      expect(Object.keys(d).sort()).toEqual(["code", "location", "message", "notes", "related", "severity", "subject"]);
+      expect(d.message).toEqual(expect.any(String));
+      expect(d.message.length).toBeGreaterThan(0);
+      expect(d.notes.length).toBeGreaterThan(0);
+      for (const note of d.notes) expect(note.length).toBeGreaterThan(0);
+    }
+  });
+});
