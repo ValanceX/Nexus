@@ -1,10 +1,12 @@
 // v0.3: the application lifecycle (N1, N2) and application-owned State (D1).
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Schedule, Schema, Scope, Stream, Runtime as EffectRuntime } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
 import * as Event from "../src/event/index.js";
 import * as Runtime from "../src/runtime/index.js";
+import * as Selector from "../src/selector/index.js";
+import type { StateHandle, StateInitError } from "../src/state/index.js";
 import * as Service from "../src/service/index.js";
 
 const Ping = Event.define("Ping", Schema.Struct({ n: Schema.Number }));
@@ -177,3 +179,97 @@ describe("Application lifecycle (N2)", () => {
     expect(keys).toEqual(["environment", "runtime", "status"]);
   });
 });
+
+const Counter = Schema.Struct({ count: Schema.Number });
+
+// 0–3 scheduler yields, so each side of a race may start first.
+const jitter = Effect.suspend(() => Effect.repeatN(Effect.yieldNow(), Math.floor(Math.random() * 4)));
+
+describe("Application-owned State (D1, Q2 = A)", () => {
+  it("lives in the application: its changes and a derived selector end on either route", async () => {
+    for (const route of ["shutdown", "scope"] as const) {
+      const exits = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("running", ({ scope }) => Scope.extend(Application.start(Application.define({ name: "owner", runtime: Layer.empty })), scope)),
+        Effect.bind("counter", ({ running }) => Application.createState(running, Counter, { count: 0 })),
+        Effect.bind("changes", ({ counter }) => Effect.forkDaemon(Stream.runDrain(counter.changes))),
+        Effect.bind("derived", ({ counter }) => Effect.forkDaemon(Stream.runDrain(Selector.define(counter, (c) => c.count).changes))),
+        Effect.tap(({ running, scope }) => route === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void)),
+        Effect.bind("changesExit", ({ changes }) => Fiber.await(changes).pipe(Effect.timeout(Duration.seconds(1)))),
+        Effect.bind("derivedExit", ({ derived }) => Fiber.await(derived).pipe(Effect.timeout(Duration.seconds(1)))),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void))
+      ));
+
+      expect(Exit.isSuccess(exits.changesExit)).toBe(true);
+      expect(Exit.isSuccess(exits.derivedExit)).toBe(true);
+    }
+  });
+
+  it("keeps StateInitError typed, and is the only error in its channel", async () => {
+    expectTypeOf<Effect.Effect.Error<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<StateInitError>();
+    expectTypeOf<Effect.Effect.Context<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<never>();
+
+    const error = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind("running", () => Application.start(Application.define({ name: "typed", runtime: Layer.empty }))),
+      Effect.flatMap(({ running }) => Effect.flip(Application.createState(running, Counter, { count: "nope" } as unknown as { count: number })))
+    )));
+
+    expect(error._tag).toBe("InitialValueInvalid");
+  });
+
+  it("refuses construction, as a defect, while Stopping and once Stopped", async () => {
+    const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind("releasing", () => Deferred.make<void>()),
+      Effect.bind("gate", () => Deferred.make<void>()),
+      Effect.bind("running", ({ releasing, gate }) => Application.start(Application.define({
+        name: "gated",
+        runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
+      }))),
+      Effect.bind("stopping", ({ running }) => Effect.fork(Application.shutdown(running))),
+      Effect.tap(({ releasing }) => Deferred.await(releasing)),
+      Effect.bind("whileStopping", ({ running }) => Effect.exit(Application.createState(running, Counter, { count: 0 }))),
+      Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
+      Effect.tap(({ stopping }) => Fiber.join(stopping)),
+      Effect.bind("onceStopped", ({ running }) => Effect.exit(Application.createState(running, Counter, { count: 0 })))
+    )));
+
+    expect(isRefusal(result.whileStopping)).toBe(true);
+    expect(isRefusal(result.onceStopped)).toBe(true);
+  });
+
+  it("racing termination, either creates a State that ends with the application or refuses: never a third outcome", async () => {
+    const outcomes = { created: 0, refused: 0 };
+
+    for (const route of ["shutdown", "scope"] as const) {
+      for (let i = 0; i < 200; i++) {
+        const outcome = await Effect.runPromise(Effect.Do.pipe(
+          Effect.bind("scope", () => Scope.make()),
+          Effect.bind("running", ({ scope }) => Scope.extend(Application.start(Application.define({ name: "race", runtime: Layer.empty })), scope)),
+          Effect.bind("raced", ({ running, scope }) => Effect.all([
+            jitter.pipe(Effect.andThen(Effect.exit(Application.createState(running, Counter, { count: 0 })))),
+            jitter.pipe(Effect.andThen(route === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void))),
+          ], { concurrency: "unbounded" })),
+          Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+          Effect.flatMap(({ raced: [exit] }): Effect.Effect<"created" | "refused" | "other", unknown> => {
+            if (Exit.isSuccess(exit)) {
+              // A created State is bound to the (now stopped) application, so its changes have ended.
+              const state: StateHandle<{ readonly count: number }> = exit.value;
+
+              return Stream.runDrain(state.changes).pipe(Effect.timeout(Duration.seconds(1)), Effect.as("created" as const));
+            }
+
+            return Effect.succeed(isRefusal(exit) ? "refused" as const : "other" as const);
+          })
+        ));
+
+        expect(outcome).not.toBe("other");
+        outcomes[outcome as "created" | "refused"] += 1;
+      }
+    }
+
+    // Both sides of the race were exercised.
+    expect(outcomes.created).toBeGreaterThan(0);
+    expect(outcomes.refused).toBeGreaterThan(0);
+  });
+});
+

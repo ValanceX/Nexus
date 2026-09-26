@@ -6,7 +6,7 @@ import type { StateHandle, StateInitError } from "../state/index.js";
 
 import * as Capability from "../capability/index.js";
 import * as Runtime from "../runtime/index.js";
-import { refusal, scopeOf, terminate } from "../runtime/internal.js";
+import { admit, refusal, scopeOf, terminate } from "../runtime/internal.js";
 import * as State from "../state/index.js";
 
 export type ApplicationStatus =
@@ -134,11 +134,16 @@ export const status = <R>(running: RunningApplication<R>): Effect.Effect<Applica
 /**
  * Application-owned State (D1): created in the application runtime's own scope,
  * so it ends with the application. The caller supplies no Scope.
+ *
+ * Admitted only while the application is `Running` (Q2 = A). Construction is
+ * ordered against the start of termination: it either completes first, and the
+ * State then ends with the application, or it is refused as a defect. The error
+ * channel is exactly StateInitError; there is no lifecycle error type.
  */
 export const createState = <R, A>(running: RunningApplication<R>, schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError> => {
   const scope = scopeOf(running.runtime);
 
-  return scope === undefined
+  return scope === undefined || !apps.has(running)
     ? Effect.die(refusal("not an application NEXUS started"))
-    : Scope.extend(State.create(schema, initial), scope);
+    : admit(running.runtime, Scope.extend(State.create(schema, initial), scope));
 };
