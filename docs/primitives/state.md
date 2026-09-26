@@ -1,6 +1,6 @@
 # State
 
-> **In plain terms:** Data your app owns. You can read it and watch it change, but you only change it through explicit updates, and every update is validated against its schema.
+> **In plain terms:** Data your app owns. You can read it and watch it change, but you only change it through explicit updates. Its initial value and every `set` are validated against its schema.
 
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §7. `State` is
 application-owned mutable state: a current immutable value, controlled

@@ -14,8 +14,8 @@ MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT rende
 
 - **Logic you can test without a browser.** Commands, state, and selectors are plain typed values, so you can exercise them directly in unit tests.
 - **No device checks in feature code.** Haptics, camera, storage, network, and AI are resolved once at startup into typed *capabilities*, with explicit fallbacks when they're missing. No more `if (device.hasX)`.
-- **Typed from edge to edge.** Command inputs, state, and events are validated with Effect Schema. Failures are typed errors, not surprise exceptions.
-- **Clean startup and shutdown.** Long-lived resources (sockets, devices, workers) are always released, even when something fails halfway.
+- **Typed from edge to edge.** Command inputs and state are validated with Effect Schema where data enters, and events are typed by their schema. Failures are typed errors, not surprise exceptions.
+- **Clean startup and shutdown.** Long-lived resources (sockets, devices, workers) are always released, even when something fails halfway. Shutdown ends every state and event stream the app owns, and nothing can stop the app behind its lifecycle's back.
 - **Built on [Effect](https://effect.website).** NEXUS adds application-level concepts on top of Effect instead of reinventing dependency injection, scopes, or concurrency.
 
 ## A taste
@@ -24,7 +24,7 @@ MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT rende
 import { Effect, Option, Schema } from "effect";
 import { Command, Event, Selector, State } from "@valancex/nexus";
 
-// `users` is a State handle created with State.create(UserState, initial)
+// `users` is a State handle, e.g. from Application.createState(running, UserState, initial)
 const UserSelected = Event.define("UserSelected", Schema.Struct({ userId: UserId }));
 
 // A command is the behavior behind MPRX intent like on.select={selectUser($event)}
@@ -80,7 +80,15 @@ $ pnpm build
 
 ## Status
 
-**v0.2: NEXUS drives MESH v0.5.** All nine primitives are in place, and a UI-free vertical slice runs end to end. The MESH host adapter (`Mesh`) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings. Tests prove it against MESH's own slice program. Requires Node 22 or later. Not yet published to npm.
+**v0.3: a closed application lifecycle.** All nine primitives are in place, and a UI-free vertical slice runs end to end.
+- **Lifecycle:** an application stops in exactly two ways, `Application.shutdown` or closing the scope it started in, and its status never moves backwards.
+- **Shutdown:** it ends everything the application owns, including state created with `Application.createState` and every `Event.subscribe` stream. New work is refused once shutdown has been requested.
+- **Opaque runtime:** the runtime handle exposes no Effect internals.
+- **Docs match the code:** every primitive doc now matches the exported types.
+
+The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
+
+Requires Node 22 or later. Not yet published to npm. See the [release notes](./docs/releases/) for what changed in each version.
 
 ## Learn more
 
