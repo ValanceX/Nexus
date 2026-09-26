@@ -20,8 +20,8 @@ A `Service<Shape>` is exactly an Effect `Context.Tag<Shape, Shape>` — NEXUS
 does not wrap it in additional runtime machinery. The value in defining it
 through `Service.define` rather than calling `Context.GenericTag` directly
 is a consistent naming/discovery convention across the codebase (every tag
-lives in `src/service/`, is findable, and is what §15's MESH-facing API
-introspects to know which services exist).
+lives in `src/service/` and is findable). MESH never reaches a service:
+only commands are reachable, through explicit adapter bindings (§15).
 
 ```ts
 type Service<Shape> = Context.Tag<Shape, Shape>;

@@ -91,9 +91,10 @@ every `State.update` call.
 - `changes` must emit the *new* value only after `update`/`set` has fully
   committed (schema-valid, observers see a consistent value), never an
   intermediate one.
-- MESH may read (`get`, subscribe to `changes` indirectly through a
-  `Selector`) but must never call `update`/`set` directly — see
-  [ARCHITECTURE.md §15](../ARCHITECTURE.md#15-mesh-integration-boundary).
+- MESH never reads or writes `State`. The MESH adapter renders a
+  `Selector`'s value as a snapshot, and state changes only through a
+  `Command` that an explicit adapter binding invokes. See
+  [ARCHITECTURE.md §15](../ARCHITECTURE.md#15-mesh-host-adapter).
 
 ## Example
 

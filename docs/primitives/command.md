@@ -4,9 +4,10 @@
 
 See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §9. A `Command` represents
 an application action — "the application should perform this operation."
-It is the primary boundary MESH crosses into NEXUS through, and it is a
-NEXUS-owned primitive, not something external that calls into NEXUS (§9's
-clarified diagram).
+It is the primary boundary through which MESH reaches NEXUS: a MESH command
+intent reaches a command only through an explicit binding in the MESH host
+adapter (§15). It is a NEXUS-owned primitive, not something external that
+calls into NEXUS (§9's clarified diagram).
 
 ## Responsibility
 
@@ -41,8 +42,8 @@ namespace Command {
 }
 ```
 
-`invoke` — not `handler` directly — is what MESH's runtime adapter and
-tests call. It takes `unknown` deliberately: the whole point of a command
+`invoke` — not `handler` directly — is what the MESH host adapter's bindings
+and tests call. It takes `unknown` deliberately: the whole point of a command
 boundary (§9, §15) is that input arriving from outside NEXUS (an MPRX
 event payload) is untrusted until `input` has decoded it. Calling
 `command.handler(x)` directly bypasses that decode step, so application
@@ -62,7 +63,7 @@ type CommandValidationError = {
 
 `invoke`'s error channel is `Err | CommandValidationError` — the command's
 own typed failures are never conflated with "the input didn't match the
-schema." A caller (MESH's adapter, a test) can always tell input rejection
+schema." A caller (the MESH adapter, a test) can always tell input rejection
 apart from a domain failure by matching on `_tag`.
 
 ## Rules
@@ -75,9 +76,9 @@ apart from a domain failure by matching on `_tag`.
 - Two commands must not share a `name`; `Command.define` should fail fast
   (at registration/composition time, not at first invocation) if an
   `Application`'s command set has a collision.
-- Commands are the *only* thing MESH is allowed to invoke (§15) — MESH
-  must never be handed a `Service` tag or a `StateHandle`'s `update`
-  directly.
+- Commands are the *only* thing MESH can reach (§15), and only through an
+  explicit adapter binding. MESH must never be handed a `Service` tag or a
+  `StateHandle`'s `update` directly.
 
 ## Example
 
@@ -88,8 +89,9 @@ const selectUser = Command.define(
   ({ userId }) => State.update(usersState, (s) =>  Effect.succeed({ ...s, selectedUser: Option.some(userId) }))
 );
 
-// From a MESH runtime adapter, given a raw MPRX event payload:
-yield* Command.invoke(selectUser, event.detail);
+// In the MESH host adapter, the input is translated from command-intent
+// arguments by an explicit binding; invoke validates it:
+const binding = Mesh.bind(selectUser, (args) => ({ userId: (args[0] as { value: { id: string } }).value.id }));
 ```
 
 ## Testing

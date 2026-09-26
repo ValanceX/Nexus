@@ -67,7 +67,7 @@ NEXUS has nine primitives, each with one job:
 | Own application state and derived data | Parse or compile MPRX (that's MESH) |
 | Resolve device capabilities in one place | Run hidden side effects inside UI bindings |
 
-NEXUS doesn't depend on the MESH compiler or language server. It sees MESH output only through a stable Semantic IR and runtime adapter, never through compiler internals.
+NEXUS doesn't depend on the MESH compiler or language server. It sees MESH only through `@valancex/mesh-runtime`'s render trees and command intents, via the host adapter in `src/mesh` (exported as `Mesh`), never through compiler internals. The nine primitives never import the adapter.
 
 ## Getting started
 
@@ -80,7 +80,7 @@ $ pnpm build
 
 ## Status
 
-**v0.1 primitives implemented.** All nine primitives are in place. A UI-free vertical slice runs end to end: the app boots, runs a command, updates state, derives a selector, publishes an event, shuts down, and releases its resources. All of this is covered by tests. The next milestone is connecting NEXUS to MESH through the runtime adapter.
+**v0.2: NEXUS drives MESH v0.5.** All nine primitives are in place, and a UI-free vertical slice runs end to end. The MESH host adapter (`Mesh`) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings. Tests prove it against MESH's own slice program. Requires Node 22 or later. Not yet published to npm.
 
 ## Learn more
 

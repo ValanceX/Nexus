@@ -52,7 +52,7 @@ NEXUS does **not** render UI.
 
 NEXUS does **not** know about MPRX, MESH rendering, DOM, Canvas, native widgets, or specific hardware APIs.
 
-The goal is to make NEXUS usable independently of MESH and PORT.
+The goal is to make NEXUS usable independently of MESH and PORT. NEXUS core, meaning the nine primitive modules under `src/`, has no MESH dependency. The single MESH integration boundary is the host adapter in `src/mesh/` (§15). It ships in the same package, but core never imports it, and a test enforces that.
 
 A valid NEXUS application should be able to exist and run without any UI renderer.
 
@@ -429,7 +429,7 @@ capabilities, acquire/use resources, fail with typed errors.
 Commands must not: render UI, manipulate DOM, directly invoke hardware
 APIs, contain renderer-specific behavior.
 
-Commands are the primary application boundary for MESH.
+Commands are the primary application boundary for MESH. A MESH command intent reaches a Command only through an explicit binding in the MESH host adapter (§15).
 
 ---
 
@@ -641,37 +641,65 @@ into one inheritance model; composition is preferred.
 
 ---
 
-## 15. MESH Integration Boundary
+## 15. MESH Host Adapter
 
-NEXUS must expose a stable boundary that MESH can consume. MESH should be
-able to:
-
-1. resolve application state
-2. evaluate selectors
-3. invoke commands
-4. observe relevant state changes
-5. access environment-derived state where appropriate
-
-MESH should not gain arbitrary access to NEXUS internals.
+NEXUS *hosts* MESH, and MESH never calls NEXUS. MESH v0.5 is a pure function of (program, snapshot). Its runtime, `@valancex/mesh-runtime`, renders a program of compiled templates against a snapshot into a `Render`. The `Render`'s `tree` is a **render tree** of primitive components, final values, text, keys and handler ids. The runtime then turns an event reported on that tree into a **command intent**, `{command: {component, name}, arguments}`. The NEXUS side of that exchange is the host adapter in `src/mesh/`, exported as `Mesh`.
 
 ```text
-MPRX
-  ↓
-MESH
-  ↓
-NEXUS UI-facing API
-  ├── State reads
-  ├── Selector reads
-  ├── Command invocation
-  └── UI-relevant environment state
+NEXUS State ─▶ Selector ─▶ snapshot ─▶ mesh-runtime render() ─▶ Render (render tree)
+                                                                   │  user event
+NEXUS Command.invoke ◀─ adapter binding ◀─ command intent ◀─ dispatch(that Render, handler, payload)
 ```
 
-MPRX must not be able to: call arbitrary Effect, access arbitrary Service,
-instantiate Resource, perform hardware operations, mutate State directly,
-execute arbitrary TypeScript.
+The adapter is a thin integration boundary between NEXUS and `@valancex/mesh-runtime`. It does exactly two translations:
 
-The component model should expose only approved application-facing
-bindings.
+- **out:** a selector's value becomes a MESH snapshot, which `render()` turns into a `Render`.
+- **in:** a command intent becomes `Command.invoke`, through an explicit binding.
+
+It must not introduce another reactive state model (reactivity is `Selector.changes`), a render registry, a component lifecycle or a command runtime.
+
+```ts
+const host = Mesh.host({
+  program,                                  // { root, templates, model }, templates compiled at build time
+  scope: teamSnapshot,                      // a Selector already shaped to the manifest
+  commands: {                               // key: "component/name"
+    "user-card/selectUser": Mesh.bind(selectUser, (args) => ({ userId: /* from args[0] */ })),
+    "users/refresh": Mesh.bind(refresh, () => ({})),
+  },
+});
+
+host.render;                                // Effect<Render, MeshDiagnostics>: the current value
+host.renders;                               // Stream<Render, MeshDiagnostics>: one per future commit
+host.dispatch(render, handler, payload);    // Effect<Dispatched, MeshDiagnostics | UnmappedCommand | E, R>
+```
+
+**Invariants.** These are normative. Relaxing one takes a new decision in §26.
+
+- **M1, render provenance.** `dispatch(render, …)` operates against exactly the `Render` the caller supplied. The adapter never resolves, substitutes or looks up a "current" or "latest" render. Handler ids are equal across renders of one program, so a substitution would silently act on newer data.
+- **M2, no render retention.** The adapter keeps no render registry or cache, and no `Render` for later lookup. Keeping the render that's on screen is the caller's job.
+- **M3, explicit bindings only.** A command intent reaches NEXUS behavior only through an explicit `commands` entry. Anything else fails with `UnmappedCommand`.
+- **M4, runtime-only dependency.** The adapter uses `@valancex/mesh-runtime` and never depends on the MESH compiler at runtime (MESH invariant I15). Templates are compiled at build time.
+
+**The translation boundary.** `bind(command, toInput)`'s `toInput` maps dynamically shaped intent arguments to a command's input. It is the trust boundary: TypeScript doesn't prove that the MESH argument shape matches the command's input. `Command.invoke`'s schema validation is authoritative, and a mismatch is `CommandValidationError`. A throw inside `toInput` means the binding is broken. It's a defect, never converted into a typed error.
+
+**Errors.**
+
+| Outcome | Channel | Meaning |
+|---|---|---|
+| `MeshDiagnostics` | typed | MESH rejected the render or dispatch input (snapshot, handler or payload) |
+| `UnmappedCommand` | typed | no explicit binding for the intent's `{component, name}` |
+| `CommandValidationError` | typed | the command rejected the translated input |
+| the command's own error | typed | passes through unchanged |
+| a `toInput` throw | defect | a broken binding |
+| `TypeError`, `MeshVersionError`, `MeshInternalError`, or any other runtime rejection | defect | a programming, package or runtime defect |
+
+**`renders` lifecycle.** `renders` emits one `Render` per future commit of the scope selector, in commit order. A render diagnostic is terminal: the stream fails with `MeshDiagnostics` and ends. It emits nothing for that commit, doesn't re-emit an earlier render, and ignores later commits. A caller that wants to recover subscribes again or calls `render`. This is the v0.2 NEXUS stream contract, not a MESH requirement. The adapter owns no scope. When the scope that owns the underlying `State` closes (for example on `Application.shutdown`, for state created in the application's runtime scope), `changes` completes, and so does `renders`, without error.
+
+**Packaging.** `@valancex/mesh-runtime` is a regular dependency. Splitting the adapter into an optional subpath or package is deferred until there's a demonstrated need to support NEXUS installations that don't use MESH (§26, decision 8).
+
+The binding table is the only way MPRX reaches behavior. MPRX must not be able to: call arbitrary Effect, access arbitrary Service, instantiate Resource, perform hardware operations, mutate State directly, execute arbitrary TypeScript.
+
+The v0.2 design, with its tests, is specified in [`superpowers/specs/2026-09-26-nexus-v0.2-mesh-adapter-design.md`](./superpowers/specs/2026-09-26-nexus-v0.2-mesh-adapter-design.md).
 
 ---
 
@@ -679,9 +707,12 @@ bindings.
 
 NEXUS must have no dependency on PORT, and — resolving an ambiguity in the
 original draft — **PORT must have no dependency on NEXUS either.** PORT
-only ever sees the MESH Semantic IR that a MESH runtime adapter has already
-resolved (state reads, selector values, and command bindings included);
-it never imports or calls into NEXUS directly. This keeps the "a renderer
+only ever sees MESH **render trees**: primitive components, final values,
+text, keys and handler ids, already resolved by the MESH runtime from a
+snapshot the NEXUS adapter supplied (§15). It never imports or calls into
+NEXUS directly. Whoever composes the app hands PORT render trees and routes
+PORT's events back to the adapter's `dispatch`, together with the `Render`
+they came from. This keeps the "a renderer
 can be replaced without modifying application logic" invariant strict:
 swapping PORT implementations can never mean re-wiring which NEXUS
 services or state a renderer happens to reach into, because it never
@@ -691,14 +722,18 @@ Valid dependency direction:
 
 ```text
 Application → NEXUS
-MESH → NEXUS interfaces
-PORT → MESH (Semantic IR only)
+MESH adapter (src/mesh) → NEXUS core
+MESH adapter (src/mesh) → @valancex/mesh-runtime
+PORT → MESH render trees
 NEXUS → Effect
 ```
 
 Invalid dependency direction:
 
 ```text
+NEXUS core → MESH adapter
+NEXUS core → @valancex/mesh-runtime
+NEXUS → @valancex/mesh-compiler (at runtime)
 NEXUS → PORT
 NEXUS → DOM
 NEXUS → Canvas
@@ -726,7 +761,12 @@ nexus/
 │   ├── capability/
 │   ├── resource/
 │   ├── event/
+│   ├── mesh/            # the MESH host adapter (§15); core never imports it
 │   └── index.ts
+├── tests/
+│   └── fixtures/mesh-slice/   # MESH's v0.5.0 slice, copied verbatim
+├── examples/
+├── .github/workflows/ci.yml
 ├── package.json
 ├── tsconfig.json
 ├── LICENSE
@@ -763,7 +803,8 @@ export {
   Command,
   Capability,
   Resource,
-  Event
+  Event,
+  Mesh      // the MESH host adapter (§15), not a primitive
 };
 ```
 
@@ -964,14 +1005,21 @@ The initial NEXUS implementation is successful when:
 * the example application can boot, execute commands, observe state, emit
   events, and shut down cleanly
 
+v0.2 (the MESH host adapter, §15) is done when a NEXUS application in Node
+drives MESH v0.5 end to end: a selector's value renders through
+`@valancex/mesh-runtime` into a `Render`, and a user event on that render's
+tree becomes a command intent that reaches `Command.invoke` through an
+explicit binding. The acceptance tests run the published runtime against
+MESH's own slice, and a static test enforces the import boundary.
+
 ```text
                 ┌───────────────┐
                 │     MESH      │
                 └───────┬───────┘
                         │
               ┌─────────┴─────────┐
-   typed boundary              Semantic IR
-   (state/selector/command)    (render-only)
+   host adapter (src/mesh)      render tree
+   (snapshot in, intent out)    (render-only)
                 │                        │
                 ↓                        ↓
 ┌─────────────────────────────┐   ┌───────────────┐
@@ -1028,7 +1076,7 @@ decision" rule:
 3. **`Environment` placement** — sibling of `Runtime` under `Application`,
    not nested inside `Runtime`. Capability resolution can proceed/fail
    independently of the effect runtime's own lifecycle.
-4. **PORT/NEXUS dependency** — PORT depends only on the MESH Semantic IR,
+4. **PORT/NEXUS dependency** (wording superseded by decision 7, rule kept) — PORT depends only on the MESH Semantic IR,
    never on NEXUS directly. The earlier draft's §16 allowed `PORT → NEXUS
    interfaces`; that's removed. Everything PORT needs (state, selector
    values, command bindings) must already be resolved into the IR before
@@ -1043,3 +1091,16 @@ decision" rule:
    not fixed." These are the committed starting contracts for the first
    vertical slice (§22), expected to evolve with implementation but not to
    be treated as placeholders.
+7. **Semantic IR replaced by MESH v0.5 templates, render trees, `Render` and
+   command intents** (v0.2). MESH has no "Semantic IR". It compiles templates
+   at build time, renders a snapshot into a `Render` whose tree holds only
+   primitives, and turns events into command intents. MESH doesn't call NEXUS:
+   the NEXUS adapter hosts it (§15). This supersedes decision 4's wording (PORT
+   sees render trees, not an IR) but keeps its rule: PORT never depends on NEXUS.
+8. **MESH host adapter invariants and packaging** (v0.2). M1–M4 in §15 are
+   normative. `renders` fails terminally on a render diagnostic, which is a
+   NEXUS stream contract, not a MESH one. `@valancex/mesh-runtime` is a regular
+   dependency, and splitting the adapter into an optional subpath or package
+   is deferred until there's a demonstrated need to support NEXUS installations
+   that don't use MESH. This is a v0.2 scope decision, not a final long-term
+   packaging choice.

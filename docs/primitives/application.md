@@ -92,7 +92,7 @@ a thrown exception or an `unknown` rejection reaching the caller.
 - `Application` must never be reachable from `Command`/`Service`/`State`
   code — those only ever see `RunningApplication`'s narrower surface
   (state reads, selector reads, command invocation — see
-  [MESH Integration Boundary](../ARCHITECTURE.md#15-mesh-integration-boundary)).
+  [MESH Host Adapter](../ARCHITECTURE.md#15-mesh-host-adapter)).
 
 ## Example
 

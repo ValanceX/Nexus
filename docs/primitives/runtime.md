@@ -46,8 +46,8 @@ namespace Runtime {
 ```
 
 `run` surfaces a `Promise` deliberately — it is the boundary NEXUS hands to
-non-Effect callers (a MESH runtime adapter invoking a command, a test
-calling into the application). `runFork` is for callers that need a
+non-Effect callers (a MESH host running an adapter `dispatch` that invokes
+a command, a test calling into the application). `runFork` is for callers that need a
 `Fiber` handle back, e.g. to interrupt a long-running command.
 
 ## Errors
