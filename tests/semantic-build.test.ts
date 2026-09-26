@@ -243,6 +243,126 @@ describe("Semantic.build: provenance and the carried profile (C8, C10, D22)", ()
   });
 });
 
+// Test-only: may-flow is derived from membership and never stored (C11).
+const mayFlow = (built: Semantic.Built) => built.values.flatMap((v) =>
+  v.producers.members.flatMap((p) => v.consumers.members.map((c) => [p, v.id, c] as const)));
+
+describe("Semantic.build: producer and consumer openness (C11, I23)", () => {
+  it("both sides close when every operation's facts are complete, including closed-empty", () => {
+    const built = builtOf(buildAndRecord({
+      values: values("cart", "note"),
+      declarations: [{ id: "add", inputs: complete(), outputs: complete("cart") }, { id: "checkout", inputs: complete("cart"), outputs: complete() }],
+      profile: profile(),
+    }));
+
+    expect(valueOf(built, "cart")).toMatchObject({ producers: { _tag: "Closed", members: ["add"] }, consumers: { _tag: "Closed", members: ["checkout"] } });
+    expect(valueOf(built, "note").producers).toStrictEqual({ _tag: "Closed", members: [] });
+    expect(valueOf(built, "note").consumers).toStrictEqual({ _tag: "Closed", members: [] });
+  });
+
+  it("closed-empty and open-empty are different tags", () => {
+    const built = builtOf(buildAndRecord({ values: values("note"), declarations: [{ id: "log" }], profile: profile() }));
+
+    expect(valueOf(built, "note").producers).toStrictEqual({ _tag: "Open", members: [], openedBy: ["log"] });
+    expect(valueOf(built, "note").producers).not.toStrictEqual({ _tag: "Closed", members: [] });
+  });
+
+  it("openedBy is exactly the unknown and partial operations, in declaration order, and every value shares it", () => {
+    const built = builtOf(buildAndRecord({
+      values: values("x", "y"),
+      declarations: [{ id: "a" }, { id: "b", outputs: complete("x") }, { id: "c", outputs: partial("x") }, { id: "d", outputs: partial() }],
+      profile: profile(),
+    }));
+
+    expect(valueOf(built, "x").producers).toStrictEqual({ _tag: "Open", members: ["b", "c"], openedBy: ["a", "c", "d"] });
+    expect(valueOf(built, "y").producers).toStrictEqual({ _tag: "Open", members: [], openedBy: ["a", "c", "d"] });
+    expect(valueOf(built, "x").consumers).toStrictEqual({ _tag: "Open", members: [], openedBy: ["a", "b", "c", "d"] });
+  });
+
+  it("partial-empty opens its side exactly as unknown does, and stays Declared", () => {
+    const withPartial = builtOf(buildAndRecord({ values: values("v"), declarations: [{ id: "a", outputs: complete("v") }, { id: "b", outputs: partial() }], profile: profile() }));
+    const withUnknown = builtOf(buildAndRecord({ values: values("v"), declarations: [{ id: "a", outputs: complete("v") }, { id: "b" }], profile: profile() }));
+
+    expect(valueOf(withPartial, "v").producers).toStrictEqual({ _tag: "Open", members: ["a"], openedBy: ["b"] });
+    expect(valueOf(withUnknown, "v").producers).toStrictEqual(valueOf(withPartial, "v").producers);
+    expect(operationOf(withPartial, "b").outputs._tag).toBe("Declared");
+    expect(operationOf(withUnknown, "b").outputs._tag).toBe("Unknown");
+  });
+
+  it("each side's openness ignores the other side", () => {
+    const built = builtOf(buildAndRecord({ values: values("v"), declarations: [{ id: "a", outputs: complete("v") }], profile: profile() }));
+
+    expect(valueOf(built, "v").producers).toStrictEqual({ _tag: "Closed", members: ["a"] });
+    expect(valueOf(built, "v").consumers).toStrictEqual({ _tag: "Open", members: [], openedBy: ["a"] });
+  });
+
+  it("no operations: every set is closed and empty", () => {
+    const built = builtOf(buildAndRecord({ values: values("v"), declarations: [], profile: profile() }));
+
+    expect(valueOf(built, "v")).toMatchObject({ producers: { _tag: "Closed", members: [] }, consumers: { _tag: "Closed", members: [] } });
+  });
+
+  it("an operation appears once in members, however often it references the value", () => {
+    const built = builtOf(buildAndRecord({ values: values("v"), declarations: [{ id: "a", outputs: complete("v", "v") }], profile: profile() }));
+
+    expect(valueOf(built, "v").producers).toStrictEqual({ _tag: "Closed", members: ["a"] });
+  });
+
+  it("creates no synthetic or wildcard value for unknown facts", () => {
+    const built = builtOf(buildAndRecord({ values: values("v"), declarations: [{ id: "a" }, { id: "b", inputs: partial() }], profile: profile() }));
+
+    expect(built.values.map((v) => v.id)).toEqual(["v"]);
+  });
+});
+
+describe("Semantic.build: may-flow (C11; I21, I22)", () => {
+  it("the cart: three producers give three unordered edges into checkout", () => {
+    const built = builtOf(buildAndRecord({
+      values: values("cart"),
+      declarations: [
+        { id: "addItem", inputs: complete(), outputs: complete("cart") },
+        { id: "removeItem", inputs: complete(), outputs: complete("cart") },
+        { id: "clear", inputs: complete(), outputs: complete("cart") },
+        { id: "checkout", inputs: complete("cart"), outputs: complete() },
+      ],
+      profile: profile(),
+    }));
+
+    expect(mayFlow(built)).toEqual([["addItem", "cart", "checkout"], ["removeItem", "cart", "checkout"], ["clear", "cart", "checkout"]]);
+    expect(valueOf(built, "cart").producers._tag).toBe("Closed");
+  });
+
+  it("edges are exactly producers × consumers", () => {
+    const built = builtOf(buildAndRecord({
+      values: values("v"),
+      declarations: [
+        { id: "p1", outputs: complete("v") }, { id: "p2", outputs: complete("v") },
+        { id: "c1", inputs: complete("v") }, { id: "c2", inputs: complete("v") }, { id: "c3", inputs: partial("v") },
+      ],
+      profile: profile(),
+    }));
+
+    expect(mayFlow(built)).toEqual([
+      ["p1", "v", "c1"], ["p1", "v", "c2"], ["p1", "v", "c3"],
+      ["p2", "v", "c1"], ["p2", "v", "c2"], ["p2", "v", "c3"],
+    ]);
+  });
+
+  it("an operation that consumes and produces a value has a self edge", () => {
+    const built = builtOf(buildAndRecord({ values: values("n"), declarations: [{ id: "inc", inputs: complete("n"), outputs: complete("n") }], profile: profile() }));
+
+    expect(mayFlow(built)).toEqual([["inc", "n", "inc"]]);
+  });
+
+  it("stores no edge list: Built, its operations and its values have exactly their documented fields", () => {
+    const built = builtOf(buildAndRecord({ values: values("n"), declarations: [{ id: "inc", inputs: complete("n"), outputs: complete("n") }], profile: profile() }));
+
+    expect(Object.keys(built)).toEqual(["_tag", "profile", "required", "operations", "values"]);
+    expect(Object.keys(operationOf(built, "inc"))).toEqual(["id", "name", "provenance", "requirements", "inputs", "outputs"]);
+    expect(Object.keys(valueOf(built, "n"))).toEqual(["id", "name", "provenance", "producers", "consumers"]);
+  });
+});
+
 describe("Semantic.build: plain data (C10)", () => {
   // Keep this block last: it checks every outcome built above.
   it("every recorded outcome survives a JSON round trip", () => {
