@@ -229,3 +229,43 @@ describe("Semantic: the outcome envelope (C7)", () => {
     expect(analyzedOf(analyzeAndRecord({ declarations: [], profile: profile([], [], { name: "" }) })).profile).toBe("");
   });
 });
+
+describe("Semantic: supported (C4 compatible, C5)", () => {
+  const supported = (id: string): Semantic.OperationResult =>
+    ({ id, known: ["target-requirements"], verdict: { _tag: "Compatible" }, classification: "supported" });
+
+  it("a complete, fully provided set is supported, with or without name and provenance (DoD 1)", () => {
+    const outcome = analyzedOf(analyzeAndRecord({
+      declarations: [
+        { id: "a", requirements: complete("fs") },
+        { id: "b", name: "Save", requirements: complete("fs", "net") },
+        { id: "c", provenance: span("app.ts", 0, 10), requirements: complete({ capability: "net", provenance: span("app.ts", 2, 5) }) },
+        { id: "d", name: "Load", provenance: span("app.ts", 10, 20), requirements: complete("fs") },
+      ],
+      profile: profile(["fs", "net"]),
+    }));
+
+    expect(outcome.operations).toEqual([supported("a"), supported("b"), supported("c"), supported("d")]);
+  });
+
+  it("an empty complete list is supported, whatever the profile", () => {
+    for (const p of [profile(), profile(["fs"], ["net", "gpu"])]) {
+      expect(analyzedOf(analyzeAndRecord({ declarations: [{ id: "a", requirements: complete() }], profile: p })).operations).toEqual([supported("a")]);
+    }
+  });
+
+  it("duplicate requirements are evaluated once", () => {
+    const outcome = analyzedOf(analyzeAndRecord({ declarations: [{ id: "a", requirements: complete("fs", "fs", "net") }], profile: profile(["fs", "net"]) }));
+
+    expect(outcome.operations).toEqual([supported("a")]);
+  });
+
+  it("identity, not the display name, keys results (D4)", () => {
+    const outcome = analyzedOf(analyzeAndRecord({
+      declarations: [{ id: "a", name: "Save", requirements: complete("fs") }, { id: "b", name: "Save" }],
+      profile: profile(["fs"]),
+    }));
+
+    expect(outcome.operations.map((o) => [o.id, o.classification])).toEqual([["a", "supported"], ["b", "opaque"]]);
+  });
+});

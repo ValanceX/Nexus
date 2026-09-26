@@ -232,23 +232,78 @@ const requiresCompatibility = (require: ReadonlyArray<RequiredFact> | undefined)
   return false;
 };
 
-// Provisional until the verdict steps are in place: opaque, never incompatible (I12).
-const analyzeDeclaration = (declaration: Declaration): OperationResult => ({
-  id: declaration.id,
-  known: [],
-  verdict: { _tag: "Undetermined", cause: "operation", requirements: "undeclared" },
-  classification: "opaque",
-});
+// The profile's decisions, read once per analysis.
+interface Decisions {
+  readonly provided: ReadonlySet<string>;
+  readonly notProvided: ReadonlySet<string>;
+}
+
+const decisionsOf = (profile: TargetProfile): Decisions => {
+  const provided = new Set<string>();
+  const notProvided = new Set<string>();
+  const providedList = profile.provided;
+  const notProvidedList = profile.notProvided;
+  for (let k = 0; k < providedList.length; k++) provided.add(providedList[k] as string);
+  for (let k = 0; k < notProvidedList.length; k++) notProvided.add(notProvidedList[k] as string);
+
+  return { provided, notProvided };
+};
+
+// The distinct required ids, in order of first occurrence (plan P7).
+const distinctIds = (requirements: TargetRequirements): ReadonlyArray<string> => {
+  const seen = new Set<string>();
+  const ids: Array<string> = [];
+  const capabilities = requirements.capabilities;
+  for (let j = 0; j < capabilities.length; j++) {
+    const capability = (capabilities[j] as Requirement).capability;
+    if (!seen.has(capability)) {
+      seen.add(capability);
+      ids.push(capability);
+    }
+  }
+  return ids;
+};
+
+const allProvided = (ids: ReadonlyArray<string>, decisions: Decisions): boolean => {
+  for (let i = 0; i < ids.length; i++) {
+    if (!decisions.provided.has(ids[i] as string)) return false;
+  }
+  return true;
+};
+
+// C4. Provisional where the verdict steps aren't in place yet: opaque, never incompatible (I12).
+const verdictOf = (requirements: TargetRequirements | undefined, decisions: Decisions): Verdict => {
+  if (requirements !== undefined && requirements.completeness === "complete" && allProvided(distinctIds(requirements), decisions)) {
+    return { _tag: "Compatible" };
+  }
+  return { _tag: "Undetermined", cause: "operation", requirements: "undeclared" };
+};
+
+const classificationOf = (verdict: Verdict): Classification =>
+  verdict._tag === "Compatible" ? "supported" : verdict._tag === "Incompatible" ? "incompatible" : "opaque";
+
+const analyzeDeclaration = (declaration: Declaration, decisions: Decisions): OperationResult => {
+  const requirements = declaration.requirements;
+  const verdict = verdictOf(requirements, decisions);
+
+  return {
+    id: declaration.id,
+    known: requirements !== undefined ? ["target-requirements"] : [],
+    verdict,
+    classification: classificationOf(verdict),
+  };
+};
 
 /** Analyzes declarations against one target profile, without executing anything (C7). */
 export const analyze = (context: AnalysisContext): AnalysisOutcome => {
   const issues = rejectionIssues(context);
   if (issues.length > 0) return { _tag: "Rejected", issues };
 
+  const decisions = decisionsOf(context.profile);
   const operations: Array<OperationResult> = [];
   const declarations = context.declarations;
   for (let i = 0; i < declarations.length; i++) {
-    operations.push(analyzeDeclaration(declarations[i] as Declaration));
+    operations.push(analyzeDeclaration(declarations[i] as Declaration, decisions));
   }
 
   return {
