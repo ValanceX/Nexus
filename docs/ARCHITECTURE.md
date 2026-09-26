@@ -222,8 +222,8 @@ or closing the caller's scope that `start` ran in. Both reach `Stopped`
 once, release everything, and end every observation stream over
 application-owned resources normally, even when a resource release fails
 (only the call that performed the termination then re-raises that failure).
-Status never moves backwards, and from
-`Stopping` onward new work is refused. See
+Status never moves backwards, and new work is refused from the moment
+termination is requested, even before the status reads `Stopping`. See
 [`primitives/application.md`](./primitives/application.md).
 
 ---
@@ -798,7 +798,7 @@ nexus/
 │   ├── event/
 │   ├── mesh/            # the MESH host adapter (§15); core never imports it
 │   └── index.ts
-├── tests/
+├── tests/                 # one file per primitive, plus lifecycle, MESH and architecture tests
 │   └── fixtures/mesh-slice/   # MESH's v0.5.0 slice, copied verbatim
 ├── examples/
 ├── .github/workflows/ci.yml
@@ -808,7 +808,10 @@ nexus/
 ├── .gitignore
 ├── README.md
 └── docs/
-    └── ARCHITECTURE.md
+    ├── ARCHITECTURE.md
+    ├── primitives/        # one reference page per primitive
+    ├── releases/          # release notes, one file per version
+    └── superpowers/       # design specs and implementation plans
 ```
 
 This is the committed decision, not one of several options: **do not**
@@ -1048,6 +1051,21 @@ tree becomes a command intent that reaches `Command.invoke` through an
 explicit binding. The acceptance tests run the published runtime against
 MESH's own slice, and a static test enforces the import boundary.
 
+v0.3 (lifecycle and ownership closure, §26 decision 9) is done when:
+* a started application terminates in exactly two ways, once, with
+  monotonic status and an idempotent `shutdown` that completes even when a
+  release fails;
+* application-owned `State` comes from `Application.createState` and ends
+  with the application;
+* shutdown ends every observation stream over application-owned resources,
+  `Event.subscribe` included, and delivers no event once resources are
+  being released;
+* new work is refused as a defect once termination has been requested;
+* no Effect runtime, service `Context` or runtime `Scope` is reachable from
+  a public value;
+* every primitive page's normative sections match the exported
+  declarations.
+
 ```text
                 ┌───────────────┐
                 │     MESH      │
@@ -1149,8 +1167,8 @@ decision" rule:
    - A started application terminates in exactly two ways, once, with
      monotonic status and an idempotent `shutdown` that completes even when
      a release fails (B4); new work, including
-     `Application.createState`, is refused as a defect from `Stopping` on
-     (N2; Q1, and Q2 = A).
+     `Application.createState`, is refused as a defect once termination has
+     been requested (N2; Q1, and Q2 = A).
    - Application-owned State comes from `Application.createState`, whose
      only typed error is `StateInitError` (D1).
    - A runtime's event bus closes before any resource is released; every
