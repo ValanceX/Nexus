@@ -210,9 +210,9 @@ type BuildOutcome =
 
 Every type is plain data: strings, numbers, booleans, arrays and records of these. No function, class, `Error`, `Map`, `Set` or Effect value appears anywhere.
 
-**Declaration identity.** `id` is a non-empty string, unique within one analysis context. It is the only identity; `name` is a display name used in messages and never as identity. Identity across contexts is not defined in v0.4.
+**Declaration identity.** `id` is a non-empty string, unique within one analysis context. It is the only identity; `name` is a display name used in messages and never as identity. Identity across contexts is not defined in v0.4. Operation, value and capability ids are separate identity spaces: the same string may name one of each.
 
-**Provenance and spans.** A span may be attached to a declaration, to each requirement, and to the profile. Provenance is data; excerpts, line numbers, underlines and colours are the consumer's presentation.
+**Provenance and spans.** A span may be attached to a declaration, to each requirement, to a value, to each reference, and to the profile. Provenance is data; excerpts, line numbers, underlines and colours are the consumer's presentation.
 - `source` is an opaque, non-empty source identity chosen by the producer. NEXUS never reads, resolves or opens it.
 - `start` and `end` are offsets into the source text, counted in **UTF-16 code units**, zero-based; `start` is inclusive and `end` exclusive, so `start === end` marks a point.
 - Offsets must be finite numbers other than `-0`, with `end >= start`. Finite offsets that are negative, fractional or beyond the source's length are accepted and passed through unchanged: NEXUS never reads the source, so it can't tell.
