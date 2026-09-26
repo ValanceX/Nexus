@@ -1,8 +1,9 @@
-import { Cause, Chunk, Context, Effect, Exit, Fiber, Layer, Schema, Scope, Stream, Runtime as EffectRuntime } from "effect";
+import { Cause, Chunk, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Schedule, Schema, Scope, Stream, Runtime as EffectRuntime } from "effect";
 import { describe, it, expect } from "vitest";
 
 import * as Event from "../src/event/index.js";
 import * as Runtime from "../src/runtime/index.js";
+import { terminate } from "../src/runtime/internal.js";
 import * as Service from "../src/service/index.js";
 
 interface ClockShape { readonly now: () => number }
@@ -172,6 +173,98 @@ describe("Runtime", () => {
       expect(ran).toBe(false);
       expect(EffectRuntime.isFiberFailure(rejection)).toBe(true);
       expect(EffectRuntime.isFiberFailure(rejection) && Cause.isDie(rejection[EffectRuntime.FiberFailureCauseId])).toBe(true);
+    });
+  });
+
+  describe("termination (Q1, D4)", () => {
+    const eventually = <A>(get: Effect.Effect<A>, done: (a: A) => boolean): Effect.Effect<A, unknown> =>
+      get.pipe(Effect.filterOrFail(done), Effect.retry(Schedule.spaced("1 millis")), Effect.timeout(Duration.seconds(1)));
+
+    // The defect a refused call ends with: a die, and no typed failure.
+    const isRefusal = <A, E>(exit: Exit.Exit<A, E>) => Exit.isFailure(exit) && Cause.isDie(exit.cause) && Option.isNone(Cause.failureOption(exit.cause));
+
+    const Ping = Event.define("Ping", Schema.Struct({ n: Schema.Number }));
+
+    it("refuses run and runFork once the owning scope has closed, without starting the effect", async () => {
+      let ran = false;
+
+      const { runRejection, forkExit } = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("runtime", ({ scope }) => Scope.extend(Runtime.make(ClockLive), scope)),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+        Effect.bind("runRejection", ({ runtime }) => Effect.promise(() => Runtime.run(runtime, Effect.sync(() => { ran = true; })).then(() => undefined, (error: unknown) => error))),
+        Effect.bind("forkExit", ({ runtime }) => Fiber.await(Runtime.runFork(runtime, Effect.sync(() => { ran = true; }))))
+      ));
+
+      expect(ran).toBe(false);
+      expect(EffectRuntime.isFiberFailure(runRejection) && Cause.isDie(runRejection[EffectRuntime.FiberFailureCauseId])).toBe(true);
+      expect(isRefusal(forkExit)).toBe(true);
+    });
+
+    it("refuses new work from the moment termination begins, before release completes", async () => {
+      let ran = false;
+
+      const refused = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("releasing", () => Deferred.make<void>()),
+        Effect.bind("gate", () => Deferred.make<void>()),
+        Effect.let("GatedLive", ({ releasing, gate }) => Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate)))))),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("runtime", ({ scope, GatedLive }) => Scope.extend(Runtime.make(GatedLive), scope)),
+        Effect.bind("closing", ({ scope }) => Effect.fork(Scope.close(scope, Exit.void))),
+        Effect.tap(({ releasing }) => Deferred.await(releasing)),
+        Effect.bind("exit", ({ runtime }) => Fiber.await(Runtime.runFork(runtime, Effect.sync(() => { ran = true; })))),
+        Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
+        Effect.tap(({ closing }) => Fiber.join(closing)),
+        Effect.map(({ exit }) => isRefusal(exit))
+      ));
+
+      expect(refused).toBe(true);
+      expect(ran).toBe(false);
+    });
+
+    it("closes the bus before releasing any resource: no delivery follows a release", async () => {
+      const log: Array<string> = [];
+
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        // Release takes time, leaving a window in which a still-open bus would deliver.
+        Effect.let("LoggedLive", () => Layer.scopedDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); }).pipe(Effect.andThen(Effect.sleep("5 millis")))))),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("runtime", ({ scope, LoggedLive }) => Scope.extend(Runtime.make(LoggedLive), scope)),
+        Effect.let("consumer", ({ runtime }) => Runtime.runFork(runtime, Stream.runForEach(Event.subscribe(Ping), ({ n }) => Effect.sync(() => { log.push(`delivered ${n}`); })))),
+        Effect.tap(() => Effect.sleep("1 millis")),
+        // Admitted before termination, so it keeps publishing through it.
+        Effect.let("publisher", ({ runtime }) => Runtime.runFork(runtime, Effect.iterate(0, {
+          while: () => true,
+          body: (n) => Event.publish(Ping, { n }).pipe(Effect.andThen(Effect.yieldNow()), Effect.as(n + 1)),
+        }))),
+        Effect.tap(() => eventually(Effect.sync(() => log.length), (length) => length >= 3)),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+        Effect.bind("consumerExit", ({ consumer }) => Fiber.await(consumer).pipe(Effect.timeout(Duration.seconds(1)))),
+        Effect.tap(() => Effect.sleep("10 millis")),
+        Effect.bind("publisherExit", ({ publisher }) => Fiber.interrupt(publisher))
+      ));
+
+      const released = log.indexOf("released");
+
+      expect(released).toBeGreaterThan(0);
+      expect(log.slice(released + 1).filter((entry) => entry.startsWith("delivered"))).toEqual([]);
+      expect(Exit.isSuccess(result.consumerExit)).toBe(true);
+      // The publisher never failed: it ran until we interrupted it.
+      expect(Exit.isInterrupted(result.publisherExit)).toBe(true);
+    });
+
+    it("terminates once, however often termination is requested", async () => {
+      const releases = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("count", () => Ref.make(0)),
+        Effect.let("CountedLive", ({ count }) => Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(count, (n) => n + 1)))),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("runtime", ({ scope, CountedLive }) => Scope.extend(Runtime.make(CountedLive), scope)),
+        Effect.tap(({ runtime }) => Effect.all([terminate(runtime), terminate(runtime), terminate(runtime)], { concurrency: "unbounded" })),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+        Effect.flatMap(({ count }) => Ref.get(count))
+      ));
+
+      expect(releases).toBe(1);
     });
   });
 });
