@@ -1,4 +1,6 @@
 // v0.4: the semantic model (outline C1–C7, D4–D12).
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Semantic from "../src/semantic/index.js";
@@ -651,5 +653,30 @@ describe("Semantic: fresh, plain, deterministic output (I13, I17)", () => {
   it("every outcome produced in this file survives a JSON round trip unchanged", () => {
     expect(recorded.length).toBeGreaterThan(50);
     for (const outcome of recorded) expect(JSON.parse(JSON.stringify(outcome))).toStrictEqual(outcome);
+  });
+});
+
+// N4 for the reference page: its normative code blocks name exactly the module's
+// exports, and every field of every exported interface.
+describe("Semantic: the reference page matches the module (N4)", () => {
+  const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+
+  it("names exactly the module's exports, and every exported interface field", () => {
+    const source = read("../src/semantic/index.ts");
+    const page = read("../docs/semantic.md");
+    const normative = page.slice(page.indexOf("## Data Model"), page.indexOf("## Rejection"));
+    const blocks = Array.from(normative.matchAll(/```ts\n([\s\S]*?)```/g), (m) => m[1] ?? "").join("\n");
+    const namesIn = (text: string, pattern: RegExp) => new Set(Array.from(text.matchAll(pattern), (m) => m[1]));
+
+    const exported = namesIn(source, /^export (?:interface|type|const) (\w+)/gm);
+    const documented = namesIn(blocks, /^(?:interface|type|const|function) (\w+)/gm);
+    expect(exported.size).toBe(20);
+    expect(documented).toEqual(exported);
+
+    for (const [, name, body] of source.matchAll(/^export interface (\w+) \{([\s\S]*?)^\}/gm)) {
+      const fields = Array.from((body ?? "").matchAll(/readonly (\w+)\??:/g), (m) => m[1]);
+      const docBody = blocks.match(new RegExp(`^interface ${name} \\{([\\s\\S]*?)^\\}`, "m"))?.[1] ?? "";
+      expect([name, fields]).toEqual([name, Array.from(docBody.matchAll(/readonly (\w+)\??:/g), (m) => m[1])]);
+    }
   });
 });

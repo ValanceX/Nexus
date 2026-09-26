@@ -464,6 +464,10 @@ Commands are the primary application boundary for MESH. A MESH command intent re
 
 > Full spec + API: [`primitives/capability.md`](./primitives/capability.md)
 
+A `Capability` is an *application* capability. It is unrelated to the
+*target* capabilities that v0.4's semantic analysis checks operations
+against (§16.1).
+
 A `Capability` represents functionality provided by the runtime
 environment. This is a Valance-specific concept.
 
@@ -777,6 +781,38 @@ NEXUS → browser rendering APIs
 PORT → NEXUS
 ```
 
+### 16.1 Semantic analysis boundary (v0.4)
+
+`Semantic` (see [`semantic.md`](./semantic.md)) evaluates explicitly
+declared facts about operations against an explicitly supplied target
+profile, without executing anything, and reports a classification per
+operation (supported, opaque or incompatible) plus diagnostics.
+
+- **Declaration-level only.** NEXUS reasons only about operations presented
+  to it with plain-data declarations. It reads no source and inspects no
+  closure; a whole handler declared as one operation is one semantic unit.
+- **A leaf.** `Semantic → plain data`. The module imports nothing, and
+  nothing in NEXUS but the package entry imports it. No primitive, lifecycle
+  or the MESH adapter depends on it.
+- **No gating.** No start, admission, run or dispatch consults an analysis
+  result, and no diagnostic enters an Effect error channel. What a consumer
+  does with an `error` is not decided in v0.4.
+- **Application capability ≠ target capability.** A `Capability` (§10) is an
+  application-level dependency resolved through `Environment`. A *target
+  capability* is an opaque identifier in a target profile. The two have
+  separate identifier spaces, and analysis neither reads nor affects
+  application capabilities.
+
+Valid and invalid directions, added to the lists above:
+
+```text
+package entry → Semantic
+Semantic → (nothing)
+
+Semantic → any NEXUS module, Effect, MESH or PORT   (invalid)
+any NEXUS module → Semantic                          (invalid)
+```
+
 ---
 
 ## 17. Repository Structure
@@ -842,7 +878,8 @@ export {
   Capability,
   Resource,
   Event,
-  Mesh      // the MESH host adapter (§15), not a primitive
+  Mesh,     // the MESH host adapter (§15), not a primitive
+  Semantic  // semantic analysis (§16.1), not a primitive
 };
 ```
 
@@ -1066,6 +1103,16 @@ v0.3 (lifecycle and ownership closure, §26 decision 9) is done when:
 * every primitive page's normative sections match the exported
   declarations.
 
+v0.4 (the semantic analysis foundation, §16.1 and §26 decision 10) is done
+when every item of the v0.4 outline's Definition of Done (items 1–15) is
+proved by a test: declared facts are representable; insufficient
+information is opaque and never incompatible; a proven mismatch is exactly
+one error; supported operations produce no diagnostic; diagnostics carry
+stable codes and exact provenance; results survive a JSON round trip;
+profiles are explicit input; nothing is discovered or executed; Effect type
+parameters and application capabilities are not semantic facts; MESH's
+diagnostic contract and PORT's absence are intact; and v0.3 holds.
+
 ```text
                 ┌───────────────┐
                 │     MESH      │
@@ -1182,3 +1229,21 @@ decision" rule:
      `NexusRuntime.runtime`, `Runtime.shutdown`, `RunningApplication.shutdown`
      and `EnvironmentResolutionFailed` are removed, with no compatibility
      wrappers.
+10. **Semantic analysis foundation** (v0.4; see
+    `superpowers/specs/2026-09-26-nexus-v0.4-outline.md`, D1–D16).
+    - Declaration-level analysis is the architecture: NEXUS reasons only
+      about declared, plain-data facts (D1, D3), with an identity
+      independent of any name (D4), and exactly one property, target
+      requirements (D5).
+    - Malformed contexts are rejected, not diagnosed (D6), including spans
+      with non-finite or `-0` offsets (outline Revision 2).
+    - Application and target capabilities are separate (D7); target profiles
+      are explicit input, with no shipped identifiers or profiles (D8);
+      compatibility is per operation, not whole-plan validation (D9).
+    - Analysis never gates execution (D10); its entry point is a plain
+      synchronous function (D11); codes are `nexus-` kebab-case, with
+      `warning` and `error` only and no fixes (D12).
+    - The module is a leaf, exported as the one non-primitive namespace
+      `Semantic` (D13); PORT and MESH are untouched (D14, D15).
+    - Purely additive: no existing export, type, error channel or behaviour
+      changes. `FUTURE_DIRECTION.md` is synchronized after release (D16).
