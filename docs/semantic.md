@@ -33,11 +33,29 @@ interface TargetRequirements {
   readonly capabilities: ReadonlyArray<Requirement>;
 }
 
+interface ValueDeclaration {
+  readonly id: string;
+  readonly name?: string;
+  readonly provenance?: Span;
+}
+
+interface ValueReference {
+  readonly value: string;
+  readonly provenance?: Span;
+}
+
+interface DataFlow {
+  readonly completeness: "complete" | "partial";
+  readonly references: ReadonlyArray<ValueReference>;
+}
+
 interface Declaration {
   readonly id: string;
   readonly name?: string;
   readonly provenance?: Span;
   readonly requirements?: TargetRequirements;
+  readonly inputs?: DataFlow;
+  readonly outputs?: DataFlow;
 }
 
 interface TargetProfile {
@@ -52,6 +70,7 @@ type Property = "target-requirements";
 type RequiredFact = "target-compatibility";
 
 interface AnalysisContext {
+  readonly values?: ReadonlyArray<ValueDeclaration>;
   readonly declarations: ReadonlyArray<Declaration>;
   readonly profile: TargetProfile;
   readonly require?: ReadonlyArray<RequiredFact>;
@@ -103,7 +122,8 @@ type RejectionReason =
   | "missing-identity"
   | "invalid-span"
   | "empty-capability"
-  | "conflicting-decision";
+  | "conflicting-decision"
+  | "unresolved-reference";
 
 interface RejectionIssue {
   readonly reason: RejectionReason;
@@ -119,6 +139,72 @@ type AnalysisOutcome =
       readonly operations: ReadonlyArray<OperationResult>;
       readonly diagnostics: ReadonlyArray<Diagnostic>;
     }
+  | { readonly _tag: "Rejected"; readonly issues: ReadonlyArray<RejectionIssue> };
+```
+
+`Semantic.build` returns the semantic IR: every declared fact, validated, as plain data with no optional fields.
+
+```ts
+type Name =
+  | { readonly _tag: "Named"; readonly name: string }
+  | { readonly _tag: "Unnamed" };
+
+interface BuiltRequirement {
+  readonly capability: string;
+  readonly provenance: Location;
+}
+
+type BuiltRequirements =
+  | { readonly _tag: "Unknown" }
+  | { readonly _tag: "Declared"; readonly completeness: "complete" | "partial"; readonly capabilities: ReadonlyArray<BuiltRequirement> };
+
+interface BuiltReference {
+  readonly value: string;
+  readonly provenance: Location;
+}
+
+type BuiltFlow =
+  | { readonly _tag: "Unknown" }
+  | { readonly _tag: "Declared"; readonly completeness: "complete" | "partial"; readonly values: ReadonlyArray<string>; readonly references: ReadonlyArray<BuiltReference> };
+
+interface BuiltOperation {
+  readonly id: string;
+  readonly name: Name;
+  readonly provenance: Location;
+  readonly requirements: BuiltRequirements;
+  readonly inputs: BuiltFlow;
+  readonly outputs: BuiltFlow;
+}
+
+type RelationshipSet =
+  | { readonly _tag: "Closed"; readonly members: ReadonlyArray<string> }
+  | { readonly _tag: "Open"; readonly members: ReadonlyArray<string>; readonly openedBy: ReadonlyArray<string> };
+
+interface BuiltValue {
+  readonly id: string;
+  readonly name: Name;
+  readonly provenance: Location;
+  readonly producers: RelationshipSet;
+  readonly consumers: RelationshipSet;
+}
+
+interface BuiltProfile {
+  readonly name: string;
+  readonly provenance: Location;
+  readonly provided: ReadonlyArray<string>;
+  readonly notProvided: ReadonlyArray<string>;
+}
+
+interface Built {
+  readonly _tag: "Built";
+  readonly profile: BuiltProfile;
+  readonly required: ReadonlyArray<RequiredFact>;
+  readonly operations: ReadonlyArray<BuiltOperation>;
+  readonly values: ReadonlyArray<BuiltValue>;
+}
+
+type BuildOutcome =
+  | Built
   | { readonly _tag: "Rejected"; readonly issues: ReadonlyArray<RejectionIssue> };
 ```
 
@@ -145,6 +231,7 @@ Every type is plain data: strings, numbers, booleans, arrays and records of thes
 ## API
 
 ```ts
+function build(context: AnalysisContext): BuildOutcome;
 function analyze(context: AnalysisContext): AnalysisOutcome;
 ```
 

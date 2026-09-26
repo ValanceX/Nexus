@@ -39,8 +39,8 @@ describe("Semantic: the public model (C1–C7)", () => {
     expectTypeOf<Semantic.Classification>().toEqualTypeOf<"supported" | "opaque" | "incompatible">();
   });
 
-  it("has exactly D6's five rejection reasons", () => {
-    expectTypeOf<Semantic.RejectionReason>().toEqualTypeOf<"duplicate-identity" | "missing-identity" | "invalid-span" | "empty-capability" | "conflicting-decision">();
+  it("has exactly D6's five rejection reasons, plus v0.5's unresolved-reference", () => {
+    expectTypeOf<Semantic.RejectionReason>().toEqualTypeOf<"duplicate-identity" | "missing-identity" | "invalid-span" | "empty-capability" | "conflicting-decision" | "unresolved-reference">();
   });
 
   it("has exactly one property and one required fact", () => {
@@ -62,8 +62,8 @@ describe("Semantic: the public model (C1–C7)", () => {
     expectTypeOf<keyof Semantic.Diagnostic>().toEqualTypeOf<"code" | "severity" | "message" | "location" | "subject" | "related" | "notes">();
   });
 
-  it("exports exactly one runtime value, analyze", () => {
-    expect(Object.keys(Semantic)).toEqual(["analyze"]);
+  it("exports exactly two runtime values, analyze and build", () => {
+    expect(Object.keys(Semantic)).toEqual(["analyze", "build"]);
   });
 });
 
@@ -670,7 +670,7 @@ describe("Semantic: the reference page matches the module (N4)", () => {
 
     const exported = namesIn(source, /^export (?:interface|type|const) (\w+)/gm);
     const documented = namesIn(blocks, /^(?:interface|type|const|function) (\w+)/gm);
-    expect(exported.size).toBe(20);
+    expect(exported.size).toBe(35);
     expect(documented).toEqual(exported);
 
     for (const [, name, body] of source.matchAll(/^export interface (\w+) \{([\s\S]*?)^\}/gm)) {
