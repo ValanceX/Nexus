@@ -1158,6 +1158,41 @@ The architectural objective is not to maximize the number of abstractions.
 > application while preserving strong boundaries between application
 > semantics, UI representation, and rendering.
 
+### 25.1 Valance direction: semantics, not implementations
+
+Valance as a whole is a semantic platform with progressively specialized
+target implementations: **NEXUS owns application behavior, MESH owns
+template semantics, PORT owns target realization and optimization.** For
+NEXUS that means:
+
+- **NEXUS establishes semantic correctness; PORT establishes efficient
+  realization.** NEXUS never takes on target mechanisms (widget toolkits,
+  event loops, compositors, GPU APIs) to make a target faster. A PORT
+  optimization is valid whenever it preserves the guarantees NEXUS and
+  MESH establish.
+- **Boundary information describes guarantees, not mechanisms.** What
+  NEXUS exposes across a boundary should say "this value is immutable" or
+  "these updates may be batched", never "state is currently stored in X"
+  or "this is the update queue". Internals can then change without
+  breaking MESH or any PORT.
+- **Evolution rule.** Before changing anything a boundary can see, ask:
+  *did the semantic contract change, or only the implementation?* If only
+  the implementation, consumers must be unaffected. If the contract
+  changed, the change is explicit (versioned and documented).
+- **Optional information stays optional.** New guarantees NEXUS publishes
+  should let a target realize the app better, never become a new
+  requirement for correctness.
+- **Two kinds of capability.** NEXUS resolves what the *device* offers the
+  application (§10). What a *target* can guarantee when realizing the UI
+  (retained rendering, native window decoration) is described by that
+  PORT. NEXUS does not keep a model of every platform.
+- **Inspectability.** It should eventually be possible to see what Valance
+  did with the application, down through MESH and PORT. NEXUS's part is
+  keeping commands, state and events identifiable and traceable.
+
+The longer-term NEXUS side of this, including semantic capture, IR and
+target compatibility, is in [`FUTURE_DIRECTION.md`](./FUTURE_DIRECTION.md).
+
 ---
 
 ## 26. Resolved Decisions (audit fixes)

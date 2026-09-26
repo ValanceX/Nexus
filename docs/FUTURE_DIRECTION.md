@@ -594,6 +594,15 @@ NEXUS determines what the application requires.
 
 PORT determines how those capabilities are physically provided.
 
+This is one instance of the Valance-wide direction: **abstract semantics,
+not implementations.** A PORT is a progressive lowering system, not an
+adapter. It may add its own intermediate representations and specialize as
+far toward the hardware as its target rewards, provided the semantic
+guarantees NEXUS establishes still hold. What NEXUS hands across the
+boundary should therefore describe guarantees ("this value is immutable",
+"these updates may be batched"), never how NEXUS currently implements them,
+so NEXUS internals can evolve without breaking PORTs.
+
 ---
 
 ## 16. The Current Runtime Remains Important

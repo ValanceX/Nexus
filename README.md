@@ -7,7 +7,7 @@ NEXUS is the application core of [Valance](https://github.com/ValanceX). It hold
 That separation is the point. A NEXUS application boots, runs, and shuts down cleanly with **no UI attached at all**. When you add a UI, [MESH](https://github.com/ValanceX/Mesh) describes it and [PORT](https://github.com/ValanceX/Port) draws it, and your business logic stays exactly where it was.
 
 ```text
-MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT renders it
+MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT realizes it
 ```
 
 ## Why NEXUS
