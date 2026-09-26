@@ -253,6 +253,23 @@ describe("Application-owned State (D1, Q2 = A)", () => {
     }
   });
 
+  it("lets an admitted construction request another while Running, without deadlock", async () => {
+    const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind("running", () => Application.start(Application.define({ name: "nested", runtime: Layer.empty }))),
+      Effect.bind("nested", () => Deferred.make<Exit.Exit<StateHandle<{ readonly count: number }>, StateInitError>>()),
+      Effect.let("reentrant", ({ running, nested }) => Schema.transformOrFail(Schema.Number, Schema.Number, {
+        strict: true,
+        decode: (n) => Effect.exit(Application.createState(running, Counter, { count: 0 })).pipe(Effect.flatMap((exit) => Deferred.succeed(nested, exit)), Effect.as(n)),
+        encode: (n) => ParseResult.succeed(n),
+      })),
+      Effect.bind("outer", ({ running, reentrant }) => Effect.exit(Application.createState(running, reentrant, 1).pipe(Effect.timeout(Duration.seconds(1))))),
+      Effect.bind("inner", ({ nested }) => Deferred.await(nested).pipe(Effect.timeout(Duration.seconds(1))))
+    )));
+
+    expect(Exit.isSuccess(result.outer)).toBe(true);
+    expect(Exit.isSuccess(result.inner)).toBe(true);
+  });
+
   it("keeps StateInitError typed, and is the only error in its channel", async () => {
     expectTypeOf<Effect.Effect.Error<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<StateInitError>();
     expectTypeOf<Effect.Effect.Context<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<never>();
@@ -302,7 +319,7 @@ describe("Application-owned State (D1, Q2 = A)", () => {
         Effect.bind("creating", ({ running, entered, decodeGate }) => Effect.fork(Effect.exit(Application.createState(running, gatedNumber(entered, decodeGate), 1)))),
         Effect.tap(({ entered }) => Deferred.await(entered)),
         Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
-        // A construction requested once termination is pending must not overtake it.
+        // A construction requested once termination has been claimed is refused at once.
         Effect.bind("late", ({ running }) => Effect.fork(Effect.exit(Application.createState(running, Counter, { count: 0 })))),
         Effect.tap(() => settle),
         // Termination is waiting for the admitted construction: it hasn't begun.
@@ -331,7 +348,8 @@ describe("Application-owned State (D1, Q2 = A)", () => {
 
       expect(result.statusWhileAdmitted).toEqual({ _tag: "Running" });
       expect(Option.isNone(result.terminatingWhileAdmitted)).toBe(true);
-      expect(Option.isNone(result.lateWhileAdmitted)).toBe(true);
+      // The late fiber has already finished (it wasn't left waiting), and its construction was refused.
+      expect(Option.map(result.lateWhileAdmitted, (fiberExit) => Exit.isSuccess(fiberExit) && isRefusal(fiberExit.value))).toEqual(Option.some(true));
       expect(result.releasedWhileAdmitted).toBe(0);
       expect(Exit.isSuccess(result.created)).toBe(true);
       expect(result.statusAtStopping).toEqual({ _tag: "Stopping" });
@@ -342,6 +360,91 @@ describe("Application-owned State (D1, Q2 = A)", () => {
       expect(Exit.isSuccess(result.changesEnd)).toBe(true);
       expect(result.finalStatus).toEqual({ _tag: "Stopped" });
       expect(result.released).toBe(1);
+    });
+
+    it(`run and runFork issued while termination waits for admitted work are refused and never execute (route ${route === "shutdown" ? "1" : "2"})`, async () => {
+      let ranViaRun = false;
+      let ranViaFork = false;
+
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("releases", () => Ref.make(0)),
+        Effect.bind("releasing", () => Deferred.make<void>()),
+        Effect.bind("releaseGate", () => Deferred.make<void>()),
+        Effect.bind("entered", () => Deferred.make<void>()),
+        Effect.bind("decodeGate", () => Deferred.make<void>()),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.extend(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
+        // 1. An admitted createState holds admission inside its decode.
+        Effect.bind("creating", ({ running, entered, decodeGate }) => Effect.fork(Effect.exit(Application.createState(running, gatedNumber(entered, decodeGate), 1)))),
+        Effect.tap(({ entered }) => Deferred.await(entered)),
+        // 2. Termination is claimed, and waits for that admitted work.
+        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        Effect.tap(() => settle),
+        Effect.bind("statusWhileWaiting", ({ running }) => Application.status(running)),
+        Effect.bind("terminatingWhileWaiting", ({ terminating }) => Fiber.poll(terminating)),
+        // 3–4. New work issued while termination waits.
+        Effect.bind("runExit", ({ running }) => Effect.promise(() => Runtime.run(running.runtime, Effect.sync(() => { ranViaRun = true; })).then(
+          () => Exit.void,
+          (error: unknown) => EffectRuntime.isFiberFailure(error) ? Exit.failCause(error[EffectRuntime.FiberFailureCauseId]) : Exit.die(error)
+        ))),
+        Effect.bind("forkExit", ({ running }) => Fiber.await(Runtime.runFork(running.runtime, Effect.sync(() => { ranViaFork = true; }))))
+      ).pipe(
+        // 5. The admitted work finishes; 6. termination proceeds.
+        Effect.tap(({ decodeGate }) => Deferred.succeed(decodeGate, undefined)),
+        Effect.bind("created", ({ creating }) => Fiber.join(creating)),
+        Effect.tap(({ releasing }) => Deferred.await(releasing)),
+        Effect.tap(({ releaseGate }) => Deferred.succeed(releaseGate, undefined)),
+        Effect.tap(({ terminating }) => Fiber.join(terminating)),
+        Effect.bind("finalStatus", ({ running }) => Application.status(running)),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+        Effect.bind("released", ({ releases }) => Ref.get(releases))
+      ));
+
+      expect(result.statusWhileWaiting).toEqual({ _tag: "Running" });
+      expect(Option.isNone(result.terminatingWhileWaiting)).toBe(true);
+      expect(isRefusal(result.runExit)).toBe(true);
+      expect(isRefusal(result.forkExit)).toBe(true);
+      expect(ranViaRun).toBe(false);
+      expect(ranViaFork).toBe(false);
+      expect(Exit.isSuccess(result.created)).toBe(true);
+      expect(result.finalStatus).toEqual({ _tag: "Stopped" });
+      expect(result.released).toBe(1);
+    });
+
+    it(`an admitted construction that requests another once termination is claimed is refused, not deadlocked (route ${route === "shutdown" ? "1" : "2"})`, async () => {
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("entered", () => Deferred.make<void>()),
+        Effect.bind("decodeGate", () => Deferred.make<void>()),
+        Effect.bind("nested", () => Deferred.make<Exit.Exit<StateHandle<{ readonly count: number }>, StateInitError>>()),
+        Effect.bind("scope", () => Scope.make()),
+        Effect.bind("running", ({ scope }) => Scope.extend(Application.start(Application.define({ name: "nested", runtime: Layer.empty })), scope)),
+        // The outer construction's decode, once released, requests a second, nested construction.
+        Effect.let("reentrant", ({ running, entered, decodeGate, nested }) => Schema.transformOrFail(Schema.Number, Schema.Number, {
+          strict: true,
+          decode: (n) => Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(decodeGate)),
+            Effect.andThen(Effect.exit(Application.createState(running, Counter, { count: 0 }))),
+            Effect.flatMap((exit) => Deferred.succeed(nested, exit)),
+            Effect.as(n)
+          ),
+          encode: (n) => ParseResult.succeed(n),
+        })),
+        Effect.bind("creating", ({ running, reentrant }) => Effect.fork(Effect.exit(Application.createState(running, reentrant, 1)))),
+        Effect.tap(({ entered }) => Deferred.await(entered)),
+        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        Effect.tap(() => settle),
+        Effect.tap(({ decodeGate }) => Deferred.succeed(decodeGate, undefined)),
+        Effect.bind("nestedExit", ({ nested }) => Deferred.await(nested)),
+        Effect.bind("created", ({ creating }) => Fiber.join(creating)),
+        Effect.bind("terminated", ({ terminating }) => Fiber.await(terminating)),
+        Effect.bind("finalStatus", ({ running }) => Application.status(running)),
+        Effect.tap(({ scope }) => Scope.close(scope, Exit.void))
+      ));
+
+      expect(isRefusal(result.nestedExit)).toBe(true);
+      expect(Exit.isSuccess(result.created)).toBe(true);
+      expect(Exit.isSuccess(result.terminated)).toBe(true);
+      expect(result.finalStatus).toEqual({ _tag: "Stopped" });
     });
 
     it(`construction requested once termination has begun is refused (route ${route === "shutdown" ? "1" : "2"})`, async () => {

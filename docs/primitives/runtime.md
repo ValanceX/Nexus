@@ -85,9 +85,10 @@ A non-Effect caller that needs the typed `E` runs `Effect.exit` inside
 `run` and inspects the `Exit`. This is a known limitation; NEXUS has no
 separate non-Effect API.
 
-**Refusal.** Once a runtime's termination has begun, meaning it has stopped
-admitting new work (for an application runtime, the moment the application
-enters `Stopping`), `run` and `runFork` don't start the effect: the call ends as a defect, with no typed failure.
+**Refusal.** Once a runtime's termination has been requested (for an
+application runtime, by `Application.shutdown` or by closing the caller's
+start scope; for a standalone runtime, when its owning `Scope` starts
+closing), `run` and `runFork` don't start the effect: the call ends as a defect, with no typed failure.
 `run`'s `Promise` rejects, and `runFork`'s fiber exits with a die. A handle
 NEXUS didn't make is refused the same way.
 
@@ -96,12 +97,12 @@ NEXUS didn't make is refused the same way.
 - `Runtime.make` must fully build the service graph (`Layer` to
   `Context`) before returning — a `NexusRuntime` is only ever "ready," it
   is never in a partially-initialized state a caller could observe.
-- **Termination happens once, in this order:** wait for work already
-  admitted (such as an application-owned `State` being created) to finish;
-  then, in one step, stop admitting new work (for an application, this is
-  when it enters `Stopping`); close the runtime's event bus, so no event is
-  delivered after this point and every subscription ends normally; then
-  close the runtime's `Scope`,
+- **Termination happens once, in this order:** the request ends admission
+  at once, for `run`, `runFork` and application-owned `State` alike; wait
+  for work already admitted (such as an application-owned `State` being
+  created) to finish; begin (for an application, it enters `Stopping`);
+  close the runtime's event bus, so no event is delivered after this point
+  and every subscription ends normally; then close the runtime's `Scope`,
   which releases every `Resource` (§11) acquired anywhere in that runtime,
   including by commands that already completed. A termination that has
   begun always completes.

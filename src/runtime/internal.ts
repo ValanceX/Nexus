@@ -22,12 +22,17 @@ export interface NexusRuntime<in R> {
 export interface Lifecycle {
   readonly scope: Scope.CloseableScope;
   readonly bus: Bus;
-  /** Orders admission (`admit`) against the start of termination. */
-  readonly admission: Effect.Semaphore;
-  /** Completed the moment termination begins: admission has stopped. */
-  readonly begun: Deferred.Deferred<void>;
+  /** Completed when the last admitted effect finishes after termination was claimed. */
+  readonly drained: Deferred.Deferred<void>;
   readonly terminated: Deferred.Deferred<void>;
-  readonly state: { accepting: boolean; claimed: boolean };
+  /**
+   * `claimed`: termination has been requested. From that moment no new work is
+   * admitted, by `admit`, `run` or `runFork` alike. `admitted`: effects admitted
+   * through `admit` that haven't finished. `accepting`: false once termination
+   * has begun (an application's `Stopping`). Every read and write is synchronous,
+   * so each check-and-update is atomic.
+   */
+  readonly state: { accepting: boolean; claimed: boolean; admitted: number };
   /**
    * An owner's lifecycle transitions, run by whichever caller performs the
    * termination: `onBegin` atomically with the end of admission, `onEnd` after
@@ -61,12 +66,11 @@ export const refusal = (reason: string): Error => new Error(`NEXUS: ${reason}`);
 
 export const makeLifecycle = (bus: Bus): Effect.Effect<Lifecycle> => Effect.Do.pipe(
   Effect.bind("scope", () => Scope.make()),
-  Effect.bind("admission", () => Effect.makeSemaphore(1)),
-  Effect.bind("begun", () => Deferred.make<void>()),
+  Effect.bind("drained", () => Deferred.make<void>()),
   Effect.bind("terminated", () => Deferred.make<void>()),
-  Effect.map(({ scope, admission, begun, terminated }): Lifecycle => ({
-    scope, bus, admission, begun, terminated,
-    state: { accepting: true, claimed: false },
+  Effect.map(({ scope, drained, terminated }): Lifecycle => ({
+    scope, bus, drained, terminated,
+    state: { accepting: true, claimed: false, admitted: 0 },
     hooks: { onBegin: Effect.void, onEnd: Effect.void },
   }))
 );
@@ -81,11 +85,13 @@ export const setHooks = (handle: NexusRuntime<never>, hooks: Lifecycle["hooks"])
 };
 
 /**
- * Terminates a runtime, once. The first caller claims the termination, then:
- * 1. waits for work already admitted (it holds the admission permit) to finish;
- * 2. under that permit, in one step: runs `onBegin` (an application's
- *    `Running → Stopping`) and stops admitting. This is the moment termination
- *    *begins*: no new work starts after it;
+ * Terminates a runtime, once. The first caller claims the termination, which
+ * ends admission at once: from here, `admit`, `run` and `runFork` refuse new
+ * work. Then it:
+ * 1. waits for work already admitted to finish;
+ * 2. in one step: runs `onBegin` (an application's `Running → Stopping`) and
+ *    marks the runtime as no longer accepting. This is the moment termination
+ *    *begins*;
  * 3. closes the bus, so no event is delivered after this (D4);
  * 4. closes the scope, releasing every resource;
  * 5. runs `onEnd` (an application's `Stopped`).
@@ -100,8 +106,9 @@ export const terminateLifecycle = (lifecycle: Lifecycle): Effect.Effect<void> =>
   lifecycle.state.claimed = true;
 
   return Effect.Do.pipe(
-    Effect.andThen(lifecycle.admission.withPermits(1)(lifecycle.hooks.onBegin.pipe(Effect.andThen(Effect.sync(() => { lifecycle.state.accepting = false; }))))),
-    Effect.andThen(Deferred.succeed(lifecycle.begun, undefined)),
+    Effect.andThen(Effect.suspend(() => lifecycle.state.admitted === 0 ? Effect.void : Deferred.await(lifecycle.drained))),
+    Effect.andThen(lifecycle.hooks.onBegin),
+    Effect.andThen(Effect.sync(() => { lifecycle.state.accepting = false; })),
     Effect.andThen(lifecycle.bus.close),
     Effect.andThen(Scope.close(lifecycle.scope, Exit.void)),
     Effect.andThen(lifecycle.hooks.onEnd),
@@ -116,15 +123,19 @@ export const terminate = (handle: NexusRuntime<never>): Effect.Effect<void> => {
   return record === undefined ? Effect.void : terminateLifecycle(record.lifecycle);
 };
 
+/** Whether new work may start: the runtime exists, and termination hasn't been requested. */
+export const admitting = (lifecycle: Lifecycle): boolean => lifecycle.state.accepting && !lifecycle.state.claimed;
+
 /**
- * Runs `effect` only if the runtime is still admitting work, and otherwise dies
- * with the refusal. Admission and the start of termination are totally ordered:
- * `effect` either runs to completion before termination begins, or doesn't run.
+ * Runs `effect` as admitted work, or refuses it as a defect once termination has
+ * been requested. Admitted work is counted, and termination waits for the count
+ * to reach zero before it begins; so `effect` either completes before
+ * termination begins, or never starts.
  *
- * A request made once termination has been claimed but hasn't yet begun (it's
- * waiting for work already admitted) doesn't compete with it for the permit,
- * which the permit's non-FIFO wake-up would otherwise allow: it waits until
- * termination begins, then is refused.
+ * Admission never waits: an admitted effect that requests more admitted work
+ * (for example, a schema whose decode creates State) is either admitted at once
+ * or, after termination has been claimed, refused at once. It can't deadlock
+ * against termination, or against itself.
  */
 export const admit = <A, E>(handle: NexusRuntime<never>, effect: Effect.Effect<A, E>): Effect.Effect<A, E> => {
   const record = recordOf(handle);
@@ -134,10 +145,21 @@ export const admit = <A, E>(handle: NexusRuntime<never>, effect: Effect.Effect<A
   }
 
   const { lifecycle } = record;
+  const finish = Effect.suspend(() => {
+    lifecycle.state.admitted -= 1;
 
-  return Effect.suspend(() => lifecycle.state.claimed
-    ? Deferred.await(lifecycle.begun).pipe(Effect.andThen(Effect.die(refusal("the runtime has begun terminating"))))
-    : lifecycle.admission.withPermits(1)(Effect.suspend(() => lifecycle.state.accepting
-      ? effect
-      : Effect.die(refusal("the runtime has begun terminating")))));
+    return lifecycle.state.claimed && lifecycle.state.admitted === 0 ? Deferred.succeed(lifecycle.drained, undefined) : Effect.void;
+  });
+
+  // Counting and registering `finish` happen together, uninterruptibly, so an
+  // admitted effect is always uncounted however it ends.
+  return Effect.uninterruptibleMask((restore) => Effect.suspend(() => {
+    if (!admitting(lifecycle)) {
+      return Effect.die(refusal("the runtime has begun terminating"));
+    }
+
+    lifecycle.state.admitted += 1;
+
+    return restore(effect).pipe(Effect.ensuring(finish));
+  }));
 };

@@ -3,7 +3,7 @@ import type { EventBusShape } from "../event/index.js";
 import { Effect, Fiber, Layer, Runtime as EffectRuntime, Scope } from "effect";
 
 import { EventBus, makeBus } from "../event/internal.js";
-import { makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
+import { admitting, makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
 
 export type { NexusRuntime };
 
@@ -36,9 +36,9 @@ export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.E
   Effect.map(({ lifecycle, runtime }) => register<R | EventBusShape>({ runtime, lifecycle }))
 );
 
-// New work is admitted only while the runtime is live. A handle NEXUS didn't
-// make, or one whose runtime has begun terminating, is refused as a defect, and
-// the effect never starts (Q1).
+// New work is admitted only until termination is requested, the same boundary
+// `admit` uses. A handle NEXUS didn't make, or one whose termination has been
+// requested, is refused as a defect, and the effect never starts (Q1).
 const runtimeFor = <R>(nexusRuntime: NexusRuntime<R>): EffectRuntime.Runtime<R> | Error => {
   const record = recordOf(nexusRuntime);
 
@@ -46,7 +46,7 @@ const runtimeFor = <R>(nexusRuntime: NexusRuntime<R>): EffectRuntime.Runtime<R> 
     return refusal("not a runtime NEXUS made");
   }
 
-  return record.lifecycle.state.accepting ? record.runtime as EffectRuntime.Runtime<R> : refusal("the runtime has begun terminating");
+  return admitting(record.lifecycle) ? record.runtime as EffectRuntime.Runtime<R> : refusal("the runtime has begun terminating");
 };
 
 export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A> => {
