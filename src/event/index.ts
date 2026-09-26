@@ -1,7 +1,6 @@
 import type { Envelope } from "./internal.js";
 
 import { Effect, Layer, Queue, Schema, Scope, Stream } from "effect";
-
 import { EventBus, makeBus } from "./internal.js";
 
 export interface EventDef<Tag extends string, Payload> {

@@ -2,8 +2,8 @@ import type { EventBusShape } from "../event/index.js";
 
 import { Effect, Fiber, Layer, Runtime as EffectRuntime, Scope } from "effect";
 
-import { EventBus, makeBus } from "../event/internal.js";
 import { admitting, makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
+import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
 

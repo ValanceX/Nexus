@@ -33,9 +33,9 @@ export const makeBus: Effect.Effect<Bus> = Effect.Do.pipe(
       subscribe: lock.withPermits(1)(Effect.suspend((): Effect.Effect<Queue.Dequeue<Envelope>, never, Scope.Scope> => state.closed
         ? Queue.unbounded<Envelope>().pipe(Effect.tap(Queue.shutdown))
         : PubSub.subscribe(pubsub).pipe(
-          Effect.tap((queue) => Effect.sync(() => { state.live.add(queue); })),
-          Effect.tap((queue) => Effect.addFinalizer(() => Effect.sync(() => { state.live.delete(queue); })))
-        ))),
+            Effect.tap((queue) => Effect.sync(() => { state.live.add(queue); })),
+            Effect.tap((queue) => Effect.addFinalizer(() => Effect.sync(() => { state.live.delete(queue); })))
+          ))),
     },
     close: lock.withPermits(1)(Effect.suspend(() => {
       if (state.closed) {

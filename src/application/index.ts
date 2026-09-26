@@ -1,12 +1,11 @@
+import type { StateHandle, StateInitError } from "../state/index.js";
 import type { EventBusShape } from "../event/index.js";
 
+import { admit, refusal, scopeOf, setHooks, terminate } from "../runtime/internal.js";
 import { Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
-
-import type { StateHandle, StateInitError } from "../state/index.js";
 
 import * as Capability from "../capability/index.js";
 import * as Runtime from "../runtime/index.js";
-import { admit, refusal, scopeOf, setHooks, terminate } from "../runtime/internal.js";
 import * as State from "../state/index.js";
 
 export type ApplicationStatus =
@@ -72,17 +71,15 @@ export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<
   // `Failed` before the error escapes — callers observing status after a failed
   // `start` must not see a stale `Initializing`.
   Effect.bind("runtime", ({ resolutions, statusRef }): Effect.Effect<Runtime.NexusRuntime<R | Capability.EnvironmentShape | EventBusShape>, ApplicationInitError, Scope.Scope> =>
-    Effect.exit(Runtime.make(Layer.provideMerge(app.definition.runtime, Capability.EnvironmentLive(resolutions)))).pipe(
-      Effect.andThen((exit) => {
-        if (Exit.isFailure(exit)) {
-          const error: ApplicationInitError = { _tag: "ServiceGraphFailed", cause: exit.cause };
+    Effect.exit(Runtime.make(Layer.provideMerge(app.definition.runtime, Capability.EnvironmentLive(resolutions)))).pipe(Effect.andThen((exit) => {
+      if (Exit.isFailure(exit)) {
+        const error: ApplicationInitError = { _tag: "ServiceGraphFailed", cause: exit.cause };
 
-          return Ref.set(statusRef, { _tag: "Failed", error }).pipe(Effect.andThen(Effect.fail(error)));
-        }
+        return Ref.set(statusRef, { _tag: "Failed", error }).pipe(Effect.andThen(Effect.fail(error)));
+      }
 
-        return Effect.succeed(exit.value);
-      })
-    )
+      return Effect.succeed(exit.value);
+    }))
   ),
   Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Running" })),
   // The application's lifecycle is its runtime's (N2). The runtime's termination

@@ -62,39 +62,36 @@ export const bind = <I, O, E, R>(command: Command<I, O, E, R>, toInput: (args: R
 // A rejection from the runtime is a programming, package or runtime defect, so
 // it's Effect.promise (a defect), never a typed failure (spec §6.4).
 const renderSnapshot = (program: Program, snapshot: Record<string, unknown>): Effect.Effect<Render, MeshDiagnostics> =>
-  Effect.promise(() => meshRender({ program: { root: program.root, templates: program.templates }, model: program.model, snapshot })).pipe(
-    Effect.flatMap((result) => result.diagnostics === undefined
-      ? Effect.succeed(result.render)
-      : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics }))
+  Effect.promise(() => meshRender({ program: { root: program.root, templates: program.templates }, model: program.model, snapshot })).pipe(Effect.flatMap((result) => result.diagnostics === undefined
+    ? Effect.succeed(result.render)
+    : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics }))
   );
 
-export const host = <E, R>(options: {
+type HostOptions<E, R> = {
   readonly program: Program;
   readonly scope: SelectorHandle<Record<string, unknown>>; // already shaped to the manifest (records are exact)
   readonly commands: Readonly<Record<string, Binding<E, R>>>; // key: "component/name"
-}): Host<E, R> => {
-  const { program, scope, commands } = options;
+}
 
-  return {
-    render: Effect.flatMap(scope.value, (snapshot) => renderSnapshot(program, snapshot)),
-    // Sequential, future commits only, and a failed render ends the stream.
-    // That's Effect's default for mapEffect, and it's the v0.2 NEXUS contract.
-    renders: Stream.mapEffect(scope.changes, (snapshot) => renderSnapshot(program, snapshot)),
-    // M1: `render` goes to the runtime exactly as the caller supplied it.
-    dispatch: (render, handler, payload) => Effect.promise(() => meshDispatch(render, handler, payload)).pipe(
-      Effect.flatMap((result) => result.diagnostics === undefined
-        ? Effect.succeed(result.intent)
-        : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics })),
-      Effect.flatMap((intent): Effect.Effect<Dispatched, UnmappedCommand | E, R> => {
-        const { component, name } = intent.command;
-        const key = `${component}/${name}`;
-        // M3: own entries only, so nothing inherited (e.g. from Object.prototype) can act as a binding.
-        const binding = Object.hasOwn(commands, key) ? commands[key] : undefined;
+export const host = <E, R>({ program, scope, commands }: HostOptions<E, R>): Host<E, R> => ({
+  render: Effect.flatMap(scope.value, (snapshot) => renderSnapshot(program, snapshot)),
+  // Sequential, future commits only, and a failed render ends the stream.
+  // That's Effect's default for mapEffect, and it's the v0.2 NEXUS contract.
+  renders: Stream.mapEffect(scope.changes, (snapshot) => renderSnapshot(program, snapshot)),
+  // M1: `render` goes to the runtime exactly as the caller supplied it.
+  dispatch: (render, handler, payload) => Effect.promise(() => meshDispatch(render, handler, payload)).pipe(
+    Effect.flatMap((result) => result.diagnostics === undefined
+      ? Effect.succeed(result.intent)
+      : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics })),
+    Effect.flatMap((intent): Effect.Effect<Dispatched, UnmappedCommand | E, R> => {
+      const { component, name } = intent.command;
+      const key = `${component}/${name}`;
+      // M3: own entries only, so nothing inherited (e.g. from Object.prototype) can act as a binding.
+      const binding = Object.hasOwn(commands, key) ? commands[key] : undefined;
 
-        return binding === undefined
-          ? Effect.fail<UnmappedCommand>({ _tag: "UnmappedCommand", component, name })
-          : Effect.map(binding(intent.arguments), (output): Dispatched => ({ intent, output }));
-      })
-    ),
-  };
-};
+      return binding === undefined
+        ? Effect.fail<UnmappedCommand>({ _tag: "UnmappedCommand", component, name })
+        : Effect.map(binding(intent.arguments), (output): Dispatched => ({ intent, output }));
+    })
+  ),
+});
