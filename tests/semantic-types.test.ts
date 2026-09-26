@@ -379,10 +379,11 @@ describe("Semantic types: whole NEXUS values don't fit (DoD 10–12, I15)", () =
     expectTypeOf<C>().not.toMatchTypeOf<Semantic.Declaration>();
     expectTypeOf<C>().not.toMatchTypeOf<Semantic.TargetProfile>();
     expectTypeOf<C>().not.toMatchTypeOf<Semantic.AnalysisContext>();
-    // Open point (see the plan's "As built"): a Capability is `{ id: string; tag }`, and a
-    // Declaration requires only `id: string`, so TypeScript's structural typing accepts a
-    // Capability where a Declaration is expected. No assertion is made here until that is
-    // decided. At runtime, analysis reads only a declaration's modeled fields (semantic-isolation).
+    // Not asserted, by design (outline Revision 3, DoD 12): a Capability is `{ id: string; tag }`,
+    // and a Declaration requires only `id: string`, so TypeScript's structural typing accepts a
+    // Capability where a Declaration is expected. What the model guarantees instead is that no
+    // Capability-related type appears in it or is required by it (the test below). At runtime,
+    // analysis reads only a declaration's modeled fields (semantic-isolation).
     expectTypeOf<Cap>().not.toMatchTypeOf<Semantic.TargetProfile>();
     expectTypeOf<Cap>().not.toMatchTypeOf<Semantic.AnalysisContext>();
     expectTypeOf<Res>().not.toMatchTypeOf<Semantic.Declaration>();
@@ -415,6 +416,17 @@ describe("Semantic types: outputs and inputs are plain data (I13, I18)", () => {
     expectTypeOf<IsPlainData<Semantic.RejectionIssue>>().toEqualTypeOf<true>();
     expectTypeOf<IsPlainData<Semantic.OperationResult>>().toEqualTypeOf<true>();
     expectTypeOf<IsPlainData<Semantic.AnalysisContext>>().toEqualTypeOf<true>();
+  });
+
+  it("no Capability-related type appears in, or is required by, the model (DoD 12)", () => {
+    // Appears in: src/semantic/index.ts has no imports at all (tests/architecture.test.ts,
+    // "is one file with no imports"), so no type defined in src/capability can appear in the
+    // model. The model is also plain data (above), which Capability and EnvironmentShape are not.
+    expectTypeOf<IsPlainData<Capability.Capability<{ readonly read: () => string }>>>().toEqualTypeOf<false>();
+    expectTypeOf<IsPlainData<Capability.EnvironmentShape>>().toEqualTypeOf<false>();
+
+    // Required by: plain data alone satisfies the whole input, with no Capability-related value.
+    expectTypeOf<{ readonly declarations: []; readonly profile: { readonly name: ""; readonly provided: []; readonly notProvided: [] } }>().toMatchTypeOf<Semantic.AnalysisContext>();
   });
 
   it("controls: the check rejects what it should", () => {
