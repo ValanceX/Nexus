@@ -696,6 +696,44 @@ Optimization must not violate NEXUS resource, state, event, or shutdown contract
 
 A program must remain semantically valid even when an optimization cannot be performed.
 
+The following invariants were established by NEXUS v0.4 (the semantic analysis foundation; see `superpowers/specs/2026-09-26-nexus-v0.4-outline.md`). They refine the ones above, as noted, and hold for all later work unless this document is deliberately revised.
+
+### I11 — Semantic facts precede execution (refines I1)
+
+Every semantic fact, verdict, classification and diagnostic is established without executing the operation it concerns, and without running any application code. Semantic analysis needs no started application or runtime.
+
+### I12 — Unknown semantics remain executable, and opaque is never incompatible (refines I2 and I10)
+
+Missing information never produces an incompatible verdict or an error. Analysis never changes whether or how an operation executes. *Opaque* means NEXUS cannot establish a fact; it never means invalid, unsafe or failed.
+
+### I13 — Diagnostics are representation-independent (refines I7)
+
+A diagnostic is plain data that survives a JSON round trip unchanged, with no function, class instance, error object, markup or pre-rendered excerpt. Equal inputs give equal diagnostics in equal order, whoever consumes them.
+
+### I14 — Declared semantics are the analysis boundary (refines I3)
+
+A semantic property is known only when a declaration explicitly represents it. Nothing is inferred from executing code, erased types, names, conventions or source inspection, unless a later release introduces an explicit producer of declarations. A property that isn't known is never treated as false or empty.
+
+### I15 — Target capability is distinct from application capability
+
+Target capabilities and application capabilities are separate concepts, with separate identifier spaces. Semantic analysis neither reads nor affects how application capabilities resolve, and application capability configuration never decides a target capability.
+
+### I16 — Target compatibility comes from declarations, not execution or discovery (refines I5)
+
+A verdict depends only on declared requirements and an explicitly supplied target profile. Incompatibility is proven, never inferred: it needs a declared requirement and an explicit "not provided". A capability the profile doesn't mention is undecided.
+
+### I17 — Source provenance is preserved (refines I6)
+
+Every supplied provenance reaches every diagnostic about it exactly: never synthesized, approximated, widened or moved. A diagnostic whose subject has no supplied location says so explicitly.
+
+### I18 — Semantic analysis does not expose Effect internals
+
+The semantic model's public types reference no Effect or NEXUS runtime type, and its entry point is not an Effect.
+
+### I19 — Lifecycle and ownership guarantees are unchanged by analysis
+
+Semantic analysis observes, alters and depends on no lifecycle state, and changes no error channel, admission rule or ownership rule.
+
 ---
 
 ## 19. Long-Term Shape
