@@ -1,4 +1,8 @@
-import { Context, Effect, Layer, PubSub, Queue, Schema, Scope, Stream } from "effect";
+import type { Envelope } from "./internal.js";
+
+import { Effect, Layer, Queue, Schema, Scope, Stream } from "effect";
+
+import { EventBus, makeBus } from "./internal.js";
 
 export interface EventDef<Tag extends string, Payload> {
   readonly _tag: Tag;
@@ -9,11 +13,6 @@ export const define = <Tag extends string, Payload>(tag: Tag, schema: Schema.Sch
   _tag: tag, schema
 });
 
-interface Envelope {
-  readonly _tag: string;
-  readonly payload: unknown;
-}
-
 // The bus service shape. Event.publish/Event.subscribe (below) remain the
 // public, per-EventDef API surface documented in docs/primitives/event.md —
 // this type is exported so that it can be named in a Layer's requirements
@@ -23,16 +22,13 @@ export interface EventBusShape {
   readonly subscribe: Effect.Effect<Queue.Dequeue<Envelope>, never, Scope.Scope>;
 }
 
-const EventBus = Context.GenericTag<EventBusShape>("nexus/EventBus");
-
+// A bus that closes with its layer's scope: every subscription then ends
+// normally, and nothing is delivered after (event.md, Lifecycle).
 export const EventBusLive: Layer.Layer<EventBusShape, never, never> = Layer.scoped(
   EventBus,
-  Effect.Do.pipe(
-    Effect.andThen(PubSub.unbounded<Envelope>()),
-    Effect.map((pubsub): EventBusShape => ({
-      publish: (envelope: Envelope) => PubSub.publish(pubsub, envelope).pipe(Effect.asVoid),
-      subscribe: PubSub.subscribe(pubsub),
-    }))
+  makeBus.pipe(
+    Effect.tap(({ close }) => Effect.addFinalizer(() => close)),
+    Effect.map(({ shape }) => shape)
   )
 );
 

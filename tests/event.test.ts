@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber, Schema, Stream } from "effect";
+import { Chunk, Context, Duration, Effect, Exit, Fiber, Layer, Queue, Ref, Schedule, Schema, Scope, Stream } from "effect";
 import { describe, it, expect } from "vitest";
 
 import * as EventModule from "../src/event/index.js";
@@ -44,5 +44,49 @@ describe("Event", () => {
     ));
 
     expect(Array.from(result)).toEqual([{ userId: "u1" }]);
+  });
+
+  describe("closing (N1, D4)", () => {
+    // Waits, boundedly, until `get` satisfies `done`.
+    const eventually = <A>(get: Effect.Effect<A>, done: (a: A) => boolean): Effect.Effect<A, unknown> =>
+      get.pipe(Effect.filterOrFail(done), Effect.retry(Schedule.spaced("1 millis")), Effect.timeout(Duration.seconds(1)));
+
+    it("ends every subscription normally when the bus's scope closes, delivering nothing after", async () => {
+      const result = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("busScope", () => Scope.make()),
+        Effect.bind("bus", ({ busScope }) => Layer.buildWithScope(EventModule.EventBusLive, busScope)),
+        Effect.bind("seen", () => Ref.make<ReadonlyArray<{ readonly userId: string }>>([])),
+        Effect.bind("consumer", ({ bus, seen }) => Effect.forkDaemon(Stream.runForEach(EventModule.subscribe(UserSelected), (event) => Ref.update(seen, (xs) => [...xs, event])).pipe(Effect.provide(bus)))),
+        Effect.tap(() => Effect.sleep("1 millis")),
+        Effect.tap(({ bus }) => EventModule.publish(UserSelected, { userId: "before" }).pipe(Effect.provide(bus))),
+        Effect.tap(({ seen }) => eventually(Ref.get(seen), (xs) => xs.length === 1)),
+        Effect.tap(({ busScope }) => Scope.close(busScope, Exit.void)),
+        Effect.bind("exit", ({ consumer }) => Fiber.await(consumer).pipe(Effect.timeout(Duration.seconds(1)))),
+        Effect.bind("publishAfter", ({ bus }) => Effect.exit(EventModule.publish(UserSelected, { userId: "after" }).pipe(Effect.provide(bus)))),
+        Effect.bind("late", ({ bus }) => Stream.runCollect(EventModule.subscribe(UserSelected)).pipe(Effect.provide(bus), Effect.timeout(Duration.seconds(1)))),
+        Effect.bind("seenAtEnd", ({ seen }) => Ref.get(seen))
+      ));
+
+      expect(Exit.isSuccess(result.exit)).toBe(true);
+      expect(result.seenAtEnd).toEqual([{ userId: "before" }]);
+      expect(Exit.isSuccess(result.publishAfter)).toBe(true);
+      expect(Chunk.toReadonlyArray(result.late)).toEqual([]);
+    });
+
+    it("shuts down a queue taken directly from the bus service", async () => {
+      // The service tag isn't exported; a GenericTag with the same key resolves the same service.
+      const Bus = Context.GenericTag<EventModule.EventBusShape>("nexus/EventBus");
+
+      const shutDown = await Effect.runPromise(Effect.Do.pipe(
+        Effect.bind("busScope", () => Scope.make()),
+        Effect.bind("bus", ({ busScope }) => Layer.buildWithScope(EventModule.EventBusLive, busScope)),
+        Effect.bind("subscriberScope", () => Scope.make()),
+        Effect.bind("queue", ({ bus, subscriberScope }) => Scope.extend(Context.get(bus, Bus).subscribe, subscriberScope)),
+        Effect.tap(({ busScope }) => Scope.close(busScope, Exit.void)),
+        Effect.flatMap(({ queue }) => Queue.isShutdown(queue))
+      ));
+
+      expect(shutDown).toBe(true);
+    });
   });
 });
