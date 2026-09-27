@@ -1,6 +1,4 @@
-import type { Scope } from "effect";
-
-import { Context, Effect, Layer } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Option, Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
@@ -83,5 +81,141 @@ describe("Platform: the supply point (v0.6 D30, D42)", () => {
 
   it("StartOptions is exactly { platform? } (type, D42)", () => {
     expectTypeOf<Application.StartOptions>().toEqualTypeOf<{ readonly platform?: Application.Platform }>();
+  });
+});
+
+// A scoped platform that logs its acquisition and release (C15).
+const logged = (log: Array<string>, implementation: unknown = {}, id = "probe.cap"): Application.Platform => Layer.scoped(Capability.Environment, Effect.acquireRelease(
+  Effect.sync((): Capability.EnvironmentShape => {
+    log.push("platform acquire");
+
+    // v0.6 Task 8 removes source
+    return { resolutions: new Map<string, Capability.CapabilityResolution<unknown>>([[id, { _tag: "Available", implementation, source: "native" }]]) };
+  }),
+  () => Effect.sync(() => { log.push("platform release"); })
+));
+
+// An application-layer resource that logs; its release may throw (dies) after logging.
+const appResource = (log: Array<string>, releaseDies = false) => Layer.scopedDiscard(Effect.acquireRelease(
+  Effect.sync(() => { log.push("app acquire"); }),
+  () => Effect.sync(() => { log.push("app release"); }).pipe(Effect.andThen(releaseDies ? Effect.die("release boom") : Effect.void))
+));
+
+const failureOf = <A, E>(exit: Exit.Exit<A, E>): unknown => Exit.isFailure(exit) ? Option.getOrNull(Cause.failureOption(exit.cause)) : null;
+
+const order = ["platform acquire", "app acquire", "running", "app release", "platform release"];
+
+// The C15 lifetime invariant. The platform Layer is provided to the
+// application-owned runtime scope, so the application's lifetime governs
+// acquisition and release of platform resources: platform first in, last out,
+// on both shutdown routes and on every start-failure path (I31).
+describe("Platform: the lifetime invariant (v0.6 C15, I31)", () => {
+  it("3. route 1 (Application.shutdown): platform acquire, app acquire, running, app release, platform release", async () => {
+    const log: Array<string> = [];
+    const app = Application.define({ name: "route-1", runtime: appResource(log) });
+
+    const status = await Effect.runPromise(Effect.scoped(Application.start(app, { platform: logged(log) }).pipe(
+      Effect.tap(() => Effect.sync(() => { log.push("running"); })),
+      Effect.tap((running) => Application.shutdown(running)),
+      Effect.andThen((running) => Application.status(running))
+    )));
+
+    expect(log).toEqual(order);
+    expect(status).toEqual({ _tag: "Stopped" });
+  });
+
+  it("3. route 2 (closing the start scope): the same order", async () => {
+    const log: Array<string> = [];
+    const app = Application.define({ name: "route-2", runtime: appResource(log) });
+
+    const status = await Effect.runPromise(Effect.Do.pipe(
+      Effect.bind("scope", () => Scope.make()),
+      Effect.bind("running", ({ scope }) => Scope.extend(Application.start(app, { platform: logged(log) }), scope)),
+      Effect.tap(() => Effect.sync(() => { log.push("running"); })),
+      Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+      Effect.andThen(({ running }) => Application.status(running))
+    ));
+
+    expect(log).toEqual(order);
+    expect(status).toEqual({ _tag: "Stopped" });
+  });
+
+  it("4. platform acquisition failure: ServiceGraphFailed, no handle, its acquisition released, the application layer never built", async () => {
+    const log: Array<string> = [];
+    const app = Application.define({ name: "platform-fails", runtime: appResource(log) });
+    const platform: Application.Platform = Layer.merge(logged(log), Layer.fail("platform boom"));
+
+    const observed = await Effect.runPromise(Effect.scoped(Effect.exit(Application.start(app, { platform }).pipe(
+      Effect.tap(() => Effect.sync(() => { log.push("running"); }))
+    )).pipe(
+      // Observed inside the caller's scope: nothing may wait for that scope to close.
+      Effect.map((exit) => ({ exit, log: [...log] }))
+    )));
+
+    expect(Exit.isFailure(observed.exit)).toBe(true);
+    expect(failureOf(observed.exit)).toMatchObject({ _tag: "ServiceGraphFailed" });
+    expect(observed.log).toEqual(["platform acquire", "platform release"]);
+    expect(log).toEqual(["platform acquire", "platform release"]);
+  });
+
+  it("4a. application-layer failure after platform acquisition: app release then platform release, before start fails; no handle", async () => {
+    const log: Array<string> = [];
+    const app = Application.define({ name: "app-fails", runtime: Layer.merge(appResource(log), Layer.fail("app boom")) });
+
+    const observed = await Effect.runPromise(Effect.scoped(Effect.exit(Application.start(app, { platform: logged(log) }).pipe(
+      Effect.tap(() => Effect.sync(() => { log.push("running"); }))
+    )).pipe(
+      Effect.map((exit) => ({ exit, log: [...log] }))
+    )));
+
+    expect(Exit.isFailure(observed.exit)).toBe(true);
+    expect(failureOf(observed.exit)).toMatchObject({ _tag: "ServiceGraphFailed" });
+    expect(observed.log).toEqual(["platform acquire", "app acquire", "app release", "platform release"]);
+    expect(log).toEqual(observed.log);
+  });
+
+  it("4b. a release that throws during shutdown: platform release still follows, status Stopped, the performer re-raises", async () => {
+    const log: Array<string> = [];
+    const app = Application.define({ name: "release-dies", runtime: appResource(log, true) });
+
+    const observed = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind("running", () => Application.start(app, { platform: logged(log) })),
+      Effect.tap(() => Effect.sync(() => { log.push("running"); })),
+      Effect.bind("shutdown", ({ running }) => Effect.exit(Application.shutdown(running))),
+      Effect.bind("status", ({ running }) => Application.status(running))
+    )));
+
+    expect(Exit.isFailure(observed.shutdown) && Cause.isDie(observed.shutdown.cause)).toBe(true);
+    expect(observed.status).toEqual({ _tag: "Stopped" });
+    expect(log).toEqual(order);
+  });
+});
+
+describe("Platform: isolation (v0.6 C15, D30)", () => {
+  it("5. one platform value started twice concurrently: independent acquisitions and resolutions", async () => {
+    const log: Array<string> = [];
+    const platform = logged(log, { n: 1 });
+    const app = Application.define({ name: "twice", runtime: Layer.empty });
+    const Probe = Capability.define<{ readonly n: number }>("probe.cap");
+
+    const survivor = await Effect.runPromise(Effect.scoped(Effect.all([Application.start(app, { platform }), Application.start(app, { platform })], { concurrency: "unbounded" }).pipe(
+      Effect.tap(([first]) => Application.shutdown(first)),
+      Effect.andThen(([, second]) => Effect.promise(() => Runtime.run(second.runtime, Capability.resolve(Probe))))
+    )));
+
+    expect(log.filter((entry) => entry === "platform acquire")).toHaveLength(2);
+    expect(survivor).toMatchObject({ _tag: "Available", implementation: { n: 1 } });
+  });
+
+  it("6. two concurrent applications on different platforms resolve their own implementations", async () => {
+    const app = Application.define({ name: "two-platforms", runtime: Layer.empty });
+    const Probe = Capability.define<{ readonly n: number }>("probe.cap");
+    const resolveOn = (n: number) => Application.start(app, { platform: logged([], { n }) }).pipe(
+      Effect.andThen((running) => Effect.promise(() => Runtime.run(running.runtime, Effect.map(Capability.require(Probe), (probe) => probe.n))))
+    );
+
+    const result = await Effect.runPromise(Effect.scoped(Effect.all([resolveOn(1), resolveOn(2)], { concurrency: "unbounded" })));
+
+    expect(result).toEqual([1, 2]);
   });
 });

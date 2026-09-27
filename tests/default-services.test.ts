@@ -29,3 +29,20 @@ describe("Default services: Effect's precedence, characterized (v0.6 D39)", () =
     expect(await readClock(Effect.withClock(Nexus.Application.start(app), fixed(1)))).toBe(3);
   });
 });
+
+// D39: the platform sets default services, between the caller and the application layer.
+describe("Default services: the platform's place in Effect's precedence (v0.6 D39)", () => {
+  const platform: Nexus.Application.Platform = Layer.merge(Nexus.Capability.EnvironmentLive(new Map()), Layer.setClock(fixed(2)));
+
+  it("7. a platform Clock wins over the caller's", async () => {
+    const app = Nexus.Application.define({ name: "platform-clock", runtime: Layer.empty });
+
+    expect(await readClock(Effect.withClock(Nexus.Application.start(app, { platform }), fixed(1)))).toBe(2);
+  });
+
+  it("7. an application-layer Clock wins over the platform's", async () => {
+    const app = Nexus.Application.define({ name: "app-over-platform", runtime: Layer.setClock(fixed(3)) });
+
+    expect(await readClock(Effect.withClock(Nexus.Application.start(app, { platform }), fixed(1)))).toBe(3);
+  });
+});
