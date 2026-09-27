@@ -283,7 +283,7 @@ describe("Semantic: independence from execution (DoD 3, 10, 11, 12; I11, I15, D1
     });
 
     it("Available application capability, target doesn't provide it: incompatible", async () => {
-      const available: Capability.CapabilityResolution<unknown> = { _tag: "Available", implementation: { read: () => "x" }, source: "native" };
+      const available: Capability.CapabilityResolution<unknown> = { _tag: "Available", implementation: { read: () => "x" } };
 
       expect(classify({ name: "p", provided: [], notProvided: ["filesystem"] })).toBe("incompatible");
       expect(await resolutions(available, true)).toEqual(await resolutions(available, false));

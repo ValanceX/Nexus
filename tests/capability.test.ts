@@ -10,13 +10,13 @@ describe("Capability", () => {
 
   it("resolves to Available when the environment provides an implementation", async () => {
     const resolutions = new Map<string, Capability.CapabilityResolution<unknown>>([
-      [Haptics.id, { _tag: "Available", implementation: { vibrate: () => 1 }, source: "native" }],
+      [Haptics.id, { _tag: "Available", implementation: { vibrate: () => 1 } }],
     ]);
     const result = await Effect.runPromise(
       Capability.resolve(Haptics).pipe(Effect.provide(Capability.EnvironmentLive(resolutions)))
     );
     expect(result._tag).toBe("Available");
-    expect(result._tag === "Available" && result.source).toBe("native");
+    expect(Object.keys(result).sort()).toEqual(["_tag", "implementation"]);
   });
 
   it("resolves to Unavailable when nothing is registered", async () => {
@@ -26,14 +26,15 @@ describe("Capability", () => {
     expect(result._tag).toBe("Unavailable");
   });
 
-  it("reports a registered fallback source as Available", async () => {
+  it("a platform-supplied substitute implementation is just Available", async () => {
     const resolutions = new Map<string, Capability.CapabilityResolution<unknown>>([
-      [Haptics.id, { _tag: "Available", implementation: { vibrate: () => 0 }, source: "fallback" }],
+      [Haptics.id, { _tag: "Available", implementation: { vibrate: () => 0 } }],
     ]);
     const result = await Effect.runPromise(
       Capability.resolve(Haptics).pipe(Effect.provide(Capability.EnvironmentLive(resolutions)))
     );
-    expect(result).toMatchObject({ _tag: "Available", source: "fallback" });
+    expect(result).toMatchObject({ _tag: "Available" });
+    expect(result._tag === "Available" && result.implementation.vibrate()).toBe(0);
   });
 
   it("require fails with a typed CapabilityUnavailableError when unavailable", async () => {
@@ -49,7 +50,7 @@ describe("Capability", () => {
 
   it("require succeeds with the implementation when available", async () => {
     const resolutions = new Map<string, Capability.CapabilityResolution<unknown>>([
-      [Haptics.id, { _tag: "Available", implementation: { vibrate: () => 5 }, source: "browser" }],
+      [Haptics.id, { _tag: "Available", implementation: { vibrate: () => 5 } }],
     ]);
     const result = await Effect.runPromise(
       Capability.require(Haptics).pipe(Effect.provide(Capability.EnvironmentLive(resolutions)))

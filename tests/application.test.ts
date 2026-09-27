@@ -63,7 +63,7 @@ describe("Application", () => {
     );
 
     const environment = new Map<string, Capability.CapabilityResolution<unknown>>([
-      ["device.flashlight", { _tag: "Available", implementation: { on: () => "lit" }, source: "native" }],
+      ["device.flashlight", { _tag: "Available", implementation: { on: () => "lit" } }],
     ]);
 
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(

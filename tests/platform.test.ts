@@ -11,8 +11,7 @@ interface FlashlightShape { readonly on: () => string }
 const Flashlight = Capability.define<FlashlightShape>("device.flashlight");
 
 const litResolutions = (): ReadonlyMap<string, Capability.CapabilityResolution<unknown>> => new Map<string, Capability.CapabilityResolution<unknown>>([
-  // v0.6 Task 8 removes source
-  [Flashlight.id, { _tag: "Available", implementation: { on: () => "lit" }, source: "native" }],
+  [Flashlight.id, { _tag: "Available", implementation: { on: () => "lit" } }],
 ]);
 
 interface ReporterShape { readonly report: () => Effect.Effect<string> }
@@ -94,8 +93,7 @@ const logged = (log: Array<string>, implementation: unknown = {}, id = "probe.ca
   Effect.sync((): Capability.EnvironmentShape => {
     log.push("platform acquire");
 
-    // v0.6 Task 8 removes source
-    return { resolutions: new Map<string, Capability.CapabilityResolution<unknown>>([[id, { _tag: "Available", implementation, source: "native" }]]) };
+    return { resolutions: new Map<string, Capability.CapabilityResolution<unknown>>([[id, { _tag: "Available", implementation }]]) };
   }),
   () => Effect.sync(() => { log.push("platform release"); })
 ));
@@ -222,5 +220,20 @@ describe("Platform: isolation (v0.6 C15, D30)", () => {
     const result = await Effect.runPromise(Effect.scoped(Effect.all([resolveOn(1), resolveOn(2)], { concurrency: "unbounded" })));
 
     expect(result).toEqual([1, 2]);
+  });
+});
+
+describe("Platform: NEXUS names no execution environment (v0.6 D33, I30)", () => {
+  it("an Available resolution has no source (type)", () => {
+    // @ts-expect-error: CapabilityResolution carries no source (D33)
+    const resolution: Capability.CapabilityResolution<{}> = { _tag: "Available", implementation: {}, source: "native" };
+
+    void resolution;
+  });
+
+  it("resolving through a platform yields exactly _tag and implementation", async () => {
+    const result = await Effect.runPromise(Capability.resolve(Flashlight).pipe(Effect.provide(Capability.EnvironmentLive(litResolutions()))));
+
+    expect(Object.keys(result).sort()).toEqual(["_tag", "implementation"]);
   });
 });
