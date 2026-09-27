@@ -119,13 +119,16 @@ describe("Platform: the lifetime invariant (v0.6 C15, I31)", () => {
     const log: Array<string> = [];
     const app = Application.define({ name: "route-1", runtime: appResource(log) });
 
+    // Everything is released by the time shutdown returns, not later when the
+    // caller's scope closes: the platform belongs to the application's lifetime.
     const status = await Effect.runPromise(Effect.scoped(Application.start(app, { platform: logged(log) }).pipe(
       Effect.tap(() => Effect.sync(() => { log.push("running"); })),
       Effect.tap((running) => Application.shutdown(running)),
+      Effect.tap(() => Effect.sync(() => { log.push("shutdown returned"); })),
       Effect.andThen((running) => Application.status(running))
     )));
 
-    expect(log).toEqual(order);
+    expect(log).toEqual([...order, "shutdown returned"]);
     expect(status).toEqual({ _tag: "Stopped" });
   });
 
@@ -138,10 +141,11 @@ describe("Platform: the lifetime invariant (v0.6 C15, I31)", () => {
       Effect.bind("running", ({ scope }) => Scope.extend(Application.start(app, { platform: logged(log) }), scope)),
       Effect.tap(() => Effect.sync(() => { log.push("running"); })),
       Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
+      Effect.tap(() => Effect.sync(() => { log.push("scope closed"); })),
       Effect.andThen(({ running }) => Application.status(running))
     ));
 
-    expect(log).toEqual(order);
+    expect(log).toEqual([...order, "scope closed"]);
     expect(status).toEqual({ _tag: "Stopped" });
   });
 
