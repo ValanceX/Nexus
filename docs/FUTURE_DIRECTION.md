@@ -811,6 +811,28 @@ No analysis result affects `Application.start`, admission, `run` or dispatch.
 
 Capability identifiers are owned by whoever defines the capability contract. NEXUS defines none, and keeps no registry.
 
+The following invariants were established by NEXUS v0.8, application semantics (see `superpowers/specs/2026-09-27-nexus-v0.8-outline.md`).
+
+### I39 — Requirements live in declarations, not in primitives
+
+Requirements are owned by units (the start unit and admitted units) and carried by standalone declarations. No NEXUS primitive value, definition, `Layer`, start option or runtime handle carries a requirement.
+
+### I40 — Application-level requirement facts are derived
+
+The application requirement set and classification are computed from unit declarations. NEXUS never declares or stores them separately.
+
+### I41 — Unit necessity is not application necessity
+
+A unit's requirement is inherited into the application's requirement set, never into its necessity. Application necessity is the start unit's requirement.
+
+### I42 — Requirements are relative to the composition
+
+A unit's requirement holds for the application composition its analysis context describes.
+
+### I43 — Requirements are structural claims, not effects
+
+Declaring a requirement executes, resolves, acquires and registers nothing, and executing declares nothing.
+
 ---
 
 ## 19. Long-Term Shape

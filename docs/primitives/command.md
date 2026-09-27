@@ -81,6 +81,12 @@ human-readable messages describing why the input failed its schema.
 - Commands are the *only* thing MESH can reach (§15), and only through an
   explicit adapter binding. MESH must never be handed a `Service` tag or a
   `StateHandle`'s `update` directly.
+- For application semantics (v0.8), a command is the typical **admitted
+  unit**: its requirement is described by a standalone semantic declaration,
+  and holds for the composition the application runs with (see
+  [`semantic.md`](../semantic.md), "Application contexts"). A command carries
+  no requirement. Its `name` is not a semantic unit identity: declaration ids
+  are local to their analysis context.
 
 ## Example
 

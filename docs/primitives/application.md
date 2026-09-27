@@ -220,6 +220,23 @@ const program = Effect.scoped(Effect.Do.pipe(
 ));
 ```
 
+## Application semantics (v0.8)
+
+An application states what it requires through standalone semantic
+declarations, one per **unit** (see [`semantic.md`](../semantic.md),
+"Application contexts"). The definition carries none: `ApplicationDefinition`
+is exactly `{ name, runtime }`, and `start` reads no requirement.
+
+- **The start unit** is the service graph build: the `runtime` layer that
+  `start` builds after the platform. What it can't be built without is the
+  application's **necessity**: without it, `start` fails with
+  `ServiceGraphFailed`.
+- **Admitted units** are effects run through `running.runtime`, typically
+  commands. A command's requirement is that command's alone. It never makes
+  the application fail to start.
+- An analysis verdict changes nothing here. `start`, admission and capability
+  resolution behave exactly as without analysis.
+
 ## Testing
 
 Covers §20 "Application": initialization, startup failure (assert a typed

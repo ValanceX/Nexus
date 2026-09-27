@@ -68,6 +68,11 @@ that check.
   belongs inside `HttpUserRepository`'s implementation, not as a separate
   service every use case depends on) — keeps the service surface aligned
   with §2.1's "application semantics over framework abstractions."
+- A service *contract* never requires a capability (v0.8). An
+  *implementation* that needs one while its layer is built is part of the
+  application's start unit. One that needs it inside a method contributes to
+  each unit that calls the method (see [`semantic.md`](../semantic.md),
+  "Application contexts").
 
 ## Example
 

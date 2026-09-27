@@ -70,6 +70,10 @@ failure already unwinding).
   "acquire" just means "construct a stateless client," that's a `Service`
   implementation, not a `Resource`; `Resource` is specifically for things
   with a release step that matters.
+- A `Resource` is part of the unit that acquires it (v0.8): the start unit if
+  it is acquired while a service layer is built, otherwise the admitted unit
+  that acquires it (see [`semantic.md`](../semantic.md), "Application
+  contexts").
 
 ## Example
 
