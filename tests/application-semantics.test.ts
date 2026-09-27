@@ -139,3 +139,138 @@ describe("Application semantics: characterizations (v0.8)", () => {
     expect(outcome).toEqual({ _tag: "Rejected", issues: [{ reason: "duplicate-identity", path: ["declarations", 1, "id"] }] });
   });
 });
+
+// C26, as local test tooling only (D61, D66): not exported, not in src/. It reads
+// the public outcome for classifications, and the plain-data declarations this
+// file wrote for requirement occurrences. It reads no runtime value, and gives no
+// verdict cause. Its result is relative to the units the context describes.
+interface Aggregate {
+  readonly capabilities: ReadonlyArray<string>;
+  readonly occurrences: ReadonlyArray<{ readonly unit: string; readonly capability: string; readonly provenance: Semantic.Location }>;
+  readonly completeness: "complete" | "partial";
+  readonly classification: Semantic.Classification;
+}
+
+const rank: Record<Semantic.Classification, number> = { supported: 0, opaque: 1, incompatible: 2 };
+
+const aggregate = (outcome: ReturnType<typeof analyzed>, declarations: ReadonlyArray<Semantic.Declaration>): Aggregate => {
+  const capabilities: Array<string> = [];
+  const occurrences: Array<Aggregate["occurrences"][number]> = [];
+  for (const declaration of declarations) {
+    for (const requirement of declaration.requirements?.capabilities ?? []) {
+      if (!capabilities.includes(requirement.capability)) capabilities.push(requirement.capability);
+      occurrences.push({
+        unit: declaration.id,
+        capability: requirement.capability,
+        provenance: requirement.provenance === undefined ? { _tag: "Unlocated" } : { _tag: "Span", span: { ...requirement.provenance } },
+      });
+    }
+  }
+  // An undeclared unit contributes partial-empty, never "absent".
+  const completeness = declarations.every((declaration) => declaration.requirements?.completeness === "complete") ? "complete" : "partial";
+  const classification = outcome.operations.reduce<Semantic.Classification>((worst, operation) => rank[operation.classification] > rank[worst] ? operation.classification : worst, "supported");
+
+  return { capabilities, occurrences, completeness, classification };
+};
+
+// The union, as one declaration: C26's set with C26's completeness.
+const unionOf = (declarations: ReadonlyArray<Semantic.Declaration>): Semantic.Declaration => {
+  const result = aggregate({ _tag: "Analyzed", properties: [], required: [], profile: "", operations: [], diagnostics: [] }, declarations);
+  return { id: "union", requirements: { completeness: result.completeness, capabilities: result.capabilities.map((capability) => ({ capability })) } };
+};
+
+const span = (source: string, start: number, end: number): Semantic.Span => ({ source, start, end });
+
+describe("Application semantics: the aggregation algebra (v0.8 C26)", () => {
+  it("the worst unit classification equals C4's classification of the union, exhaustively (Y1)", () => {
+    const subsets: ReadonlyArray<ReadonlyArray<string>> = [[], ["a"], ["b"], ["a", "b"]];
+    const states: ReadonlyArray<Semantic.TargetRequirements | undefined> = [
+      undefined,
+      ...subsets.map((ids): Semantic.TargetRequirements => ({ completeness: "complete", capabilities: ids.map((capability) => ({ capability })) })),
+      ...subsets.map((ids): Semantic.TargetRequirements => ({ completeness: "partial", capabilities: ids.map((capability) => ({ capability })) })),
+    ];
+    const decisions = ["provided", "notProvided", "undecided"] as const;
+    const profiles = decisions.flatMap((a) => decisions.map((b) => statement(
+      [...(a === "provided" ? ["a"] : []), ...(b === "provided" ? ["b"] : [])],
+      [...(a === "notProvided" ? ["a"] : []), ...(b === "notProvided" ? ["b"] : [])]
+    )));
+    const lists: Array<ReadonlyArray<Semantic.TargetRequirements | undefined>> = [[]];
+    for (const x of states) {
+      lists.push([x]);
+      for (const y of states) {
+        lists.push([x, y]);
+        for (const z of states) lists.push([x, y, z]);
+      }
+    }
+
+    let cases = 0;
+    const mismatches: Array<unknown> = [];
+    for (const profile of profiles) {
+      for (const list of lists) {
+        const declarations = list.map((requirements, i): Semantic.Declaration => requirements === undefined ? { id: `u${i}` } : { id: `u${i}`, requirements });
+        const perUnit = aggregate(analyzed({ declarations, profile }), declarations).classification;
+        const union = analyzed({ declarations: [unionOf(declarations)], profile }).operations[0]?.classification;
+        cases += 1;
+        if (perUnit !== union) mismatches.push({ list, profile, perUnit, union });
+      }
+    }
+
+    expect(cases).toBe(7380);
+    expect(mismatches).toEqual([]);
+  });
+
+  it("counter-check: an undeclared unit taken as absent would hide an incompatible unit (partial-empty rule)", () => {
+    const profile = statement([], ["a"]);
+    const declarations: ReadonlyArray<Semantic.Declaration> = [{ id: "u0" }, { id: "u1", requirements: requires("a") }];
+
+    expect(aggregate(analyzed({ declarations, profile }), declarations).classification).toBe("incompatible");
+    expect(analyzed({ declarations: [unionOf(declarations)], profile }).operations[0]?.classification).toBe("incompatible");
+    // Absent requirements on the union: the wrong rule.
+    expect(analyzed({ declarations: [{ id: "union" }], profile }).operations[0]?.classification).toBe("opaque");
+  });
+
+  it("orders the set by first occurrence: declaration order, then capability order", () => {
+    const declarations: ReadonlyArray<Semantic.Declaration> = [
+      { id: "unit-1", requirements: requires("b") },
+      { id: "unit-2", requirements: requires("a", "b") },
+      { id: "unit-3", requirements: requires("c", "a") },
+    ];
+
+    expect(aggregate(analyzed({ declarations, profile: statement([], []) }), declarations).capabilities).toEqual(["b", "a", "c"]);
+  });
+
+  it("keeps every occurrence of a duplicate across units, attributed to its unit, with its span", () => {
+    const declarations: ReadonlyArray<Semantic.Declaration> = [
+      { id: "unit-save", requirements: { completeness: "complete", capabilities: [{ capability: Storage.id, provenance: span("app.ts", 10, 20) }] } },
+      { id: "unit-load", requirements: { completeness: "complete", capabilities: [{ capability: Storage.id, provenance: span("app.ts", 40, 52) }, { capability: Network.id }] } },
+    ];
+    const result = aggregate(analyzed({ declarations, profile: statement([Storage.id, Network.id], []) }), declarations);
+
+    expect(result.capabilities).toEqual([Storage.id, Network.id]);
+    expect(result.occurrences).toEqual([
+      { unit: "unit-save", capability: Storage.id, provenance: { _tag: "Span", span: span("app.ts", 10, 20) } },
+      { unit: "unit-load", capability: Storage.id, provenance: { _tag: "Span", span: span("app.ts", 40, 52) } },
+      { unit: "unit-load", capability: Network.id, provenance: { _tag: "Unlocated" } },
+    ]);
+    expect(result.classification).toBe("supported");
+  });
+
+  it("a partial unit opens the aggregate: opaque, unless some unit is incompatible (C4 step 1 first)", () => {
+    const partial: Semantic.Declaration = { id: "unit-sync", requirements: { completeness: "partial", capabilities: [{ capability: Network.id }] } };
+    const complete: Semantic.Declaration = { id: "unit-save", requirements: requires(Storage.id) };
+    const provided = statement([Storage.id, Network.id], []);
+    const storageRefused = statement([Network.id], [Storage.id]);
+
+    const opened = aggregate(analyzed({ declarations: [partial, complete], profile: provided }), [partial, complete]);
+    expect([opened.completeness, opened.classification]).toEqual(["partial", "opaque"]);
+
+    const refused = aggregate(analyzed({ declarations: [partial, complete], profile: storageRefused }), [partial, complete]);
+    expect([refused.completeness, refused.classification]).toEqual(["partial", "incompatible"]);
+  });
+
+  it("an empty context is vacuously supported: complete-empty, relative to the units described", () => {
+    const result = aggregate(analyzed({ declarations: [], profile: statement([], [Storage.id]) }), []);
+
+    expect(result).toEqual({ capabilities: [], occurrences: [], completeness: "complete", classification: "supported" });
+  });
+});
