@@ -1,5 +1,5 @@
 import { Effect, Either, Layer, Schema, Scope } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
 import * as Capability from "../src/capability/index.js";
@@ -350,5 +350,74 @@ describe("Application semantics: units in the lifecycle (v0.8 C27)", () => {
 
     expect(resolved).toEqual({ _tag: "Unavailable", reason: "no resolution registered for 'acme.storage'" });
     expect(after).toStrictEqual(before);
+  });
+});
+
+describe("Application semantics: independence and no attachment (v0.8)", () => {
+  it("Command.define adds no field: exactly name, input and handler (I39)", () => {
+    const command = Command.define("x", Schema.Number, (n: number) => Effect.succeed(n));
+
+    expect(Object.keys(command)).toEqual(["name", "input", "handler"]);
+  });
+
+  it("Application.define adds nothing: exactly { definition }, the object passed, unchanged (I39)", () => {
+    const definition = { name: "x", runtime: Layer.empty };
+    const app = Application.define(definition);
+
+    expect(Object.keys(app)).toEqual(["definition"]);
+    expect(app.definition).toBe(definition);
+    expect(Object.keys(definition)).toEqual(["name", "runtime"]);
+  });
+
+  it("ApplicationDefinition is exactly { name, runtime } (type, I39, D67)", () => {
+    expectTypeOf<Application.ApplicationDefinition<never>>().toEqualTypeOf<{
+      readonly name: string;
+      readonly runtime: Layer.Layer<never, unknown, Application.ApplicationAmbient>;
+    }>();
+  });
+
+  const declarations: ReadonlyArray<Semantic.Declaration> = [
+    { id: "unit-start", requirements: requires() },
+    { id: "unit-save", requirements: requires(Storage.id) },
+    { id: "unit-list", requirements: requires() },
+  ];
+  const statements = {
+    supported: statement([Storage.id], []),
+    opaque: statement([], []),
+    incompatible: statement([], [Storage.id]),
+  } as const;
+  const layers = {
+    Available: withStorage,
+    Unavailable: new Map<string, Capability.CapabilityResolution<unknown>>([[Storage.id, { _tag: "Unavailable", reason: "the Layer supplies none" }]]),
+  } as const;
+
+  for (const classification of ["supported", "opaque", "incompatible"] as const) {
+    for (const supplied of ["Available", "Unavailable"] as const) {
+      it(`application ${classification} × Layer ${supplied}: start, resolve and require are exactly the Layer's, and starting leaves the analysis unchanged (I36, I37, I43)`, async () => {
+        const context: Semantic.AnalysisContext = { declarations, profile: statements[classification], require: ["target-compatibility"] };
+        const before = analyzed(context);
+
+        const observed = await withApplication("independence", Layer.empty, layers[supplied], (running) => Effect.gen(function* () {
+          const status = yield* Application.status(running);
+          const resolved = yield* Effect.promise(() => Runtime.run(running.runtime, Capability.resolve(Storage)));
+          const required = yield* run(running, Capability.require(Storage));
+          return { status, resolved, required };
+        }));
+
+        expect(aggregate(before, declarations).classification).toBe(classification);
+        expect(observed.status).toEqual({ _tag: "Running" });
+        expect(observed.resolved).toEqual(layers[supplied].get(Storage.id));
+        expect(Either.isRight(observed.required)).toBe(supplied === "Available");
+        expect(analyzed(context)).toStrictEqual(before);
+      });
+    }
+  }
+
+  it("a static incompatibility doesn't alter the unit's own runtime behavior", async () => {
+    const outcome = analyzed({ declarations: [{ id: "unit-save", requirements: requires(Storage.id) }], profile: statement([], [Storage.id]) });
+    const saved = await withApplication("documents", Layer.empty, withStorage, (running) => run(running, Command.invoke(saveCommand, {})));
+
+    expect(outcome.operations[0]?.classification).toBe("incompatible");
+    expect(saved).toEqual(Either.right("stored:doc"));
   });
 });
