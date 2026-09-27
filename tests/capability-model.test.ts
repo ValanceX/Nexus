@@ -190,3 +190,65 @@ describe("Capability model: identity is the exact id (v0.7 D44, D53, I34)", () =
     expect(outcome.operations[0]?.verdict).toEqual({ _tag: "Undetermined", cause: "target", undecided: ["acme.storage"] });
   });
 });
+
+describe("Capability model: a claim is not a fact, and analysis is not enforcement (v0.7 I15, I36, I37)", () => {
+  const declaration: Semantic.Declaration = { id: "save", requirements: requires({ capability: Storage.id }) };
+  const statements = {
+    supported: statement([Storage.id], []),
+    incompatible: statement([], [Storage.id]),
+    opaque: statement([], []),
+  } as const;
+
+  const implementation: StorageShape = { read: (key) => `stored:${key}` };
+  const layers = {
+    Available: new Map<string, Capability.CapabilityResolution<unknown>>([[Storage.id, { _tag: "Available", implementation }]]),
+    Unavailable: new Map<string, Capability.CapabilityResolution<unknown>>([[Storage.id, { _tag: "Unavailable", reason: "the Layer supplies none" }]]),
+  } as const;
+
+  // Analyze, then start on the given Layer and observe status and resolution.
+  const observe = (profile: Semantic.TargetProfile, resolutions: ReadonlyMap<string, Capability.CapabilityResolution<unknown>>) =>
+    Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const before = Semantic.analyze({ declarations: [declaration], profile, require: ["target-compatibility"] });
+      const running = yield* Application.start(Application.define({ name: "independence", runtime: Layer.empty }), { platform: Capability.EnvironmentLive(resolutions) });
+      const status = yield* Application.status(running);
+      const [resolved, required] = yield* Effect.promise(() => Promise.all([
+        Runtime.run(running.runtime, Capability.resolve(Storage)),
+        Runtime.run(running.runtime, Effect.either(Capability.require(Storage))),
+      ]));
+      const after = Semantic.analyze({ declarations: [declaration], profile, require: ["target-compatibility"] });
+      return { classification: before._tag === "Analyzed" ? before.operations[0]?.classification : undefined, status, resolved, required, before, after };
+    })));
+
+  it("Semantic says incompatible, the Layer provides Available: the application starts and resolves Available", async () => {
+    const observed = await observe(statements.incompatible, layers.Available);
+
+    expect(observed.classification).toBe("incompatible");
+    expect(observed.status).toEqual({ _tag: "Running" });
+    expect(observed.resolved).toEqual({ _tag: "Available", implementation });
+    expect(observed.resolved._tag === "Available" && observed.resolved.implementation).toBe(implementation);
+    expect(Either.isRight(observed.required) && observed.required.right.read("k")).toBe("stored:k");
+  });
+
+  it("Semantic says supported, the Layer provides Unavailable: the application starts and resolves Unavailable", async () => {
+    const observed = await observe(statements.supported, layers.Unavailable);
+
+    expect(observed.classification).toBe("supported");
+    expect(observed.status).toEqual({ _tag: "Running" });
+    expect(observed.resolved).toEqual({ _tag: "Unavailable", reason: "the Layer supplies none" });
+    expect(observed.required).toEqual(Either.left({ _tag: "CapabilityUnavailableError", id: "acme.storage", reason: "the Layer supplies none" }));
+  });
+
+  for (const verdict of ["supported", "incompatible", "opaque"] as const) {
+    for (const supplied of ["Available", "Unavailable"] as const) {
+      it(`${verdict} × Layer ${supplied}: start is unaffected, resolution is exactly the Layer's, and the analysis is unchanged by starting`, async () => {
+        const observed = await observe(statements[verdict], layers[supplied]);
+
+        expect(observed.classification).toBe(verdict);
+        expect(observed.status).toEqual({ _tag: "Running" });
+        expect(observed.resolved).toEqual(layers[supplied].get(Storage.id));
+        expect(Either.isRight(observed.required)).toBe(supplied === "Available");
+        expect(observed.after).toStrictEqual(observed.before);
+      });
+    }
+  }
+});
