@@ -3,8 +3,8 @@ NEXUS Roadmap
 Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
-Current release: v0.6.0 (released 2026-09-27; docs/releases/v0.6.md)
-Next release: v0.7, Platform Capability Model (implemented; release pending)
+Current release: v0.7.0 (released 2026-09-27; docs/releases/v0.7.md)
+Next release: v0.8, Application Semantics (not started)
 v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
 v0.7 outline: docs/superpowers/specs/2026-09-27-nexus-v0.7-outline.md
 Audits: docs/architecture/2026-09-27-runtime-platform-audit.md,
@@ -465,6 +465,8 @@ NEXUS no longer needs embedded knowledge of a specific platform to implement app
 
 8. v0.7 — Platform Capability Model
 
+Status: Released (v0.7.0, 2026-09-27)
+
 Once the runtime/platform boundary exists, establish how applications express environmental requirements.
 
 The central question becomes:
@@ -553,7 +555,7 @@ NEXUS can describe the environmental capabilities required by an application wit
 
 8.1 As decided and implemented (2026-09-27)
 
-Status: implemented (docs/releases/v0.7.md, draft); release pending.
+Status: released (v0.7.0; docs/releases/v0.7.md).
 
 The v0.7 outline decides, with no public API change and no src/ change:
 

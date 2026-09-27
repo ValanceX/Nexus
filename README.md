@@ -92,7 +92,7 @@ $ pnpm build
 
 **v0.6: the runtime/platform boundary.** An application's environment is supplied only by the platform passed to `Application.start(app, { platform })`, a `Layer` providing its capabilities. The platform's resources live and die with the application: acquired first, released last. NEXUS names no execution environment, and the core's host independence is enforced at compile time. See the [release notes](./docs/releases/v0.6.md).
 
-**v0.7 (implemented, release pending): the platform capability model.** An application states what it requires as semantic declarations that name `Capability` ids. A platform states what it provides as a plain-data provision statement. `Semantic.analyze` relates the two before anything runs: supported, opaque or incompatible. It is a statement about two claims, never enforcement: `start` and capability resolution are unchanged. No API changes. See [`docs/primitives/capability.md`](./docs/primitives/capability.md) and the [draft release notes](./docs/releases/v0.7.md).
+**v0.7: the platform capability model.** An application states what it requires as semantic declarations that name `Capability` ids. A platform states what it provides as a plain-data provision statement. `Semantic.analyze` relates the two before anything runs: supported, opaque or incompatible. It is a statement about two claims, never enforcement: `start` and capability resolution are unchanged. No API changes. See [`docs/primitives/capability.md`](./docs/primitives/capability.md) and the [release notes](./docs/releases/v0.7.md).
 
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 
@@ -103,7 +103,7 @@ Requires Node 22 or later. Not yet published to npm. See the [release notes](./d
 - [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
 - [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
 - [**Semantic analysis**](./docs/semantic.md): the semantic model, `Semantic.build`, the IR and `Semantic.analyze`
-- [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, and the platform capability model is implemented for v0.7 (release pending; [draft notes](./docs/releases/v0.7.md)); where NEXUS stands against it is in the [runtime/platform audit](./docs/architecture/2026-09-27-runtime-platform-audit.md)
+- [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, and the platform capability model shipped in v0.7, and application semantics are next (v0.8); where NEXUS stands against it is in the [runtime/platform audit](./docs/architecture/2026-09-27-runtime-platform-audit.md)
 
 ## Tech
 
