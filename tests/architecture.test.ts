@@ -9,6 +9,7 @@
 //               ▼
 //   @valancex/mesh-runtime
 import { readdirSync, readFileSync } from "node:fs";
+import { builtinModules } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -158,5 +159,29 @@ describe("Architecture: host independence is enforced at compile time (v0.6 G1)"
 
   it("gives Node types to tests only", () => {
     expect(read("tsconfig.typecheck.json").compilerOptions.types).toEqual(["node"]);
+  });
+});
+
+// v0.6 D40, G2: src/ imports only its declared dependencies; nothing from Node or tests/.
+describe("Architecture: src/ imports only declared dependencies (v0.6 G2)", () => {
+  const builtins = new Set(builtinModules);
+  const isBuiltin = (specifier: string) => specifier.startsWith("node:") || builtins.has(specifier.split("/")[0] ?? "");
+  const allowedBare = (file: string) => isInside(meshDir, file) ? ["effect", "@valancex/mesh-runtime"] : ["effect"];
+  const tests = fileURLToPath(new URL("../tests/", import.meta.url));
+
+  it("finds bare imports to check", () => {
+    expect(sources.flatMap((file) => specifiersOf(file)).filter((specifier) => !specifier.startsWith("."))).toContain("effect");
+  });
+
+  it("imports no Node builtin anywhere under src/", () => {
+    expect(violations(sources, (_file, specifier) => isBuiltin(specifier))).toEqual([]);
+  });
+
+  it("imports no package beyond its declared dependencies", () => {
+    expect(violations(sources, (file, specifier) => !specifier.startsWith(".") && !allowedBare(file).includes(specifier))).toEqual([]);
+  });
+
+  it("imports nothing from tests/", () => {
+    expect(violations(sources, (file, specifier) => specifier.startsWith(".") && isInside(tests, target(file, specifier)))).toEqual([]);
   });
 });
