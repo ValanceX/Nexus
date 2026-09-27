@@ -3,6 +3,11 @@ NEXUS Roadmap
 Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
+Current release: v0.5.0 (released 2026-09-27)
+Next release: v0.6, Runtime / Platform Boundary (not started)
+Audit: docs/architecture/2026-09-27-runtime-platform-audit.md
+
+Nothing below v0.5 in this document is implemented unless the audit says so.
 
 ---
 
@@ -388,6 +393,45 @@ Do not immediately create a large family such as:
 unless the actual implementation demonstrates that these boundaries are useful.
 
 The first platform package should be derived from evidence.
+
+7.5 Audit findings (2026-09-27)
+
+The audit (docs/architecture/2026-09-27-runtime-platform-audit.md) found:
+
+- The executable core already uses no host API: no timers, Date, process,
+  fetch, filesystem, DOM or "node:" imports under src/. Nothing enforces
+  this yet.
+- The environment enters NEXUS indirectly, in three places:
+  - capability resolutions supplied in the application definition
+    (ApplicationDefinition.environment);
+  - environment names in a public NEXUS type
+    (CapabilitySource = "native" | "browser" | "remote" | "fallback");
+  - Effect default services (Clock, Scheduler, Random, Console, Tracer),
+    inherited from whichever fiber starts the application, or overridden
+    by the application's own layer.
+- The MESH adapter reaches the environment only through mesh-runtime's
+  engine loading, which is automatic in Node only.
+
+Questions v0.6 must decide before changing any API:
+
+I-1  Where does a platform supply the environment to Application.start?
+I-2  What happens to CapabilitySource?
+I-3  Is a platform-supplied capability implementation a value or a Layer?
+I-4  Which Effect default services, if any, belong to the platform contract?
+
+Derived sequence:
+
+guardrails (no behavior change)
+    ↓
+v0.6 outline answering I-1 … I-4
+    ↓
+one supply point at start
+    ↓
+capability provision moved there
+    ↓
+one headless Node platform, outside src/ core
+    ↓
+prove behavior unchanged (full suite, vertical slice, MESH slice)
 
 Exit condition
 
@@ -1148,3 +1192,42 @@ Platforms provide environmental capability.
 MESH provides rendering semantics.
 PORT realizes those semantics.
 Tooling composes the system for development and deployment.»
+
+---
+
+25. Deferred Decisions
+
+Deferred decisions are named, never silently guessed (§22.2). Each is resolved
+in the outline of the release named. Details and evidence are in the audit.
+
+L1 — NEXUS / PORT / target relationship
+     Open. Depends on a real PORT target and a platform experiment.
+     Earliest: I1.
+
+L2 — Declarations attached to NEXUS primitives, and facts NEXUS states
+     about its own primitives
+     Resolved in v0.5 by D17: declarations are canonical and standalone.
+     v0.8 (Application Semantics) reopens the second half. The v0.8 outline
+     must revise D17 explicitly if it does.
+
+L3 — Downstream meaning of an "error" diagnostic
+     Open. Resolved when a real consumer exists (v0.7 capability mismatch
+     at the earliest).
+
+L4 — Identity stability across analysis contexts
+     Open. Resolved only when incremental analysis or dev tooling needs it.
+
+L5 — Producers of declarations and source spans
+     Open. Resolved when source capture is introduced.
+
+L6 — What a semantic "target profile" denotes (platform capability, PORT
+     target capability, or neutral), and whether I15's separate identifier
+     spaces survive
+     Open. v0.7. v0.6 must not rename the released semantic names or
+     diagnostic codes.
+
+L7 — Who initializes the MESH engine outside Node
+     Open. v0.9 / I1 (the first browser host).
+
+L8 — Handle validity across module instances (bundles, workers, reload)
+     Open. v0.10 (replacement and reload behavior).

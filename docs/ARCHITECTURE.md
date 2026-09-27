@@ -534,6 +534,16 @@ Resolution strategies may include: native implementation, browser
 implementation, remote implementation, fallback implementation, no-op
 implementation, unavailable.
 
+> **Superseded direction (2026-09-27).** The discovery pipeline above is no
+> longer the intended future shape. Under [`ROADMAP.md`](./ROADMAP.md), NEXUS
+> does not discover or detect its environment: a **platform** supplies
+> capability implementations through an explicit contract, and v0.6 moves
+> that supply out of the application definition. The current contract in
+> this section and in [`primitives/capability.md`](./primitives/capability.md)
+> is unchanged until v0.6 decides otherwise. See §25.2 and the
+> [runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md)
+> (sections E and F).
+
 Unsupported capabilities must be explicit. Do not silently pretend a
 capability exists.
 
@@ -1197,6 +1207,36 @@ NEXUS that means:
 
 The longer-term NEXUS side of this, including semantic capture, IR and
 target compatibility, is in [`FUTURE_DIRECTION.md`](./FUTURE_DIRECTION.md).
+
+### 25.2 Roadmap alignment: runtime/platform boundary (v0.6 onward)
+
+The release sequence from v0.5 to v1.0 is set by [`ROADMAP.md`](./ROADMAP.md).
+Its central change is that the platform boundary is established *before*
+VALANCE integration:
+
+```text
+Effect → NEXUS (runtime + application semantics) → platform contracts → platform implementations
+NEXUS application → MESH → PORT → target
+Tooling composes NEXUS + MESH + PORT + platform; it owns no semantics.
+```
+
+This section describes direction, not contract. Every section above still
+describes v0.5.0 as built. Where they conflict with the roadmap, the
+[runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md)
+records the conflict and the release that resolves it. In summary:
+
+- The executable core uses no host API. Its environmental inputs are
+  indirect: capability resolutions supplied in the application definition
+  (§4, §10), `CapabilitySource`'s environment names, and Effect's default
+  services inherited from whichever fiber starts the application.
+- v0.6 decides where a platform supplies the environment. No
+  existing lifecycle, command, state, selector, event, semantic or MESH
+  adapter contract changes without an explicit v0.6 decision.
+- In §16.1 and the semantic model, "target" means an execution environment,
+  not a PORT target. The released names stay. What they denote is
+  deferred decision L6, for v0.7.
+- The §24 diagram's `Effect → Infrastructure / OS` step becomes an
+  explicit platform boundary.
 
 ---
 

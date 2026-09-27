@@ -42,6 +42,14 @@ already resolved, in `ApplicationDefinition.environment`, so resolving them
 can't fail. Probing the runtime environment to discover them is future work
 (§10.1), not part of the current contract.
 
+> **Direction (2026-09-27).** Discovery by NEXUS is no longer planned. Under
+> [`../ROADMAP.md`](../ROADMAP.md), a platform supplies resolutions through an
+> explicit contract, and v0.6 decides where (the
+> [runtime/platform audit](../architecture/2026-09-27-runtime-platform-audit.md),
+> sections F and I). `CapabilitySource` names execution environments and is
+> under review there (I-2). Everything on this page is the v0.5.0 contract,
+> and it stays in force until a release changes it explicitly.
+
 ## API
 
 ```ts
@@ -122,4 +130,4 @@ const notifyUser = Effect.gen(function* () {
 Covers §20 "Capability": resolution of a supplied implementation (with its
 source, including a registered fallback), the `Unavailable` value when
 nothing is registered, and the `require`-failure path when nothing can serve
-the capability. Discovery by probing is future work, with no tests yet.
+the capability. There is no discovery, and none is planned (see the direction note above).

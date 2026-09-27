@@ -6,6 +6,8 @@ This document describes the long-term direction of NEXUS.
 
 It is **not an implementation plan** and does not require the current release to implement these capabilities. Its purpose is to prevent future development from accidentally constraining the architecture in ways that make the larger NEXUS vision impossible.
 
+> **Revision, 2026-09-27: roadmap alignment.** The release sequence and the ownership of platform concerns are now set by [`ROADMAP.md`](./ROADMAP.md). Execution-environment capabilities (clocks, networking, storage, filesystem, browser or server APIs) belong to **platform** implementations supplied through explicit contracts. **PORT** owns target realization and lowering. This document previously assigned both to PORT. §9, §15, §17 and I8 are annotated below; their original wording is kept for the record. The evidence is in [`architecture/2026-09-27-runtime-platform-audit.md`](./architecture/2026-09-27-runtime-platform-audit.md).
+
 ---
 
 ## 1. The Vision
@@ -353,6 +355,8 @@ is an error.
 
 ## 9. Target Capabilities
 
+> **Revised 2026-09-27.** The profiles below (Browser, Node) describe **platform** capabilities: what an execution environment provides. They are not PORT target capabilities, which describe what a rendering target can realize (see ROADMAP §17). The v0.4/v0.5 semantic model keeps its released names (`TargetProfile`, `nexus-*-target-capability`). Which of the two a semantic profile denotes is deferred decision L6 (audit, section Q), to be settled with the v0.7 capability model.
+
 The selected execution environment must expose a capability profile.
 
 Conceptually:
@@ -557,6 +561,8 @@ This should support a development experience where compatibility and optimizatio
 
 ## 15. Port Is the Physical Execution Boundary
 
+> **Revised 2026-09-27.** Superseded in part by [`ROADMAP.md`](./ROADMAP.md). The environment capabilities listed below (filesystem, networking, workers, storage, sensors, device APIs) are provided by a **platform**, through NEXUS capability contracts implemented as Effect Layers, not by PORT. PORT owns target realization: lowering MESH render semantics onto a real target. The `NEXUS → execution plan → PORT` pipeline remains an unresolved conflict with ARCHITECTURE §16 (X3, deferred decision L1). It is not a plan of record.
+
 NEXUS should describe semantic execution.
 
 PORT should provide the physical mechanisms required by a target environment.
@@ -645,6 +651,8 @@ NEXUS should not execute arbitrary JavaScript and attempt to infer its semantic 
 
 ### A universal platform abstraction
 
+> **Revised 2026-09-27.** This still holds, but the owner of physical mechanisms is now split: platform packages own environment mechanisms, and PORT owns target realization (ROADMAP §3.3, §17).
+
 NEXUS owns semantic requirements.
 
 PORT owns physical platform mechanisms.
@@ -695,7 +703,9 @@ CLI, development server, build system, and editor integrations must consume the 
 
 ### I8 — Port owns physical execution
 
-Platform-specific mechanisms belong behind the PORT boundary.
+*Revised 2026-09-27 (ROADMAP §2, §3.3).* Environment-specific mechanisms belong to platform implementations, behind explicit NEXUS capability contracts. Target-specific realization belongs behind the PORT boundary. NEXUS contains neither.
+
+*Original wording, kept for the record:* Platform-specific mechanisms belong behind the PORT boundary.
 
 ### I9 — Lifecycle guarantees survive optimization
 
@@ -742,6 +752,40 @@ The semantic model's public types reference no Effect or NEXUS runtime type, and
 ### I19 — Lifecycle and ownership guarantees are unchanged by analysis
 
 Semantic analysis observes, alters and depends on no lifecycle state, and changes no error channel, admission rule or ownership rule.
+
+The following invariants were established by NEXUS v0.5 (the semantic IR and data flow; see `superpowers/specs/2026-09-26-nexus-v0.5-outline.md` §3). They are copied here as that outline's §12 requires, and hold for all later work unless this document is deliberately revised.
+
+### I20 — Declarations, not implementations
+
+NEXUS understands declarations, not implementations.
+
+### I21 — Relationships through values
+
+NEXUS represents relationships through semantic values; operation relationships are derived from those values.
+
+### I22 — May-flow is not ordering
+
+A may-flow edge expresses possible value provenance, never execution ordering.
+
+### I23 — Openness is relative to the context
+
+A closed relationship set is complete only within the declared analysis context; an open relationship set is a conservative lower bound on the relationships NEXUS knows about.
+
+### I24 — Values are declared
+
+Value identities are declared by the context; operation references may only refer to declared values.
+
+### I25 — Analysis runs on the IR
+
+Raw declarations are an input format. The built IR is the semantic representation. Analysis operates on the IR, not directly on declarations.
+
+### I26 — The IR records uncertainty
+
+The IR records uncertainty; diagnostics interpret it.
+
+### I27 — v0.4 compatibility
+
+For every valid v0.4-shaped context, `Semantic.analyze` returns a result deeply equal to v0.4's. For every invalid one, it returns the same issues in the same order.
 
 ---
 
