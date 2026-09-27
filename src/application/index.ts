@@ -1,8 +1,8 @@
 import type { StateHandle, StateInitError } from "../state/index.js";
 import type { EventBusShape } from "../event/index.js";
 
-import { admit, refusal, scopeOf, setHooks, terminate } from "../runtime/internal.js";
-import { Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
+import { admit, recordOf, refusal, scopeOf, setHooks, terminate } from "../runtime/internal.js";
+import { Context, Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
 
 import * as Capability from "../capability/index.js";
 import * as Runtime from "../runtime/index.js";
@@ -39,6 +39,25 @@ export interface Application<R> {
   readonly definition: ApplicationDefinition<R>;
 }
 
+/**
+ * The platform contract (v0.6 D30, C16): what supplies an application's
+ * environment. Any Layer that provides the resolved Environment and requires
+ * nothing. Host-owned implementations come as values (Capability.EnvironmentLive);
+ * application-scoped ones as a scoped layer. The platform Layer is provided to
+ * the application-owned runtime scope, so the application's lifetime governs
+ * acquisition and release: platform first in, last out (C15, I31).
+ */
+export type Platform = Layer.Layer<Capability.EnvironmentShape, unknown, never>;
+
+/**
+ * The shape of the application-host boundary (v0.6 D30, D42). It holds exactly
+ * the one justified start concern, `platform`. It is not a configuration bag:
+ * any further field needs its own architectural decision.
+ */
+export interface StartOptions {
+  readonly platform?: Platform;
+}
+
 export interface RunningApplication<R> {
   readonly status: Effect.Effect<ApplicationStatus>;
   readonly runtime: Runtime.NexusRuntime<R | Capability.EnvironmentShape | EventBusShape>;
@@ -55,23 +74,28 @@ interface AppRecord {
 
 const apps = new WeakMap<object, AppRecord>();
 
+// Absent platform: the empty environment, exactly v0.5's absent `environment` (D30).
+const noPlatform: Platform = Capability.EnvironmentLive(new Map());
+
 export const define = <R>(definition: ApplicationDefinition<R>): Application<R> => ({ definition });
 
-export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope> => Effect.Do.pipe(
+export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope> => Effect.Do.pipe(
   Effect.bind("statusRef", () => Ref.make<ApplicationStatus>({ _tag: "Created" })),
   Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Initializing" })),
-  Effect.let("resolutions", () => app.definition.environment ?? new Map<string, Capability.CapabilityResolution<unknown>>()),
-  Effect.let("environment", ({ resolutions }): Capability.EnvironmentShape => ({ resolutions })),
-  // Provide-merge, not merge: Environment is resolved first and fed into the
-  // user's runtime layer (so a Service/Command layer may require it), while
-  // staying in the final context so Capability.resolve also works directly
-  // through `RunningApplication.runtime`.
+  // TEMPORARY (v0.6 plan, Task 5 to Task 7): the v0.5 definition-level map, when no platform is given.
+  Effect.let("platform", (): Platform => options?.platform ?? (app.definition.environment === undefined ? noPlatform : Capability.EnvironmentLive(app.definition.environment))),
+  // Provide-merge, not merge: the platform is built first and fed into the
+  // user's runtime layer (so a Service/Command layer may require Environment,
+  // C14), while staying in the final context so Capability.resolve also works
+  // directly through `RunningApplication.runtime`. Both are provided to the
+  // application-owned runtime scope, so the platform is acquired first and
+  // released last (C15, I31).
   //
   // `Effect.exit` rather than a plain failure so the status Ref records
   // `Failed` before the error escapes — callers observing status after a failed
   // `start` must not see a stale `Initializing`.
-  Effect.bind("runtime", ({ resolutions, statusRef }): Effect.Effect<Runtime.NexusRuntime<R | Capability.EnvironmentShape | EventBusShape>, ApplicationInitError, Scope.Scope> =>
-    Effect.exit(Runtime.make(Layer.provideMerge(app.definition.runtime, Capability.EnvironmentLive(resolutions)))).pipe(Effect.andThen((exit) => {
+  Effect.bind("runtime", ({ platform, statusRef }): Effect.Effect<Runtime.NexusRuntime<R | Capability.EnvironmentShape | EventBusShape>, ApplicationInitError, Scope.Scope> =>
+    Effect.exit(Runtime.make(Layer.provideMerge(app.definition.runtime, platform))).pipe(Effect.andThen((exit) => {
       if (Exit.isFailure(exit)) {
         const error: ApplicationInitError = { _tag: "ServiceGraphFailed", cause: exit.cause };
 
@@ -81,6 +105,15 @@ export const start = <R>(app: Application<R>): Effect.Effect<RunningApplication<
       return Effect.succeed(exit.value);
     }))
   ),
+  // The environment the platform built (D30), read from the built context.
+  // Runtime.make always registers its handle; a missing record is a defect, never an empty environment.
+  Effect.bind("environment", ({ runtime }): Effect.Effect<Capability.EnvironmentShape> => {
+    const record = recordOf(runtime);
+
+    return record === undefined
+      ? Effect.die(refusal("not a runtime NEXUS made"))
+      : Effect.succeed(Context.get(record.runtime.context as Context.Context<Capability.EnvironmentShape>, Capability.Environment));
+  }),
   Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Running" })),
   // The application's lifecycle is its runtime's (N2). The runtime's termination
   // runs these hooks, whichever route triggers it: `Stopping` atomically with the
