@@ -105,7 +105,7 @@ Requires Node 22 or later. Not yet published to npm. See the [release notes](./d
 - [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
 - [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
 - [**Semantic analysis**](./docs/semantic.md): the semantic model, `Semantic.build`, the IR and `Semantic.analyze`
-- [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, the platform capability model shipped in v0.7, and application semantics in v0.8; where NEXUS stands against it is in the [runtime/platform audit](./docs/architecture/2026-09-27-runtime-platform-audit.md)
+- [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, the platform capability model in v0.7, and application semantics in v0.8, and VALANCE integration readiness is next (v0.9); where NEXUS stands against it is in the [runtime/platform audit](./docs/architecture/2026-09-27-runtime-platform-audit.md)
 
 ## Tech
 

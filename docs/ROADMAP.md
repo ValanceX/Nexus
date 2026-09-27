@@ -3,7 +3,7 @@ NEXUS Roadmap
 Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
-Current release: v0.8.0 (release commit 2026-09-27, not tagged; docs/releases/v0.8.md)
+Current release: v0.8.0 (released 2026-09-27; docs/releases/v0.8.md)
 Next release: v0.9, VALANCE Integration Readiness (not started)
 v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
 v0.7 outline: docs/superpowers/specs/2026-09-27-nexus-v0.7-outline.md
@@ -592,7 +592,7 @@ Undecided (permissions, optional hardware, remote state):  opaque
 
 9. v0.8 — Application Semantics
 
-Status: Released (v0.8.0 release commit, 2026-09-27; not tagged)
+Status: Released (v0.8.0, 2026-09-27)
 
 Only after the runtime/platform distinction is established should application semantics become a major focus.
 
@@ -641,6 +641,8 @@ NEXUS describes its own domain.
 It should not become a general analyzer of every external system.
 
 9.1 As decided and implemented (2026-09-27)
+
+Status: released (v0.8.0; docs/releases/v0.8.md).
 
 The v0.8 outline (Revision 2) decides, with no public API change and no
 src/ change:
