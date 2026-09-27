@@ -274,3 +274,81 @@ describe("Application semantics: the aggregation algebra (v0.8 C26)", () => {
     expect(result).toEqual({ capabilities: [], occurrences: [], completeness: "complete", classification: "supported" });
   });
 });
+
+interface BootShape { readonly storage: StorageShape }
+
+const Boot = Service.define<BootShape>("Boot");
+
+// Needs Storage while the service graph is built: part of the start unit.
+const EagerBoot = Service.layer(Boot, Effect.map(Capability.require(Storage), (storage): BootShape => ({ storage })));
+
+// Admitted units: one needs Storage when it runs, one needs nothing.
+const saveCommand = Command.define("documents.save", Schema.Struct({}), () => Effect.map(Capability.require(Storage), (storage) => storage.read("doc")));
+const listCommand = Command.define("documents.list", Schema.Struct({}), () => Effect.succeed(["doc"]));
+
+describe("Application semantics: units in the lifecycle (v0.8 C27)", () => {
+  it("the start unit's requirement is start necessity: required at build, start fails with ServiceGraphFailed (Y5)", async () => {
+    const exit = await Effect.runPromise(Effect.scoped(Effect.exit(
+      Application.start(Application.define({ name: "eager", runtime: EagerBoot }), { platform: Capability.EnvironmentLive(none) })
+    )));
+
+    expect(exit._tag).toBe("Failure");
+    expect(exit._tag === "Failure" && exit.cause._tag === "Fail" && exit.cause.error._tag).toBe("ServiceGraphFailed");
+  });
+
+  it("an admitted unit's requirement is only that unit's: the application keeps running (Y5)", async () => {
+    const observed = await withApplication("lazy", Layer.empty, none, (running) => Effect.gen(function* () {
+      const before = yield* Application.status(running);
+      const saved = yield* run(running, Command.invoke(saveCommand, {}));
+      const listed = yield* run(running, Command.invoke(listCommand, {}));
+      const after = yield* Application.status(running);
+      return { before, saved, listed, after };
+    }));
+
+    expect(observed.before).toEqual({ _tag: "Running" });
+    expect(Either.isLeft(observed.saved) && observed.saved.left._tag).toBe("CapabilityUnavailableError");
+    expect(observed.listed).toEqual(Either.right(["doc"]));
+    expect(observed.after).toEqual({ _tag: "Running" });
+  });
+
+  // One context: the start unit (Layer.empty needs nothing) and two admitted units.
+  const startUnit: Semantic.Declaration = { id: "unit-start", requirements: requires() };
+  const saveUnit: Semantic.Declaration = { id: "unit-save", requirements: requires(Storage.id) };
+  const listUnit: Semantic.Declaration = { id: "unit-list", requirements: requires() };
+  const declarations = [startUnit, saveUnit, listUnit];
+  const profile = statement([], [Storage.id]);
+
+  it("an incompatible admitted unit doesn't make start necessity incompatible (C27, I41)", async () => {
+    const outcome = analyzed({ declarations, profile });
+    const application = aggregate(outcome, declarations);
+    const necessity = startUnit.requirements?.capabilities.map((requirement) => requirement.capability);
+
+    // Static: per unit, and aggregated.
+    expect(classifications(outcome)).toEqual([["unit-start", "supported"], ["unit-save", "incompatible"], ["unit-list", "supported"]]);
+    expect(application.classification).toBe("incompatible");
+    expect(application.capabilities).toEqual([Storage.id]);
+    // Start-unit necessity is not the application requirement set.
+    expect(necessity).toEqual([]);
+    expect(necessity).not.toEqual(application.capabilities);
+
+    // Runtime: on a platform matching the statement (no Storage), the application starts and list runs.
+    const observed = await withApplication("documents", Layer.empty, none, (running) => Effect.gen(function* () {
+      const status = yield* Application.status(running);
+      const listed = yield* run(running, Command.invoke(listCommand, {}));
+      return { status, listed };
+    }));
+
+    expect(observed.status).toEqual({ _tag: "Running" });
+    expect(observed.listed).toEqual(Either.right(["doc"]));
+  });
+
+  it("requirement set ≠ runtime resolution ≠ verdict: resolution is the Layer's, and starting leaves the analysis unchanged", async () => {
+    const before = Semantic.analyze({ declarations, profile, require: ["target-compatibility"] });
+    const resolved = await withApplication("documents", Layer.empty, none, (running) =>
+      Effect.promise(() => Runtime.run(running.runtime, Capability.resolve(Storage))));
+    const after = Semantic.analyze({ declarations, profile, require: ["target-compatibility"] });
+
+    expect(resolved).toEqual({ _tag: "Unavailable", reason: "no resolution registered for 'acme.storage'" });
+    expect(after).toStrictEqual(before);
+  });
+});
