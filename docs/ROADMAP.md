@@ -436,9 +436,9 @@ prove behavior unchanged (full suite, vertical slice, MESH slice)
 
 Specified (2026-09-27) by the v0.6 outline, which decides I-1 … I-4:
 
-I-1  Application.start(app, platform?); a platform is a Layer providing
-     Capability.Environment and requiring nothing. The definition carries
-     no environment. (D30, D31)
+I-1  Application.start(app, options?), options = { platform? } only; a
+     platform is a Layer providing Capability.Environment and requiring
+     nothing. The definition carries no environment. (D30, D31, D42)
 I-2  CapabilitySource is removed; NEXUS names no execution environment.
      (D32, D33)
 I-3  One platform Layer. Host-owned implementations are values;
