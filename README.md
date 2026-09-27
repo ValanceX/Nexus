@@ -90,6 +90,8 @@ $ pnpm build
 
 **v0.5: semantic IR.** `Semantic.build` turns declarations into a validated, plain-data IR with value-based data flow; `Semantic.analyze` now runs on it, with identical results. See [`docs/semantic.md`](./docs/semantic.md).
 
+**v0.6: the runtime/platform boundary.** An application's environment is supplied only by the platform passed to `Application.start(app, { platform })`, a `Layer` providing its capabilities. The platform's resources live and die with the application: acquired first, released last. NEXUS names no execution environment, and the core's host independence is enforced at compile time. See the [release notes](./docs/releases/v0.6.md).
+
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 
 Requires Node 22 or later. Not yet published to npm. See the [release notes](./docs/releases/) for what changed in each version.
