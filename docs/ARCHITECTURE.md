@@ -16,7 +16,7 @@ This is the design reference for NEXUS: what each primitive is for, how the piec
 | State | Data the app owns, changed only on purpose | §7 |
 | Selector | A read-only view computed from state | §8 |
 | Command | "Please do this." An action, often triggered by the UI | §9 |
-| Capability | Something the device might provide (camera, haptics, AI, …) | §10 |
+| Capability | Something the app needs from wherever it runs (storage, camera, AI, …), supplied by the platform | §10 |
 | Resource | Anything you open and must reliably close | §11 |
 | Event | "This happened." A typed fact | §12 |
 
@@ -464,9 +464,10 @@ Commands are the primary application boundary for MESH. A MESH command intent re
 
 > Full spec + API: [`primitives/capability.md`](./primitives/capability.md)
 
-A `Capability` is an *application* capability. It is unrelated to the
-*target* capabilities that v0.4's semantic analysis checks operations
-against (§16.1).
+A `Capability` is an *application* capability contract. Since v0.7 its
+`id` is also the identifier the semantic model uses for it under the
+**platform binding** (§10.3, §16.1). That shares an identifier, not an
+abstraction: resolution and analysis stay independent.
 
 A `Capability` is a NEXUS identity (`id`) with a typed contract, for
 functionality the execution environment may or may not provide. Its
@@ -556,6 +557,39 @@ interface Haptics {
 ```
 
 The implementation may vary by environment.
+
+### 10.3 Requirements and provisions (v0.7)
+
+v0.7 relates what an application requires to what a platform provides,
+before anything runs, without changing how anything runs (§26 decision 13;
+the [v0.7 outline](./superpowers/specs/2026-09-27-nexus-v0.7-outline.md);
+full rules in [`primitives/capability.md`](./primitives/capability.md)).
+
+```text
+application requirement  ×  platform provision statement  ──Semantic.analyze──▶  supported / opaque / incompatible
+ (declaration naming          (TargetProfile authored by
+  Capability ids;              the platform; a claim about
+  necessity, not use)          every start)
+```
+
+- **The requirement** is a semantic declaration that names `Capability.id`s.
+  It means the unit can't work without them.
+- **The provision statement** is a platform-authored `TargetProfile`:
+  - `provided`: every start resolves the id `Available`;
+  - `notProvided`: the id is never `Available` through this platform;
+  - neither: undecided (conditional).
+- **The runtime `Environment`**, built by the platform `Layer` at `start`,
+  is the fact. The statement is a claim about it. Platforms prove the two
+  agree in their own tests. NEXUS never derives one from the other, and
+  never checks it at runtime.
+- **No gating.** A verdict never affects `start`, admission, `run` or
+  dispatch. `Application.start`, `StartOptions` and `Platform` are unchanged.
+- **Five distinct things.** A capability contract, a requirement, a platform
+  statement, a runtime `Environment` and a PORT target capability are
+  different things. The shared `id` is the identity of the contract.
+- **Identity is the exact `id` string** (nominal). There is no mapping table,
+  no registry and no NEXUS-defined vocabulary.
+- **NEXUS doesn't compose platforms.** One `Platform` per `start`.
 
 ---
 
@@ -808,11 +842,15 @@ operation (supported, opaque or incompatible) plus diagnostics.
 - **No gating.** No start, admission, run or dispatch consults an analysis
   result, and no diagnostic enters an Effect error channel. What a consumer
   does with an `error` is not decided in v0.4.
-- **Application capability ≠ target capability.** A `Capability` (§10) is an
-  application-level dependency resolved through `Environment`. A *target
-  capability* is an opaque identifier in a target profile. The two have
-  separate identifier spaces, and analysis neither reads nor affects
-  application capabilities.
+- **Targets and bindings (v0.7).** A *target* is the one provider an
+  analysis context is evaluated against. Its profile states that provider's
+  provisions. It is never a named environment. Capability identifiers are
+  opaque, and their meaning belongs to the context's **binding**, one per
+  context. Under the **platform binding** (§10.3), identifiers are
+  `Capability.id`s verbatim, and the profile is a platform's provision
+  statement. PORT target capabilities would be a separate binding (L1).
+  Analysis neither reads nor affects how any capability resolves, and no
+  `Environment` or `Layer` ever produces a profile (I15, as revised in v0.7).
 
 Valid and invalid directions, added to the lists above:
 
@@ -1232,12 +1270,12 @@ the [runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md
 - NEXUS names no execution environment and no Effect default service.
 - The core's host independence is enforced at compile time and by import
   checks.
-- In §16.1 and the semantic model, "target" still means an execution
-  environment, not a PORT target. The released names stay. What they
-  denote is deferred decision L6, for v0.7.
-- Platform packages, platform composition, capability provenance and
-  semantic platform requirements are not built. The roadmap places them in
-  later releases.
+- In §16.1 and the semantic model, the released names stay. What they
+  denote was decided in v0.7 (L6): the provider of the analysis context's
+  binding. For the platform binding, that provider is a platform (§10.3).
+- v0.7 adds the platform capability model (§10.3, §26 decision 13), with no
+  API change. Platform packages, platform composition and capability
+  provenance are not built.
 
 ---
 
@@ -1357,3 +1395,23 @@ decision" rule:
       `ApplicationDefinition.environment`, `CapabilitySource`,
       `Available.source` and `Capability.tag` are removed, with no
       compatibility wrappers.
+13. **Platform capability model** (v0.7; see
+    `superpowers/specs/2026-09-27-nexus-v0.7-outline.md`, D43–D55, and
+    `architecture/2026-09-27-capability-model-audit.md`).
+    - L6 is resolved (D43). A semantic target profile states the provisions of
+      the one provider its analysis context is evaluated against. Semantic
+      defines the relation, not the vocabulary or the domain. A binding fixes
+      the domain.
+    - The platform binding (D44): a semantic identifier is `Capability.id`,
+      verbatim. The requirement side is a declaration, where a requirement
+      means necessity, not use (D46). The provision side is a
+      platform-authored statement, a claim about every start (D47).
+    - I15 is revised (D45). Analysis is independent of resolution (kept).
+      "Separate identifier spaces" is replaced by "identifiers belong to the
+      context's binding".
+    - No gating (D49). NEXUS doesn't compose platforms (D50). There is no
+      typed capability identity in `R` (D51). `Platform` is unchanged (D52).
+      Identity is the nominal `id` (D53). There is no provenance (D54).
+    - Conformance of a statement to its `Layer` is the platform's obligation,
+      proved by tests. NEXUS's own helper is test tooling (C21).
+    - No public API change (D55) and no `src/` change. Nothing is removed.

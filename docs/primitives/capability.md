@@ -31,6 +31,11 @@ and never discovered by NEXUS.
   `Available` or `Unavailable`. An `id` the platform doesn't mention is
   `Unavailable`.
 - **Environment:** the resolved map for one running application.
+- **Requirement (v0.7):** a declared claim that some unit of the
+  application can't work unless a capability resolves `Available`.
+- **Provision statement (v0.7):** a platform's plain-data claim about which
+  capability ids every start of it resolves `Available`, and which it
+  doesn't.
 
 ## Data Model
 
@@ -73,6 +78,85 @@ Application code sees the same `CapabilityResolution` either way, and can't
 tell which was used. An implementation that acquires something lazily,
 outside its platform layer's scope, is effectively host-owned: NEXUS won't
 release it.
+
+## Requirements and provisions (v0.7)
+
+The v0.7 capability model relates what an application **requires** to what
+a platform **provides**, before anything runs, without changing how
+anything runs. It adds no API. It gives existing pieces an exact meaning
+(v0.7 outline D44–D47, C19–C23):
+
+```text
+capability contract   Capability.define<Shape>(id)          owned by whoever defines the contract
+        │ requirement (claim)             │ provision (claim)
+        ▼                                 ▼
+Semantic.Declaration               Semantic.TargetProfile  ── Semantic.analyze ──▶ supported / opaque / incompatible
+                                          ┊ conformance: tested, never derived
+                                          ▼
+                                   Application.Platform (Layer) ── start ──▶ Environment ──▶ resolve / require
+```
+
+These are five different things. The shared `id` is the identity of the
+**contract**, and it doesn't make any of them the same abstraction:
+
+- **Capability contract.** `id` plus `Shape`. The application, or a shared
+  contract module, defines it. Prefer an application-facing contract
+  (`AssetStore`) to an implementation (`NodeFileSystem`).
+- **Requirement.** A [semantic declaration](../semantic.md) whose
+  requirements name `SomeCapability.id`. It means **necessity**, not use:
+  code that calls `resolve` and handles `Unavailable` with a fallback
+  doesn't require the capability, and shouldn't declare it. Code that can't
+  work without it (typically `require` with no fallback) does. Granularity is
+  yours: one declaration per command, or one for the whole application.
+- **Platform provision statement.** A `Semantic.TargetProfile` the platform
+  author writes alongside the platform's `Layer`. Its identifiers are
+  capability ids, verbatim:
+
+  | Entry | The platform promises that, on every start… |
+  |---|---|
+  | `provided` | this capability resolves `Available` |
+  | `notProvided` | this capability is not `Available` through this platform's `Environment` |
+  | neither | nothing: undecided. Use this for anything conditional, such as permissions, optional hardware, remote state or user configuration |
+
+  `notProvided` is a promise, not "no implementation happens to exist
+  today". The statement is never passed to `Application.start`, and NEXUS
+  never derives it from a `Layer` or a running `Environment`.
+- **Runtime `Environment`.** The fact for one start, built by the platform
+  `Layer`. `resolve` and `require` read only this.
+- **PORT target capability.** What a rendering target can realize. It isn't
+  a capability id, and it isn't part of this model.
+
+**A verdict is not enforcement.** An *incompatible* verdict doesn't stop an
+application from starting on that platform, and a *supported* one doesn't
+make a capability `Available`. The application sees exactly what the
+platform's `Layer` supplies. Deciding what to do with a verdict is the
+caller's job.
+
+**Conformance is the platform's obligation.** A platform that publishes a
+statement must make every start agree with it: `provided` ids resolve
+`Available`, and `notProvided` ids resolve `Unavailable`. NEXUS doesn't
+check this at runtime. Platforms prove it in their own tests. NEXUS's own
+test tooling (`tests/platform/conformance.ts`) shows how, and it is not
+part of the package.
+
+**Identity.** A capability *is* its `id` string, at runtime and in analysis.
+`Shape` is never compared. Two contracts with the same `id` share an
+implementation and share verdicts, so qualify ids by their owner (for
+example `"acme.asset-store"`). There is no registry, and NEXUS defines no
+ids.
+
+## Composing platforms
+
+NEXUS doesn't compose platforms: `start` takes exactly one `Platform`.
+Assembling several contributions into one `Layer` that builds one
+`Environment` is the platform author's or host's job, including choosing
+what happens when two contributions supply the same id.
+
+Beware `Layer.merge` of two `Environment` layers. It doesn't combine their
+maps: the later `Environment` replaces the earlier one, so every id only the
+earlier one supplied resolves `Unavailable`, with no error.
+`tests/capability-characterization.test.ts` pins this Effect behavior.
+Build one map instead.
 
 ## API
 
@@ -163,4 +247,8 @@ when nothing is registered, and the `require`-failure path.
 `tests/platform.test.ts` covers supply through a platform: host-owned
 values, application-scoped resources and their lifetime, the absence of any
 source field, the `id`-only runtime shape and `Shape` inference. There is
-no discovery, and none is planned.
+no discovery, and none is planned. `tests/capability-model.test.ts` covers
+the v0.7 platform binding and the independence of analysis from resolution;
+`tests/platform-conformance.test.ts` covers the test-only conformance
+helper; `tests/capability-characterization.test.ts` pins `Environment` merge
+and id-collision behavior.

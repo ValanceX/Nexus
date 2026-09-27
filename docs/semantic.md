@@ -1,6 +1,6 @@
 # Semantic
 
-> **In plain terms:** You describe an operation in plain data — what it is, where it was declared, and which target facilities it can't run without. NEXUS checks that description against a target profile you supply, and tells you, before anything runs, whether the operation is **supported**, **opaque** (NEXUS can't tell) or **incompatible** (proven not to work on that target).
+> **In plain terms:** You describe an operation in plain data — what it is, where it was declared, and which capabilities it can't work without. NEXUS checks that description against a profile you supply, which states what one provider provides, and tells you, before anything runs, whether the operation is **supported**, **opaque** (NEXUS can't tell) or **incompatible** (proven not to work with that provider). In v0.7 the provider is a *platform*, and the capabilities are application capabilities, named by their `id` (see Targets and bindings).
 
 `Semantic` is not a primitive. It is the semantic analysis foundation added in v0.4 and given a validated IR in v0.5 (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §16.1, the [v0.4 outline](./superpowers/specs/2026-09-26-nexus-v0.4-outline.md) and the [v0.5 outline](./superpowers/specs/2026-09-26-nexus-v0.5-outline.md)). It is a leaf module: it imports nothing, nothing in NEXUS but the package entry imports it, and nothing it produces changes how anything executes.
 
@@ -224,9 +224,27 @@ Every type is plain data: strings, numbers, booleans, arrays and records of thes
 - `partial`: it requires at least those, possibly others. An empty partial list says nothing definite.
 - `capabilities` lists occurrences; the requirement *set* is the distinct `capability` values. Duplicates are valid: they are evaluated once, never produce extra findings, and each occurrence's provenance is kept, in order.
 
-**Target capability is not application capability.** A *target capability* is an opaque string naming a facility a target provides. It is unrelated to the [`Capability`](./primitives/capability.md) primitive, an *application* capability resolved through `Environment`. Analysis never reads, resolves or produces an application capability, and application capability configuration never makes a target capability provided, not provided or required.
+**Targets and bindings (v0.7, D43–D45).** The semantic model defines a *relation*, not a vocabulary and not a kind of environment.
+- A **target** is the one provider an analysis context is evaluated against. A `TargetProfile` states that provider's provisions. It is not a browser, Node, a server or any other named environment: NEXUS names none.
+- A **capability identifier** is an opaque string with no meaning of its own. Its meaning comes from the **binding** that produced the context: what kind of provider the profile describes, and whose identifiers the requirements name.
+- **One context, one binding** (C22). A context's requirements and profile belong to the same binding. Identifiers from different bindings are never mixed in one analysis.
+- v0.7 defines one binding, the **platform binding** (D44):
+  - the requirement side names application [`Capability`](./primitives/capability.md) ids, **verbatim**;
+  - the profile is a platform's **provision statement**: a claim the platform authors about what every start of it resolves.
+  - There is no mapping table, prefix or transformation. `Capability.define("acme.storage")` is the semantic identifier `"acme.storage"`.
+- PORT rendering-target capabilities are not part of the platform binding. A future binding may give them their own identifiers and their own contexts (L1).
 
-**Target profiles.** Explicit input only: NEXUS never discovers, probes or derives a profile. For each capability it decides, a profile says **provided** or **not provided**; a capability in neither list is **undecided**, never "not provided". NEXUS ships no predefined capability identifiers or profiles.
+**Analysis is independent of resolution** (I15, revised in v0.7). Analysis never reads, resolves or produces an application capability's resolution. A running application's `Environment` never makes an identifier provided, not provided or required. A profile is never derived from a `Layer`, an `Environment` or execution. The shared `Capability.id` identifies the capability *contract* both statements are about. It does not make these the same thing:
+
+| | What it is | Where it lives |
+|---|---|---|
+| capability contract | `id` plus a typed `Shape` | `Capability.define`, by whoever defines the contract |
+| requirement | a claim: this operation can't work unless the contract resolves `Available` | a declaration's `requirements` |
+| platform statement | a claim: every start of this platform resolves these ids `Available`, and those not `Available` | a `TargetProfile` |
+| runtime `Environment` | the fact, for one start | built by the platform `Layer` at `Application.start` |
+| PORT target capability | a rendering-realization guarantee | PORT, in a separate binding (not modeled) |
+
+**Target profiles.** Explicit input only: NEXUS never discovers, probes or derives a profile. For each capability it decides, a profile says **provided** or **not provided**; a capability in neither list is **undecided**, never "not provided". Undecided is the right answer for anything conditional (permissions, optional hardware, remote state, user configuration). NEXUS ships no predefined capability identifiers or profiles.
 
 ## API
 
@@ -318,7 +336,7 @@ const built = Semantic.build({
     { id: "clear", outputs: { completeness: "complete", references: [{ value: "cart" }] }, inputs: { completeness: "complete", references: [] } },
     { id: "checkout", inputs: { completeness: "complete", references: [{ value: "cart" }] }, outputs: { completeness: "complete", references: [] } },
   ],
-  profile: { name: "browser", provided: [], notProvided: [] },
+  profile: { name: "example", provided: [], notProvided: [] },
 });
 
 // built._tag === "Built"
@@ -341,28 +359,36 @@ NEXUS understands declarations, not implementations. A value or a reference is n
 ## Example
 
 ```ts
-import { Semantic } from "@valancex/nexus";
+import { Capability, Semantic } from "@valancex/nexus";
+
+// A capability contract, defined by the application (or a shared contract module).
+const AssetStore = Capability.define<AssetStoreShape>("acme.asset-store");
 
 const outcome = Semantic.analyze({
   declarations: [
-    { id: "save-file", name: "Save", provenance: { source: "app.ts", start: 120, end: 180 },
-      requirements: { completeness: "complete", capabilities: [{ capability: "filesystem" }] } },
+    // Can't work without AssetStore: a requirement (necessity, D46).
+    { id: "save-asset", name: "Save", provenance: { source: "app.ts", start: 120, end: 180 },
+      requirements: { completeness: "complete", capabilities: [{ capability: AssetStore.id }] } },
+    // Uses AssetStore only with a fallback: it requires nothing.
+    { id: "preview", requirements: { completeness: "complete", capabilities: [] } },
     { id: "send-report" },
   ],
-  profile: { name: "browser", provided: [], notProvided: ["filesystem"] },
+  // A platform's provision statement, authored by that platform (D47).
+  profile: { name: "example-platform", provided: [], notProvided: [AssetStore.id] },
   require: ["target-compatibility"],
 });
 
 // outcome._tag === "Analyzed"
-// save-file:   incompatible, one nexus-incompatible-target-capability error at app.ts 120–180
+// save-asset:  incompatible, one nexus-incompatible-target-capability error at app.ts 120–180
+// preview:     supported
 // send-report: opaque (requirements undeclared), one nexus-opaque-operation warning, unlocated
 ```
 
-The identifiers `"filesystem"` and `"browser"` are illustrative; v0.4 defines no capability vocabulary.
+The identifiers are illustrative; NEXUS defines no capability vocabulary. The verdict is a statement about two claims. It doesn't start, stop or change anything: the application starts on that platform exactly as it would without analysis, and `Capability.resolve` returns whatever the platform's `Layer` supplies.
 
 ## Testing
 
-`tests/semantic.test.ts` covers the model, rejection, each classification, diagnostics, freshness, JSON round trips and span semantics; `tests/semantic-isolation.test.ts` covers purity and independence from execution, application capabilities, MESH and the lifecycle; `tests/semantic-types.test.ts` pins the plain-data boundary at compile time; `tests/architecture.test.ts` enforces the leaf boundary. `tests/semantic-build.test.ts` covers the three data-flow states, values and references, provenance, openness and may-flow, and that `Built` is pure, deterministic and plain; `tests/semantic-compatibility.test.ts` checks `Semantic.analyze` against the released v0.4 module for every v0.4-shaped context, and that data-flow facts never affect compatibility; `tests/semantic-no-primitives.test.ts` builds and analyzes a context with every executable primitive module removed.
+`tests/semantic.test.ts` covers the model, rejection, each classification, diagnostics, freshness, JSON round trips and span semantics; `tests/semantic-isolation.test.ts` covers purity and independence from execution, application capabilities, MESH and the lifecycle; `tests/semantic-types.test.ts` pins the plain-data boundary at compile time; `tests/architecture.test.ts` enforces the leaf boundary. `tests/semantic-build.test.ts` covers the three data-flow states, values and references, provenance, openness and may-flow, and that `Built` is pure, deterministic and plain; `tests/semantic-compatibility.test.ts` checks `Semantic.analyze` against the released v0.4 module for every v0.4-shaped context, and that data-flow facts never affect compatibility; `tests/semantic-no-primitives.test.ts` builds and analyzes a context with every executable primitive module removed. `tests/capability-model.test.ts` pins the platform binding (v0.7): verdicts and diagnostics for capability ids, necessity, exact identity, and independence of the verdict from start and resolution.
 
 ## What analysis cannot know
 
@@ -370,4 +396,4 @@ Every NEXUS work unit — a command handler, a service, a selector projection, a
 
 ## Not decided
 
-These are open, and nothing here presumes an answer: how NEXUS, PORT and targets relate, and where production profiles come from (L1); whether a target profile describes an execution environment (a *platform*, in [`ROADMAP.md`](./ROADMAP.md)'s terms) or a PORT rendering target, and whether I15's separate identifier spaces survive the v0.7 capability model (L6, recorded in the [runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md)); what a consumer does with an `error` (L3); identity stability across contexts (L4, which matters more now that values exist — every identity stays context-local in v0.5); producing declarations and spans from source (L5); and per-value openness — scoping an open or partial fact to particular values, instead of opening every value's producer and consumer sets together, deferred until a pass needs it. How a declaration attaches to a NEXUS primitive (L2) is resolved: declarations are canonical and standalone, and association is the author's concern (D17). Later work — whole-plan validation, capture and tooling — is described in the v0.4 outline's §14 and is not part of v0.5.
+These are open, and nothing here presumes an answer: how NEXUS, PORT and targets relate, and where production profiles come from (L1); a PORT binding, and any relation between bindings (L1); what a consumer does with an `error` (L3); identity stability across contexts (L4, which matters more now that values exist — every identity stays context-local in v0.5); producing declarations and spans from source (L5); and per-value openness — scoping an open or partial fact to particular values, instead of opening every value's producer and consumer sets together, deferred until a pass needs it. What a target profile denotes (L6) is resolved in v0.7: the provider of the context's binding (D43; [v0.7 outline](./superpowers/specs/2026-09-27-nexus-v0.7-outline.md)). How a declaration attaches to a NEXUS primitive (L2) is resolved: declarations are canonical and standalone, and association is the author's concern (D17). Later work — whole-plan validation, capture and tooling — is described in the v0.4 outline's §14 and is not part of v0.5.
