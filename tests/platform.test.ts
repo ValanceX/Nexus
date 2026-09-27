@@ -79,6 +79,11 @@ describe("Platform: the supply point (v0.6 D30, D42)", () => {
     void platform;
   });
 
+  it("the application definition carries no environment (type, D31)", () => {
+    // @ts-expect-error: the environment is supplied only by the platform (I29)
+    Application.define({ name: "x", runtime: Layer.empty, environment: new Map() });
+  });
+
   it("StartOptions is exactly { platform? } (type, D42)", () => {
     expectTypeOf<Application.StartOptions>().toEqualTypeOf<{ readonly platform?: Application.Platform }>();
   });

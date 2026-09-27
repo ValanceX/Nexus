@@ -67,7 +67,7 @@ describe("Application", () => {
     ]);
 
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
-      Effect.andThen(Application.start(Application.define({ name: "ambient-app", runtime: ReporterLive, environment }))),
+      Effect.andThen(Application.start(Application.define({ name: "ambient-app", runtime: ReporterLive }), { platform: Capability.EnvironmentLive(environment) })),
       Effect.andThen((running) => Effect.Do.pipe(
         Effect.andThen(Effect.all({
           direct: Effect.promise(() => Runtime.run(running.runtime, Effect.map(Capability.resolve(Flashlight), (r) => r._tag))),

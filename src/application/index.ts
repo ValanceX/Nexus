@@ -16,8 +16,9 @@ export type ApplicationStatus =
   | { readonly _tag: "Stopped" }
   | { readonly _tag: "Failed"; readonly error: ApplicationInitError };
 
-// The one initialization failure. Environment resolutions are supplied already
-// resolved by the definition, so resolving them can't fail.
+// The one initialization failure (v0.6 D34). The platform's build is part of the
+// application's service graph build, so a platform failure is ServiceGraphFailed
+// too; its `cause` tells them apart.
 export type ApplicationInitError = { readonly _tag: "ServiceGraphFailed"; readonly cause: unknown };
 
 /**
@@ -32,7 +33,6 @@ export type ApplicationAmbient = Capability.EnvironmentShape | EventBusShape;
 export interface ApplicationDefinition<R> {
   readonly name: string;
   readonly runtime: Layer.Layer<R, unknown, ApplicationAmbient>;
-  readonly environment?: ReadonlyMap<string, Capability.CapabilityResolution<unknown>>;
 }
 
 export interface Application<R> {
@@ -82,8 +82,8 @@ export const define = <R>(definition: ApplicationDefinition<R>): Application<R> 
 export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope> => Effect.Do.pipe(
   Effect.bind("statusRef", () => Ref.make<ApplicationStatus>({ _tag: "Created" })),
   Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Initializing" })),
-  // TEMPORARY (v0.6 plan, Task 5 to Task 7): the v0.5 definition-level map, when no platform is given.
-  Effect.let("platform", (): Platform => options?.platform ?? (app.definition.environment === undefined ? noPlatform : Capability.EnvironmentLive(app.definition.environment))),
+  // The single supply point for the environment (D30, I29).
+  Effect.let("platform", (): Platform => options?.platform ?? noPlatform),
   // Provide-merge, not merge: the platform is built first and fed into the
   // user's runtime layer (so a Service/Command layer may require Environment,
   // C14), while staying in the final context so Capability.resolve also works
