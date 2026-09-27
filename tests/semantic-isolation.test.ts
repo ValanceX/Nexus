@@ -261,7 +261,7 @@ describe("Semantic: independence from execution (DoD 3, 10, 11, 12; I11, I15, D1
 
     const resolutions = async (resolution: Capability.CapabilityResolution<unknown>, analyze: boolean) =>
       Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-        const running = yield* Application.start(Application.define({ name: "cap", runtime: Layer.empty, environment: new Map([["filesystem", resolution]]) }));
+        const running = yield* Application.start(Application.define({ name: "cap", runtime: Layer.empty }), { platform: Capability.EnvironmentLive(new Map([["filesystem", resolution]])) });
         if (analyze) Semantic.analyze({ declarations: [declaration], profile: { name: "p", provided: ["filesystem"], notProvided: [] } });
         const resolved = yield* Effect.promise(() => Runtime.run(running.runtime, Capability.resolve(Fs)));
         const required = yield* Effect.promise(() => Runtime.run(running.runtime, Effect.either(Capability.require(Fs))));
@@ -283,7 +283,7 @@ describe("Semantic: independence from execution (DoD 3, 10, 11, 12; I11, I15, D1
     });
 
     it("Available application capability, target doesn't provide it: incompatible", async () => {
-      const available: Capability.CapabilityResolution<unknown> = { _tag: "Available", implementation: { read: () => "x" }, source: "native" };
+      const available: Capability.CapabilityResolution<unknown> = { _tag: "Available", implementation: { read: () => "x" } };
 
       expect(classify({ name: "p", provided: [], notProvided: ["filesystem"] })).toBe("incompatible");
       expect(await resolutions(available, true)).toEqual(await resolutions(available, false));

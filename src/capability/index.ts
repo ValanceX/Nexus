@@ -1,19 +1,25 @@
 import { Context, Effect, Layer, Option } from "effect";
 
+declare const CapabilityTypeId: unique symbol;
+
+/**
+ * An application capability (v0.6 D37): a NEXUS identity and a typed contract.
+ * Its implementation is supplied by the platform, through Environment, by `id`.
+ * The phantom member carries `Shape` for inference (and makes it invariant); it
+ * is declared, never assigned.
+ */
 export interface Capability<Shape> {
   readonly id: string;
-  readonly tag: Context.Tag<Shape, Shape>;
+  readonly [CapabilityTypeId]?: (_: Shape) => Shape;
 }
 
-export const define = <Shape>(id: string): Capability<Shape> => ({
-  id,
-  tag: Context.GenericTag<Shape>(id),
-});
+export const define = <Shape>(id: string): Capability<Shape> => ({ id });
 
-export type CapabilitySource = "native" | "browser" | "remote" | "fallback";
-
+// v0.6 D32/D33: NEXUS names no execution environment and assigns no meaning to
+// how an implementation was produced. A platform may label its own
+// implementations internally; NEXUS neither reads nor exposes such labels.
 export type CapabilityResolution<Shape> =
-  | { readonly _tag: "Available"; readonly implementation: Shape; readonly source: CapabilitySource }
+  | { readonly _tag: "Available"; readonly implementation: Shape }
   | { readonly _tag: "Unavailable"; readonly reason: string };
 
 export type CapabilityUnavailableError = {

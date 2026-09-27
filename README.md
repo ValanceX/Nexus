@@ -13,7 +13,7 @@ MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT reali
 ## Why NEXUS
 
 - **Logic you can test without a browser.** Commands, state, and selectors are plain typed values, so you can exercise them directly in unit tests.
-- **No device checks in feature code.** Haptics, camera, storage, network, and AI are resolved once at startup into typed *capabilities*, with explicit fallbacks when they're missing. No more `if (device.hasX)`.
+- **No device checks in feature code.** Haptics, camera, storage, network, and AI are typed *capabilities*. The platform the app is started on supplies them once at startup, and the app handles a missing one explicitly. No more `if (device.hasX)`, and NEXUS itself names no browser, server or device.
 - **Typed from edge to edge.** Command inputs and state are validated with Effect Schema where data enters, and events are typed by their schema. Failures are typed errors, not surprise exceptions.
 - **Clean startup and shutdown.** Long-lived resources (sockets, devices, workers) are always released, even when something fails halfway. Shutdown ends every state and event stream the app owns, and nothing can stop the app behind its lifecycle's back.
 - **Built on [Effect](https://effect.website).** NEXUS adds application-level concepts on top of Effect instead of reinventing dependency injection, scopes, or concurrency.
@@ -65,7 +65,7 @@ NEXUS has nine primitives, each with one job:
 |---|---|
 | Run business rules, services, and use cases | Render anything (that's PORT) |
 | Own application state and derived data | Parse or compile MPRX (that's MESH) |
-| Resolve device capabilities in one place | Run hidden side effects inside UI bindings |
+| Consume capabilities through one typed contract | Run hidden side effects inside UI bindings, or implement platforms |
 
 NEXUS doesn't depend on the MESH compiler or language server. It sees MESH only through `@valancex/mesh-runtime`'s render trees and command intents, via the host adapter in `src/mesh` (exported as `Mesh`), never through compiler internals. The nine primitives never import the adapter.
 
@@ -90,6 +90,8 @@ $ pnpm build
 
 **v0.5: semantic IR.** `Semantic.build` turns declarations into a validated, plain-data IR with value-based data flow; `Semantic.analyze` now runs on it, with identical results. See [`docs/semantic.md`](./docs/semantic.md).
 
+**v0.6: the runtime/platform boundary.** An application's environment is supplied only by the platform passed to `Application.start(app, { platform })`, a `Layer` providing its capabilities. The platform's resources live and die with the application: acquired first, released last. NEXUS names no execution environment, and the core's host independence is enforced at compile time. See the [release notes](./docs/releases/v0.6.md).
+
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 
 Requires Node 22 or later. Not yet published to npm. See the [release notes](./docs/releases/) for what changed in each version.
@@ -99,6 +101,7 @@ Requires Node 22 or later. Not yet published to npm. See the [release notes](./d
 - [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
 - [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
 - [**Semantic analysis**](./docs/semantic.md): the semantic model, `Semantic.build`, the IR and `Semantic.analyze`
+- [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0, with the runtime/platform boundary next (v0.6); where NEXUS stands against it is in the [runtime/platform audit](./docs/architecture/2026-09-27-runtime-platform-audit.md)
 
 ## Tech
 

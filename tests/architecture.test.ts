@@ -9,6 +9,7 @@
 //               ▼
 //   @valancex/mesh-runtime
 import { readdirSync, readFileSync } from "node:fs";
+import { builtinModules } from "node:module";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -141,5 +142,77 @@ describe("Architecture: the semantic model is a leaf (v0.4 D13)", () => {
       ...existing.map((name) => `export * as ${name} from "./${name.toLowerCase()}/index.js";`),
       `export * as Semantic from "./semantic/index.js";`,
     ]);
+  });
+});
+
+// v0.6 D40, G1: the build compiles exactly src/, with no ambient host types.
+describe("Architecture: host independence is enforced at compile time (v0.6 G1)", () => {
+  const read = (name: string) => JSON.parse(readFileSync(join(repo, name), "utf8"));
+
+  it("builds src/ with no ambient types and no DOM", () => {
+    const build = read("tsconfig.json");
+
+    expect(build.include).toEqual(["src"]);
+    expect(build.compilerOptions.types).toEqual([]);
+    expect(build.compilerOptions.lib).toEqual(["ES2022"]);
+  });
+
+  it("gives Node types to tests only", () => {
+    expect(read("tsconfig.typecheck.json").compilerOptions.types).toEqual(["node"]);
+  });
+});
+
+// v0.6 D40, G2: src/ imports only its declared dependencies; nothing from Node or tests/.
+describe("Architecture: src/ imports only declared dependencies (v0.6 G2)", () => {
+  const builtins = new Set(builtinModules);
+  const isBuiltin = (specifier: string) => specifier.startsWith("node:") || builtins.has(specifier.split("/")[0] ?? "");
+  const allowedBare = (file: string) => isInside(meshDir, file) ? ["effect", "@valancex/mesh-runtime"] : ["effect"];
+  // resolve() drops the trailing separator, which isInside's `dir + sep` would otherwise double.
+  const tests = resolve(fileURLToPath(new URL("../tests/", import.meta.url)));
+
+  it("finds bare imports to check", () => {
+    expect(sources.flatMap((file) => specifiersOf(file)).filter((specifier) => !specifier.startsWith("."))).toContain("effect");
+  });
+
+  it("imports no Node builtin anywhere under src/", () => {
+    expect(violations(sources, (_file, specifier) => isBuiltin(specifier))).toEqual([]);
+  });
+
+  it("imports no package beyond its declared dependencies", () => {
+    expect(violations(sources, (file, specifier) => !specifier.startsWith(".") && !allowedBare(file).includes(specifier))).toEqual([]);
+  });
+
+  it("finds tests/ as a directory it can check against", () => {
+    expect(isInside(tests, join(tests, "architecture.test.ts"))).toBe(true);
+  });
+
+  it("imports nothing from tests/", () => {
+    expect(violations(sources, (file, specifier) => specifier.startsWith(".") && isInside(tests, target(file, specifier)))).toEqual([]);
+  });
+});
+
+// v0.6 D41: the reference platform is test-only evidence. It reaches NEXUS
+// only through src/, uses only Effect, and imports no Node builtin.
+describe("Architecture: the reference platform imports only effect and src/ (v0.6 D41)", () => {
+  // resolve() drops the trailing separator, which isInside's `dir + sep` would otherwise double.
+  const platformDir = resolve(fileURLToPath(new URL("../tests/platform/", import.meta.url)));
+  const srcDir = resolve(src);
+  const platformSources = sourcesUnder(platformDir);
+  const builtins = new Set(builtinModules);
+
+  it("finds what it checks", () => {
+    expect(platformSources).toContain(join(platformDir, "reference.ts"));
+    expect(specifiersOf(join(platformDir, "reference.ts"))).toContain("effect");
+  });
+
+  it("imports only effect, src/ and tests/platform/", () => {
+    expect(violations(platformSources, (file, specifier) => specifier.startsWith(".")
+      ? !(isInside(srcDir, target(file, specifier)) || isInside(platformDir, target(file, specifier)))
+      : specifier !== "effect"
+    )).toEqual([]);
+  });
+
+  it("imports no Node builtin", () => {
+    expect(violations(platformSources, (_file, specifier) => specifier.startsWith("node:") || builtins.has(specifier))).toEqual([]);
   });
 });

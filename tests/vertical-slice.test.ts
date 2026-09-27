@@ -5,6 +5,8 @@ import { describe, it, expect } from "vitest";
 import * as Command from "../src/command/index.js";
 import * as Nexus from "../src/index.js";
 
+import { referencePlatform } from "./platform/reference.js";
+
 describe("NEXUS vertical slice (§22)", () => {
   it("boots, executes a command, observes state, emits an event, and shuts down cleanly — with no MESH or PORT dependency", async () => {
     released.value = false;
@@ -66,6 +68,86 @@ describe("NEXUS vertical slice (§22)", () => {
 
     const result = await Effect.runPromise(Effect.scoped(program));
 
+    expect(result.users).toEqual([{ id: "u1", name: "Ada" }, { id: "u2", name: "Grace" }]);
+    expect(result.stateAfter.selectedUser).toEqual(Option.some("u1"));
+    expect(result.derived).toEqual(Option.some("u1"));
+    expect(result.events).toEqual([{ userId: "u1" }]);
+    expect(result.finalStatus).toEqual({ _tag: "Stopped" });
+    expect(released.value).toBe(true);
+    expect(log).toEqual([
+      "application starts",
+      "user service registered",
+      "user state initialized",
+      "command executed",
+      "state updated",
+      "selector derives new value",
+      "event emitted",
+      "application shuts down",
+    ]);
+  });
+
+  // v0.6 D41: the same slice, started on the reference platform. The platform's
+  // capability must be visible to the running application, so an ignored
+  // platform fails this test.
+  it("runs the same slice on the reference platform (v0.6 D41)", async () => {
+    released.value = false;
+    const log: Array<string> = [];
+    const Probe = Nexus.Capability.define<{ readonly ok: true }>("reference.probe");
+    const platform = referencePlatform({ resolutions: new Map([[Probe.id, { _tag: "Available", implementation: { ok: true } }]]) });
+
+    const program = Effect.gen(function* () {
+      log.push("application starts");
+
+      const usersState = yield* Nexus.State.create(UserState, { users: [], selectedUser: Option.none() });
+      const { selectUser, selectedUser } = buildApp(usersState);
+
+      const app = Nexus.Application.define({ name: "basic-app", runtime: UserRepositoryLive });
+      const running = yield* Nexus.Application.start(app, { platform });
+
+      const probe = yield* Effect.promise(() => Nexus.Runtime.run(running.runtime, Nexus.Capability.require(Probe)));
+
+      const users = yield* Effect.promise(() =>
+        Nexus.Runtime.run(running.runtime, Effect.flatMap(UserRepository, (repo) => repo.listUsers()))
+      );
+
+      if (users.length === 2) {
+        log.push("user service registered");
+      }
+
+      const stateBefore = yield* Nexus.State.get(usersState);
+
+      if (stateBefore.users.length === 0 && Option.isNone(stateBefore.selectedUser)) {
+        log.push("user state initialized");
+      }
+
+      const eventFiber = Nexus.Runtime.runFork(
+        running.runtime,
+        Stream.runCollect(Stream.take(Nexus.Event.subscribe(UserSelected), 1))
+      );
+      yield* Effect.sleep("1 millis");
+
+      yield* Effect.promise(() => Nexus.Runtime.run(running.runtime, Command.invoke(selectUser, { userId: "u1" })));
+      log.push("command executed");
+
+      const stateAfter = yield* Nexus.State.get(usersState);
+      log.push("state updated");
+
+      const derived = yield* selectedUser.value;
+      log.push("selector derives new value");
+
+      const events = yield* Fiber.join(eventFiber);
+      log.push("event emitted");
+
+      yield* Nexus.Application.shutdown(running);
+      const finalStatus = yield* Nexus.Application.status(running);
+      log.push("application shuts down");
+
+      return { probe, users, stateAfter, derived, events: Array.from(Chunk.toReadonlyArray(events)), finalStatus };
+    });
+
+    const result = await Effect.runPromise(Effect.scoped(program));
+
+    expect(result.probe).toEqual({ ok: true });
     expect(result.users).toEqual([{ id: "u1", name: "Ada" }, { id: "u2", name: "Grace" }]);
     expect(result.stateAfter.selectedUser).toEqual(Option.some("u1"));
     expect(result.derived).toEqual(Option.some("u1"));

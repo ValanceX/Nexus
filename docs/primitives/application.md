@@ -8,10 +8,10 @@ this belongs to. `Application` is the composition root: it owns exactly
 
 ## Responsibility
 
-- Define the application's composition (its service graph and its
-  environment/capability configuration).
+- Define the application's composition (its service graph). The
+  definition carries no environment: that is the platform's (v0.6).
 - Bootstrap dependencies and initialize state.
-- Start `Runtime` and resolve `Environment` capabilities.
+- Start `Runtime` with the environment its platform supplies at `start`.
 - Own the application's lifetime and its typed lifecycle.
 - Shut down cleanly, releasing everything `Runtime` scoped.
 
@@ -38,7 +38,12 @@ type ApplicationAmbient = EnvironmentShape | EventBusShape;
 interface ApplicationDefinition<R> {
   readonly name: string;
   readonly runtime: Layer.Layer<R, unknown, ApplicationAmbient>;
-  readonly environment?: ReadonlyMap<string, CapabilityResolution<unknown>>;
+}
+
+type Platform = Layer.Layer<EnvironmentShape, unknown, never>;
+
+interface StartOptions {
+  readonly platform?: Platform;
 }
 
 interface Application<R> {
@@ -53,8 +58,24 @@ interface RunningApplication<R> {
 ```
 
 The `runtime` layer may require the ambient services (`ApplicationAmbient`):
-the resolved `Environment` and the application's event bus. `environment`
-supplies capability resolutions already resolved; resolving them can't fail.
+the resolved `Environment` and the application's event bus.
+
+A **platform** supplies the application's environment. It is any `Layer`
+that provides the resolved `Environment` and requires nothing, passed to
+`start` as `options.platform`. That is the single place an environment is
+supplied: the definition carries none, so one definition can start on
+different platforms. A platform's capability implementations may be
+host-owned values (`Capability.EnvironmentLive(map)`: the host acquires and
+releases them, and may share them) or application-scoped resources (a
+scoped layer that builds the map). Application code can't tell which (see
+[capability.md](./capability.md)). With no `options`, or no
+`options.platform`, the environment is empty and every capability resolves
+`Unavailable`, exactly as in v0.5 with no `environment`.
+
+`StartOptions` is the shape of the application-host boundary, not a
+configuration bag. It holds exactly the one justified start concern,
+`platform`, and any further field needs its own architectural decision.
+`RunningApplication.environment` is the environment the platform built.
 `RunningApplication` is frozen and exposes nothing else: its `runtime` is an
 opaque handle (see [runtime.md](./runtime.md)), and its lifecycle state is
 private to NEXUS.
@@ -69,7 +90,7 @@ point for one.
 ```ts
 namespace Application {
   function define<R>(definition: ApplicationDefinition<R>): Application<R>;
-  function start<R>(app: Application<R>): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope>;
+  function start<R>(app: Application<R>, options?: StartOptions): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope>;
   function shutdown<R>(running: RunningApplication<R>): Effect.Effect<void>;
   function status<R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus>;
   function createState<R, A>(running: RunningApplication<R>, schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError>;
@@ -96,9 +117,12 @@ type ApplicationInitError = { readonly _tag: "ServiceGraphFailed"; readonly caus
 ```
 
 An initialization failure is always this typed variant — never a thrown
-exception or an `unknown` rejection reaching the caller. A failed `start`
-returns no `RunningApplication`, and releases whatever it had built no later
-than when the caller's scope closes.
+exception or an `unknown` rejection reaching the caller. A platform that
+fails to build is an initialization failure too: the platform is part of the
+application's service graph, and `cause` tells the two apart. A failed
+`start` returns no `RunningApplication`, and has released everything it
+acquired, platform included, before it fails (see Rules, the lifetime
+invariant).
 
 `status` never fails, and `shutdown` has no typed error. A resource release
 that dies during termination doesn't stop it: the application still reaches
@@ -136,9 +160,39 @@ through its `runtime` (see [runtime.md](./runtime.md)).
   construction is refused. Admission never waits, so an admitted effect that
   requests more work can't deadlock. Effects already running when
   termination begins aren't interrupted by it.
-- `start` must resolve `Environment` (§10.1) before the service graph is
-  considered ready, since services may themselves depend on resolved
-  capabilities.
+- `start` builds the platform before the application's `runtime` layer, so
+  `Environment` is resolved before the service graph and services may
+  depend on resolved capabilities.
+- **The lifetime invariant (v0.6).** The platform Layer is provided to the
+  application-owned runtime scope; acquisition and release of platform
+  resources are therefore governed by the application's lifetime:
+
+  ```text
+  platform acquisition
+          ↓
+  application resource acquisition
+          ↓
+  application running
+          ↓
+  shutdown (Application.shutdown, or closing the start scope)
+          ↓
+  application resource release
+          ↓
+  platform resource release
+  ```
+
+  If the platform fails to acquire, what it acquired is released and the
+  `runtime` layer is never built. If the `runtime` layer fails after the
+  platform acquired, application resources are released, then platform
+  resources, before `start` fails. If a release fails during shutdown, the
+  platform is still released last and the status still reaches `Stopped`.
+  A failed start leaves nothing acquired and returns no handle.
+- **Effect's default services** (`Clock`, `Console`, `Random`,
+  `ConfigProvider`, `Tracer`) are Effect's, not NEXUS's: NEXUS names none of
+  them. A platform is the intended place to set them, with Effect's own
+  layers (`Layer.setClock`, …). Precedence is Effect's: the fiber that calls
+  `start`, then the platform, then the `runtime` layer, the later one
+  winning (see [runtime.md](./runtime.md)).
 - `Application` must never be reachable from `Command`/`Service`/`State`
   code — those only ever see `RunningApplication`'s narrower surface
   (state reads, selector reads, command invocation).
@@ -148,11 +202,16 @@ through its `runtime` (see [runtime.md](./runtime.md)).
 ```ts
 const app = Application.define({
   name: "user-admin",
-  runtime: Layer.merge(UserRepositoryLive, ClockLive),
+  runtime: UserRepositoryLive,
 });
 
+// The host chooses the platform; the definition doesn't.
+const platform = Capability.EnvironmentLive(new Map([
+  [Haptics.id, { _tag: "Available", implementation: deviceHaptics }],
+]));
+
 const program = Effect.scoped(Effect.Do.pipe(
-  Effect.bind("running", () => Application.start(app)),
+  Effect.bind("running", () => Application.start(app, { platform })),
   Effect.bind("users", ({ running }) => Application.createState(running, UserState, initialUsers)),
   Effect.tap(({ running }) => Effect.promise(() =>
     Runtime.run(running.runtime, Command.invoke(selectUser, { userId }))
@@ -167,4 +226,7 @@ Covers §20 "Application": initialization, startup failure (assert a typed
 `ApplicationInitError`, not a thrown exception), both termination routes,
 repeated and concurrent shutdown, refusal while `Stopping`, application-owned
 `State` including its races with termination, cleanup ordering, and every
-lifecycle transition including the `Failed` branch.
+lifecycle transition including the `Failed` branch. `tests/platform.test.ts`
+covers the platform: the supply point, the lifetime invariant on both routes
+and every failure path, isolation between starts, and the reference test
+platform. `tests/default-services.test.ts` pins default-service precedence.
