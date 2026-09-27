@@ -355,7 +355,7 @@ is an error.
 
 ## 9. Target Capabilities
 
-> **Revised 2026-09-27.** The profiles below (Browser, Node) describe **platform** capabilities: what an execution environment provides. They are not PORT target capabilities, which describe what a rendering target can realize (see ROADMAP §17). The v0.4/v0.5 semantic model keeps its released names (`TargetProfile`, `nexus-*-target-capability`). Which of the two a semantic profile denotes is deferred decision L6 (audit, section Q), to be settled with the v0.7 capability model.
+> **Revised 2026-09-27.** The profiles below (Browser, Node) describe **platform** capabilities: what an execution environment provides. They are not PORT target capabilities, which describe what a rendering target can realize (see ROADMAP §17). The v0.4/v0.5 semantic model keeps its released names (`TargetProfile`, `nexus-*-target-capability`). *Resolved in v0.7 (L6, outline D43–D45).* A semantic profile states the provisions of the one provider its analysis context is evaluated against. Its meaning comes from the context's binding. v0.7 defines the platform binding: identifiers are application `Capability` ids, and the profile is a platform-authored provision statement (a claim). Profiles name no environment: "Browser" and "Node" below are illustrations of what a platform might provide, not NEXUS concepts.
 
 The selected execution environment must expose a capability profile.
 
@@ -733,9 +733,11 @@ A diagnostic is plain data that survives a JSON round trip unchanged, with no fu
 
 A semantic property is known only when a declaration explicitly represents it. Nothing is inferred from executing code, erased types, names, conventions or source inspection, unless a later release introduces an explicit producer of declarations. A property that isn't known is never treated as false or empty.
 
-### I15 — Target capability is distinct from application capability
+### I15 — Analysis is independent of resolution, and identifiers belong to a binding
 
-Target capabilities and application capabilities are separate concepts, with separate identifier spaces. Semantic analysis neither reads nor affects how application capabilities resolve, and application capability configuration never decides a target capability.
+*Revised in v0.7 (outline D45).* Semantic capability identifiers are opaque. Each analysis context's identifiers belong to the single domain of the binding that produced it. In the **platform binding**, a semantic capability identifier is an application `Capability`'s `id`, verbatim. Semantic analysis neither reads nor affects how any application capability resolves. A running application's resolutions never decide a profile: a profile is never derived from an `Environment`, a `Layer` or execution (I16).
+
+*Original wording (v0.4), kept for the record:* Target capabilities and application capabilities are separate concepts, with separate identifier spaces. Semantic analysis neither reads nor affects how application capabilities resolve, and application capability configuration never decides a target capability.
 
 ### I16 — Target compatibility comes from declarations, not execution or discovery (refines I5)
 
@@ -786,6 +788,28 @@ The IR records uncertainty; diagnostics interpret it.
 ### I27 — v0.4 compatibility
 
 For every valid v0.4-shaped context, `Semantic.analyze` returns a result deeply equal to v0.4's. For every invalid one, it returns the same issues in the same order.
+
+The following invariants were established by NEXUS v0.7, the platform capability model (see `superpowers/specs/2026-09-27-nexus-v0.7-outline.md`). v0.7 also revised I15, above.
+
+### I34 — Capability identity is the id
+
+A capability's identity is its `id` string, at runtime and in analysis. There is no second identity and no mapping table, and `Shape` is never compared.
+
+### I35 — Provision statements are authored, never derived
+
+A platform provision statement is authored by the platform. NEXUS never derives one from a `Layer`, an `Environment` or execution.
+
+### I36 — Claims and facts don't change each other
+
+Requirements and provision statements never change runtime resolution, and runtime resolution never changes a statement.
+
+### I37 — Analysis never gates
+
+No analysis result affects `Application.start`, admission, `run` or dispatch.
+
+### I38 — NEXUS owns no capability identifier
+
+Capability identifiers are owned by whoever defines the capability contract. NEXUS defines none, and keeps no registry.
 
 ---
 

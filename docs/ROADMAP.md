@@ -4,11 +4,13 @@ Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
 Current release: v0.6.0 (released 2026-09-27; docs/releases/v0.6.md)
-Next release: v0.7, Platform Capability Model (not started)
+Next release: v0.7, Platform Capability Model (implemented; release pending)
 v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
-Audit: docs/architecture/2026-09-27-runtime-platform-audit.md
+v0.7 outline: docs/superpowers/specs/2026-09-27-nexus-v0.7-outline.md
+Audits: docs/architecture/2026-09-27-runtime-platform-audit.md,
+        docs/architecture/2026-09-27-capability-model-audit.md
 
-Nothing after v0.6 in this document is implemented.
+Nothing after v0.7 in this document is implemented.
 
 ---
 
@@ -548,6 +550,39 @@ Result:
 Exit condition
 
 NEXUS can describe the environmental capabilities required by an application without embedding a specific environment into the application runtime.
+
+8.1 As decided and implemented (2026-09-27)
+
+Status: implemented (docs/releases/v0.7.md, draft); release pending.
+
+The v0.7 outline decides, with no public API change and no src/ change:
+
+L6   A semantic target profile states the provisions of the one provider
+     an analysis context is evaluated against. Semantic defines the
+     relation, not a vocabulary or a kind of environment. A binding fixes
+     the domain. (D43)
+I15  Revised: analysis stays independent of resolution; identifiers belong
+     to the context's binding. (D45)
+     Platform binding: a semantic identifier is Capability.id, verbatim.
+     Requirement = a declaration of necessity (not use).
+     Provision = a platform-authored TargetProfile, a claim about every
+     start: provided / notProvided / undecided. (D44, D46, D47)
+O1   NEXUS does not compose platforms. (D50)
+O2   No typed capability identity in Effect's R. (D51)
+O5   Platform stays Layer<EnvironmentShape, unknown, never>. (D52)
+O6   The pre-start description is the provision statement; it is never
+     passed to Application.start and never derived. (D47)
+
+A verdict never gates start (D49). Conformance of a statement to its
+Layer is the platform's obligation, proven by tests; NEXUS's own helper is
+test tooling only (C21).
+
+The relation reads:
+
+Application requires:     acme.storage, acme.network   (Capability ids)
+Platform statement:       provided: acme.network; notProvided: acme.storage
+Result:                   incompatible (explicit notProvided)
+Undecided (permissions, optional hardware, remote state):  opaque
 
 ---
 
@@ -1231,8 +1266,10 @@ L2 — Declarations attached to NEXUS primitives, and facts NEXUS states
      must revise D17 explicitly if it does.
 
 L3 — Downstream meaning of an "error" diagnostic
-     Open. Resolved when a real consumer exists (v0.7 capability mismatch
-     at the earliest).
+     Open. v0.7 gives it a meaning under the platform binding (a declared
+     requirement the platform's statement explicitly doesn't provide) but
+     no consumer exists yet. Resolved by the first tool or host that calls
+     Semantic.analyze.
 
 L4 — Identity stability across analysis contexts
      Open. Resolved only when incremental analysis or dev tooling needs it.
@@ -1243,8 +1280,9 @@ L5 — Producers of declarations and source spans
 L6 — What a semantic "target profile" denotes (platform capability, PORT
      target capability, or neutral), and whether I15's separate identifier
      spaces survive
-     Open. v0.7. v0.6 must not rename the released semantic names or
-     diagnostic codes.
+     Resolved in v0.7 (D43, D45): neutral relation; the binding fixes the
+     domain; the platform binding uses Capability.id verbatim; I15 revised.
+     Released names and codes unchanged.
 
 L7 — Who initializes the MESH engine outside Node
      Open. v0.9 / I1 (the first browser host).

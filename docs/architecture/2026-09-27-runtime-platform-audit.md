@@ -19,6 +19,8 @@ Three claims were checked by experiment, not just by reading. The experiments we
 >
 > v0.6 implements that outline (ARCHITECTURE §26 decision 12; `docs/releases/v0.6.md`).
 >
+> **Follow-up (v0.7, 2026-09-27).** L6 and the I15 question from section F are decided in the v0.7 outline, [`../superpowers/specs/2026-09-27-nexus-v0.7-outline.md`](../superpowers/specs/2026-09-27-nexus-v0.7-outline.md) (D43–D45), with evidence in the [capability model audit](./2026-09-27-capability-model-audit.md). A semantic profile states the provisions of the provider of its context's binding. Under the platform binding, identifiers are `Capability.id`s verbatim. I15 keeps "analysis is independent of resolution" and drops "separate identifier spaces". v0.6's O1, O2, O5 and O6 are decided there too (D47, D50–D52).
+>
 > The text below is kept as audited.
 
 ---
