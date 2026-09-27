@@ -237,3 +237,21 @@ describe("Platform: NEXUS names no execution environment (v0.6 D33, I30)", () =>
     expect(Object.keys(result).sort()).toEqual(["_tag", "implementation"]);
   });
 });
+
+describe("Platform: a capability is its id (v0.6 D37, I32)", () => {
+  it("define creates no Effect tag: a capability's only runtime field is its id", () => {
+    expect(Object.keys(Capability.define("x"))).toEqual(["id"]);
+  });
+
+  it("resolve still infers the capability's Shape, and Shapes don't mix (type)", () => {
+    const Haptics = Capability.define<{ readonly vibrate: () => number }>("haptics");
+
+    expectTypeOf(Capability.require(Haptics)).toEqualTypeOf<Effect.Effect<{ readonly vibrate: () => number }, Capability.CapabilityUnavailableError, Capability.EnvironmentShape>>();
+    expectTypeOf(Capability.resolve(Haptics)).toEqualTypeOf<Effect.Effect<Capability.CapabilityResolution<{ readonly vibrate: () => number }>, never, Capability.EnvironmentShape>>();
+
+    // @ts-expect-error: Capability is invariant in Shape
+    const other: Capability.Capability<{ readonly other: 1 }> = Haptics;
+
+    void other;
+  });
+});
