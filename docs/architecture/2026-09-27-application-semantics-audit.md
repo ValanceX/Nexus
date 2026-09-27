@@ -260,7 +260,7 @@ Each assumption is stated so that it can be checked, and each names what it affe
 |---|---|---|
 | **Runtime coupling** | `invoke`, `start` or `Runtime.run` reads a requirement field | no requirement field on any primitive value or start option |
 | **Semantic imports** | a `Command.declare()` or `Application.requirements()` helper in `src/` | the leaf test (D13), unchanged |
-| **A registry** | a table of units by name, or a list of commands on the application | no NEXUS-owned inventory; the author's context is the inventory |
+| **A registry** | a table of units by name, or a list of commands on the application | no NEXUS-owned inventory; a context contains only the units its producer chose to describe |
 | **Automatic discovery** | walking a `Layer`, recording `require` calls, reading `R` | declarations are authored (I14); nothing derives them |
 | **Hidden execution** | building a `Layer` to learn its requirements | analysis never needs a built application (I11) |
 | **Start-time gating** | comparing declarations with `RunningApplication.environment` | I37, unchanged; a characterization test for each verdict |
