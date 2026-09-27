@@ -4,7 +4,8 @@ Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
 Current release: v0.5.0 (released 2026-09-27)
-Next release: v0.6, Runtime / Platform Boundary (not started)
+Next release: v0.6, Runtime / Platform Boundary (outline and plan for review; not implemented)
+v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
 Audit: docs/architecture/2026-09-27-runtime-platform-audit.md
 
 Nothing below v0.5 in this document is implemented unless the audit says so.
@@ -432,6 +433,22 @@ capability provision moved there
 one headless Node platform, outside src/ core
     ↓
 prove behavior unchanged (full suite, vertical slice, MESH slice)
+
+Specified (2026-09-27) by the v0.6 outline, which decides I-1 … I-4:
+
+I-1  Application.start(app, platform?); a platform is a Layer providing
+     Capability.Environment and requiring nothing. The definition carries
+     no environment. (D30, D31)
+I-2  CapabilitySource is removed; NEXUS names no execution environment.
+     (D32, D33)
+I-3  One platform Layer. Host-owned implementations are values;
+     application-scoped ones are acquired in the application's scope and
+     released after every application resource. (D35, D36)
+I-4  NEXUS names no Effect default service. Precedence is Effect's:
+     caller < platform < application layer, pinned by tests. (D38, D39)
+
+The first platform is refined to a host-agnostic reference test platform,
+not a Node package: NEXUS core needs nothing Node-specific (D41).
 
 Exit condition
 

@@ -13,6 +13,12 @@ Three claims were checked by experiment, not just by reading. The experiments we
 - **E2.** `Clock.currentTimeMillis` run through `Runtime.run` on an application's runtime returns a caller-supplied clock when the caller wraps `Application.start` in `Effect.withClock`. It also returns an application-supplied clock when the application's `runtime` layer is `Layer.setClock(...)`. Otherwise it returns the host's wall clock.
 - **E3.** The installed `@valancex/mesh-runtime` 0.5.0 loads its WebAssembly engine by itself only under Node (`dist/engine.js`: `isNode()` → `node:fs/promises`). Elsewhere it throws unless the host has called its `init(url)` first.
 
+> **Follow-up (2026-09-27).** The blockers I-1 to I-4 are answered in the v0.6 outline, [`../superpowers/specs/2026-09-27-nexus-v0.6-outline.md`](../superpowers/specs/2026-09-27-nexus-v0.6-outline.md) (D30–D41). That outline makes two corrections to this audit:
+> - Effect 3.22's default services are `Clock`, `Console`, `Random`, `ConfigProvider` (whose default reads `process.env`) and `Tracer`. The `Scheduler` is a FiberRef, not a service. The inventory below listed `Scheduler` and missed `ConfigProvider`.
+> - Answer 8's "headless Node host platform" is refined to a host-agnostic reference test platform (outline D41). NEXUS core requires no Node-specific capability, so a Node platform would supply nothing a test platform doesn't.
+>
+> The text below is kept as audited.
+
 ---
 
 ## A. Executive conclusion
