@@ -167,7 +167,8 @@ describe("Architecture: src/ imports only declared dependencies (v0.6 G2)", () =
   const builtins = new Set(builtinModules);
   const isBuiltin = (specifier: string) => specifier.startsWith("node:") || builtins.has(specifier.split("/")[0] ?? "");
   const allowedBare = (file: string) => isInside(meshDir, file) ? ["effect", "@valancex/mesh-runtime"] : ["effect"];
-  const tests = fileURLToPath(new URL("../tests/", import.meta.url));
+  // resolve() drops the trailing separator, which isInside's `dir + sep` would otherwise double.
+  const tests = resolve(fileURLToPath(new URL("../tests/", import.meta.url)));
 
   it("finds bare imports to check", () => {
     expect(sources.flatMap((file) => specifiersOf(file)).filter((specifier) => !specifier.startsWith("."))).toContain("effect");
@@ -179,6 +180,10 @@ describe("Architecture: src/ imports only declared dependencies (v0.6 G2)", () =
 
   it("imports no package beyond its declared dependencies", () => {
     expect(violations(sources, (file, specifier) => !specifier.startsWith(".") && !allowedBare(file).includes(specifier))).toEqual([]);
+  });
+
+  it("finds tests/ as a directory it can check against", () => {
+    expect(isInside(tests, join(tests, "architecture.test.ts"))).toBe(true);
   });
 
   it("imports nothing from tests/", () => {
