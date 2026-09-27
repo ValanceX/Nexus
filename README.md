@@ -94,6 +94,8 @@ $ pnpm build
 
 **v0.7: the platform capability model.** An application states what it requires as semantic declarations that name `Capability` ids. A platform states what it provides as a plain-data provision statement. `Semantic.analyze` relates the two before anything runs: supported, opaque or incompatible. It is a statement about two claims, never enforcement: `start` and capability resolution are unchanged. No API changes. See [`docs/primitives/capability.md`](./docs/primitives/capability.md) and the [release notes](./docs/releases/v0.7.md).
 
+**v0.8: application semantics.** A requirement belongs to a *unit* of the application: the start unit (its service graph build) or an admitted unit (typically a command), each described by one standalone declaration. No primitive carries a requirement. The application's necessity is its start unit's requirement. The union over the units a context describes is its requirement set, which is not necessity. No API changes. See [`docs/semantic.md`](./docs/semantic.md), "Application contexts".
+
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 
 Requires Node 22 or later. Not yet published to npm. See the [release notes](./docs/releases/) for what changed in each version.
@@ -103,7 +105,7 @@ Requires Node 22 or later. Not yet published to npm. See the [release notes](./d
 - [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
 - [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
 - [**Semantic analysis**](./docs/semantic.md): the semantic model, `Semantic.build`, the IR and `Semantic.analyze`
-- [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, and the platform capability model shipped in v0.7, and application semantics are next (v0.8); where NEXUS stands against it is in the [runtime/platform audit](./docs/architecture/2026-09-27-runtime-platform-audit.md)
+- [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, the platform capability model shipped in v0.7, and application semantics in v0.8; where NEXUS stands against it is in the [runtime/platform audit](./docs/architecture/2026-09-27-runtime-platform-audit.md)
 
 ## Tech
 

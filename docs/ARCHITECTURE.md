@@ -590,6 +590,12 @@ application requirement  ×  platform provision statement  ──Semantic.analyz
 - **Identity is the exact `id` string** (nominal). There is no mapping table,
   no registry and no NEXUS-defined vocabulary.
 - **NEXUS doesn't compose platforms.** One `Platform` per `start`.
+- **Units own requirements (v0.8).** A requirement belongs to a unit: the
+  start unit (the service graph build) or an admitted unit (an effect run
+  through the runtime, typically a command). Each unit has one standalone
+  declaration, and no primitive value carries a requirement. The application's
+  necessity is its start unit's requirement. The union over the described
+  units is its requirement set, not its necessity (§16.1; §26 decision 14).
 
 ---
 
@@ -717,6 +723,10 @@ hang off the `Effect` that a `Command` or `Service` runs, per §11 and §12
 — not off `Application` directly. This diagram describes responsibility,
 not necessarily an implementation hierarchy. Avoid forcing every primitive
 into one inheritance model; composition is preferred.
+
+The tree is not an inventory either: no NEXUS value lists an application's
+commands, services or other parts, and semantic analysis never walks this
+tree (v0.8; §16.1).
 
 ---
 
@@ -851,6 +861,15 @@ operation (supported, opaque or incompatible) plus diagnostics.
   statement. PORT target capabilities would be a separate binding (L1).
   Analysis neither reads nor affects how any capability resolves, and no
   `Environment` or `Layer` ever produces a profile (I15, as revised in v0.7).
+- **Application contexts (v0.8).** Under the platform binding, a context
+  describes one application composition against one platform statement. It
+  contains the units its producer has chosen to describe, and is never implied
+  to list them all. Units are the start unit and admitted units, one
+  declaration each. Declaration ids are local to the context, with no mapping
+  to `Command` or `Application` names. Application necessity is the start
+  unit's requirement. The application requirement set and classification are
+  derived by a documented aggregation that `Semantic` doesn't export. See
+  [`semantic.md`](./semantic.md), "Application contexts".
 
 Valid and invalid directions, added to the lists above:
 
@@ -1276,6 +1295,8 @@ the [runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md
 - v0.7 adds the platform capability model (§10.3, §26 decision 13), with no
   API change. Platform packages, platform composition and capability
   provenance are not built.
+- v0.8 adds application semantics (§10.3, §16.1, §26 decision 14), with no
+  API change: requirements are owned by units, not primitives.
 
 ---
 
@@ -1415,3 +1436,24 @@ decision" rule:
     - Conformance of a statement to its `Layer` is the platform's obligation,
       proved by tests. NEXUS's own helper is test tooling (C21).
     - No public API change (D55) and no `src/` change. Nothing is removed.
+14. **Application semantics** (v0.8; see
+    `superpowers/specs/2026-09-27-nexus-v0.8-outline.md`, D56–D67, Revision 2,
+    and `architecture/2026-09-27-application-semantics-audit.md`).
+    - The requirement is unchanged: v0.7's necessity, as a `Semantic`
+      declaration (D56).
+    - Requirements are owned by **units**: the start unit (the service graph
+      build) and admitted units (effects run through the runtime, typically
+      commands). One standalone declaration per unit. No primitive value,
+      definition, `Layer` or start option carries one (D57, D58, I39).
+    - An application context describes one composition against one platform
+      statement (C24). It contains the units its producer chose to describe,
+      and is never implied complete (O13 deferred). Units don't overlap (C25).
+    - Application necessity is the start unit's requirement (C27). The
+      application requirement set and classification are the C26 aggregation.
+      That aggregation is a contract, pinned by test tooling and not exported
+      (D61, D66).
+    - Declaration ids are local to their context. Any mapping to a primitive
+      identity is the producer's, and not part of the contract (D65, as
+      revised).
+    - L2 is closed, and D17 is confirmed (D64). No provenance is added (D63).
+    - No public API change and no `src/` change (D67).

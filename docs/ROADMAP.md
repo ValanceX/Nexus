@@ -4,13 +4,15 @@ Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
 Current release: v0.7.0 (released 2026-09-27; docs/releases/v0.7.md)
-Next release: v0.8, Application Semantics (not started)
+Next release: v0.8, Application Semantics (implemented; release pending)
 v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
 v0.7 outline: docs/superpowers/specs/2026-09-27-nexus-v0.7-outline.md
+v0.8 outline: docs/superpowers/specs/2026-09-27-nexus-v0.8-outline.md
 Audits: docs/architecture/2026-09-27-runtime-platform-audit.md,
-        docs/architecture/2026-09-27-capability-model-audit.md
+        docs/architecture/2026-09-27-capability-model-audit.md,
+        docs/architecture/2026-09-27-application-semantics-audit.md
 
-Nothing after v0.7 in this document is implemented.
+Nothing after v0.8 in this document is implemented.
 
 ---
 
@@ -635,6 +637,32 @@ Important boundary
 NEXUS describes its own domain.
 
 It should not become a general analyzer of every external system.
+
+9.1 As decided and implemented (2026-09-27)
+
+The v0.8 outline (Revision 2) decides, with no public API change and no
+src/ change:
+
+Units      A requirement is owned by a unit: the start unit (the service
+           graph build) or an admitted unit (an effect run through the
+           runtime, typically a command). One standalone declaration per
+           unit. No primitive value carries a requirement. (D57, D58, I39)
+Contexts   An application context describes one composition against one
+           platform statement. It contains the units its producer chose to
+           describe, and is never implied to list them all. Declaration ids
+           are local to the context. (C24, D65)
+Necessity  Application necessity is the start unit's requirement. The union
+           over described units is the requirement set, not necessity.
+           (C27, I41)
+Algebra    The requirement set and classification are a documented
+           aggregation (C26), pinned by test tooling, not exported.
+L2         Closed; D17 confirmed. (D64)
+
+The tree above reads accordingly. "Resource<UserRepository> requires Network"
+is the requirement of whichever unit uses the implementation composed behind
+UserRepository, in that composition: the primitive carries nothing.
+"Application requires Storage" is either the start unit's necessity, or a
+member of the requirement set. These are two different facts.
 
 ---
 
@@ -1264,8 +1292,9 @@ L1 — NEXUS / PORT / target relationship
 L2 — Declarations attached to NEXUS primitives, and facts NEXUS states
      about its own primitives
      Resolved in v0.5 by D17: declarations are canonical and standalone.
-     v0.8 (Application Semantics) reopens the second half. The v0.8 outline
-     must revise D17 explicitly if it does.
+     v0.8 reopened the second half, and closed it with D17 confirmed (D64):
+     NEXUS attaches no fact to a primitive value. Requirements are owned by
+     units, described by standalone declarations.
 
 L3 — Downstream meaning of an "error" diagnostic
      Open. v0.7 gives it a meaning under the platform binding (a declared
@@ -1291,3 +1320,15 @@ L7 — Who initializes the MESH engine outside Node
 
 L8 — Handle validity across module instances (bundles, workers, reload)
      Open. v0.10 (replacement and reload behavior).
+
+v0.8 open questions (outline, "Deferred questions"):
+
+O11 — Exporting the application aggregation (C26) from Semantic
+      Open. The first consumer that needs an application-level result (L3).
+O12 — A semantic kind for the start unit
+      Open. A consumer that must tell start failure from unit failure.
+O13 — A context claiming to describe every unit of an application
+      Open. A consumer that must trust an application-level "supported".
+O14 — A "uses" or containment relation between units
+      Open. A real application where per-unit declarations prove
+      unmanageable (I1).

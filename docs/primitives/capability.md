@@ -106,8 +106,9 @@ These are five different things. The shared `id` is the identity of the
   requirements name `SomeCapability.id`. It means **necessity**, not use:
   code that calls `resolve` and handles `Unavailable` with a fallback
   doesn't require the capability, and shouldn't declare it. Code that can't
-  work without it (typically `require` with no fallback) does. Granularity is
-  yours: one declaration per command, or one for the whole application.
+  work without it (typically `require` with no fallback) does. Since v0.8,
+  a requirement is owned by a **unit** of the application, not by a
+  primitive (see below).
 - **Platform provision statement.** A `Semantic.TargetProfile` the platform
   author writes alongside the platform's `Layer`. Its identifiers are
   capability ids, verbatim:
@@ -144,6 +145,52 @@ part of the package.
 implementation and share verdicts, so qualify ids by their owner (for
 example `"acme.asset-store"`). There is no registry, and NEXUS defines no
 ids.
+
+## Which part of an application requires a capability (v0.8)
+
+A requirement belongs to a **unit**: a part of the application that NEXUS
+executes as a whole ([`semantic.md`](../semantic.md), "Application contexts";
+v0.8 outline C24–C28). There are two kinds:
+
+- **The start unit** is the application's service graph build. A service
+  implementation that `require`s a capability *while its layer is built* makes
+  it part of the start unit, and without that capability `start` fails with
+  `ServiceGraphFailed`.
+- **An admitted unit** is an effect run through `Runtime.run` or
+  `Runtime.runFork`, typically a command. Without the capability, only that
+  effect fails, and the application keeps running.
+
+Each unit is described by one standalone declaration. No `Capability`,
+`Command`, `Service` tag, `Layer` or application definition carries a
+requirement.
+
+A few rules follow:
+
+- **Necessity versus the requirement set.** The application's *necessity* is
+  its start unit's requirement: without it, the application can't start. The
+  union of every described unit's requirements is the application's
+  *requirement set*: some described unit can't work without each of them. That
+  union is not necessity. An application whose `export-pdf` command
+  is incompatible still starts, and runs everything else.
+- **A requirement is relative to the composition.** A command that reaches
+  storage through a `UserRepository` requires `acme.network` when the
+  application composes an HTTP implementation, and nothing when it composes an
+  in-memory one. Describe each composition in its own analysis context.
+- **A context describes the units its producer chose.** It is never implied to
+  list every unit of the application. Declaration ids are local to their
+  context. Relating them to a command or an application is your tooling's
+  concern, not part of NEXUS's contract.
+
+Four things stay separate:
+
+| Concept | What it is |
+|---|---|
+| start-unit necessity | the start unit's declared requirement: without it, the application can't start |
+| application requirement set | the union (C26) over the units a context describes: some described unit can't work without it |
+| runtime capability resolution | what the platform `Layer` built for one start: `Available` or `Unavailable` |
+| static compatibility verdict | `Semantic.analyze` over declarations and a platform statement: supported, opaque or incompatible |
+
+A static verdict never changes runtime behavior. A unit's requirement never becomes a start requirement just because the unit belongs to the application.
 
 ## Composing platforms
 
@@ -251,4 +298,5 @@ no discovery, and none is planned. `tests/capability-model.test.ts` covers
 the v0.7 platform binding and the independence of analysis from resolution;
 `tests/platform-conformance.test.ts` covers the test-only conformance
 helper; `tests/capability-characterization.test.ts` pins `Environment` merge
-and id-collision behavior.
+and id-collision behavior. `tests/application-semantics.test.ts` covers units,
+composition relativity and the four-way separation (v0.8).

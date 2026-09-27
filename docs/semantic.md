@@ -347,6 +347,55 @@ const built = Semantic.build({
 
 NEXUS understands declarations, not implementations. A value or a reference is never inferred from a name, an operation identity, or a primitive; it exists only because a declaration named it. Associating a declaration with the code it describes — a command handler, a service method — is outside the semantic model. It is the author's concern.
 
+## Application contexts (v0.8)
+
+v0.8 decides what owns a requirement, and what "an application's requirements" means (the [v0.8 outline](./superpowers/specs/2026-09-27-nexus-v0.8-outline.md), C24–C28, D56–D67). No type, field or behavior of this module changes.
+
+**Units own requirements.** A *unit* is a part of an application that NEXUS executes as a whole, at one execution position. One declaration describes one unit. There are two kinds:
+- **The start unit** is the application's service graph build: its `runtime` Layer, built by `Application.start` after the platform. If it can't get a capability it needs, `start` fails with `ServiceGraphFailed`.
+- **An admitted unit** is an effect run through `Runtime.run` or `Runtime.runFork` while the application runs, typically a command. If it can't get a capability it needs, only that effect fails.
+
+Primitive values (`Application`, `Command`, a `Service` tag, a `Layer`) carry no requirement. A unit is described by exactly one declaration: a second declaration with the same `id` is rejected (`duplicate-identity`), and merging several statements about one unit is the producer's job.
+
+**An application context describes one composition** (C24). The context covers one choice of implementations for the application's `runtime` Layer, against one platform statement. A unit's requirement holds for that composition. For example, a command that reaches storage through a repository requires `acme.network` behind an HTTP implementation, and nothing behind an in-memory one. A different composition is a different context.
+
+**A context contains the units its producer has chosen to describe.** Nothing implies that it lists every unit of the application, and everything derived from it is relative to the units it describes. Whether a context could ever claim to be complete is not decided (O13).
+- Units in one context must not overlap: no declaration may describe execution that another declaration in the same context describes (C25).
+- Semantic can't check this, because it has no containment. An overlapping pair is simply two unrelated operations.
+
+**Unit ids are local to the context** (D65).
+- A declaration identifies a unit within its analysis context, and nowhere else.
+- Relating a producer's unit to a NEXUS primitive, such as a command or an application, is the producer's or tooling's concern. It is not part of this contract.
+- No `Command` or `Application` name is a semantic identity, and NEXUS defines no mapping.
+
+**Two application-level facts. Both are derived, and neither is declared.**
+- **Application necessity** is the start unit's requirement (C27). An admitted unit's requirement is that unit's alone. An incompatible command doesn't mean the application can't start.
+- **The application requirement set and classification** aggregate the units a context describes (C26):
+
+| Aspect | Rule |
+|---|---|
+| Set | the distinct capability ids of every unit's requirements, compared exactly |
+| Order | first occurrence: declaration order, then each unit's `capabilities` order |
+| Occurrences | every occurrence is kept, attributed to its unit's `id`, with its span |
+| Completeness | `complete` exactly when every unit's requirements are declared `complete`. An undeclared unit counts as partial and empty, never as absent, so it can't hide an incompatible unit |
+| Classification | incompatible if any unit is; otherwise opaque if any unit is; otherwise supported. This equals the classification of one declaration carrying the union |
+| Verdict cause | not aggregated: causes stay per unit |
+| Empty context | complete, empty and supported, vacuously: it says nothing about units the context doesn't describe |
+| Inheritance | a unit's requirement enters the requirement set, never the application's necessity |
+
+The aggregation is a contract, not an API. `Semantic` doesn't compute or export it (O11). `tests/application-semantics.test.ts` pins it with a local helper.
+
+Four things stay separate:
+
+| Concept | What it is |
+|---|---|
+| start-unit necessity | the start unit's declared requirement: without it, the application can't start |
+| application requirement set | the union (C26) over the units a context describes: some described unit can't work without it |
+| runtime capability resolution | what the platform `Layer` built for one start: `Available` or `Unavailable` |
+| static compatibility verdict | `Semantic.analyze` over declarations and a platform statement: supported, opaque or incompatible |
+
+A static verdict never changes runtime behavior. A unit's requirement never becomes a start requirement just because the unit belongs to the application.
+
 ## Rules
 
 - **Declared facts only.** NEXUS treats a property as known only when the declaration states it. It infers nothing from code, names, types, schemas or configuration.
@@ -388,7 +437,7 @@ The identifiers are illustrative; NEXUS defines no capability vocabulary. The ve
 
 ## Testing
 
-`tests/semantic.test.ts` covers the model, rejection, each classification, diagnostics, freshness, JSON round trips and span semantics; `tests/semantic-isolation.test.ts` covers purity and independence from execution, application capabilities, MESH and the lifecycle; `tests/semantic-types.test.ts` pins the plain-data boundary at compile time; `tests/architecture.test.ts` enforces the leaf boundary. `tests/semantic-build.test.ts` covers the three data-flow states, values and references, provenance, openness and may-flow, and that `Built` is pure, deterministic and plain; `tests/semantic-compatibility.test.ts` checks `Semantic.analyze` against the released v0.4 module for every v0.4-shaped context, and that data-flow facts never affect compatibility; `tests/semantic-no-primitives.test.ts` builds and analyzes a context with every executable primitive module removed. `tests/capability-model.test.ts` pins the platform binding (v0.7): verdicts and diagnostics for capability ids, necessity, exact identity, and independence of the verdict from start and resolution.
+`tests/semantic.test.ts` covers the model, rejection, each classification, diagnostics, freshness, JSON round trips and span semantics; `tests/semantic-isolation.test.ts` covers purity and independence from execution, application capabilities, MESH and the lifecycle; `tests/semantic-types.test.ts` pins the plain-data boundary at compile time; `tests/architecture.test.ts` enforces the leaf boundary. `tests/semantic-build.test.ts` covers the three data-flow states, values and references, provenance, openness and may-flow, and that `Built` is pure, deterministic and plain; `tests/semantic-compatibility.test.ts` checks `Semantic.analyze` against the released v0.4 module for every v0.4-shaped context, and that data-flow facts never affect compatibility; `tests/semantic-no-primitives.test.ts` builds and analyzes a context with every executable primitive module removed. `tests/capability-model.test.ts` `tests/capability-model.test.ts` pins the platform binding (v0.7): verdicts and diagnostics for capability ids, necessity, exact identity, and independence of the verdict from start and resolution. `tests/application-semantics.test.ts` pins application contexts (v0.8): composition relativity, overlap, units in the lifecycle, the aggregation, no attachment to primitives, and independence from start and resolution.
 
 ## What analysis cannot know
 
@@ -396,4 +445,4 @@ Every NEXUS work unit — a command handler, a service, a selector projection, a
 
 ## Not decided
 
-These are open, and nothing here presumes an answer: how NEXUS, PORT and targets relate, and where production profiles come from (L1); a PORT binding, and any relation between bindings (L1); what a consumer does with an `error` (L3); identity stability across contexts (L4, which matters more now that values exist — every identity stays context-local in v0.5); producing declarations and spans from source (L5); and per-value openness — scoping an open or partial fact to particular values, instead of opening every value's producer and consumer sets together, deferred until a pass needs it. What a target profile denotes (L6) is resolved in v0.7: the provider of the context's binding (D43; [v0.7 outline](./superpowers/specs/2026-09-27-nexus-v0.7-outline.md)). How a declaration attaches to a NEXUS primitive (L2) is resolved: declarations are canonical and standalone, and association is the author's concern (D17). Later work — whole-plan validation, capture and tooling — is described in the v0.4 outline's §14 and is not part of v0.5.
+These are open, and nothing here presumes an answer: how NEXUS, PORT and targets relate, and where production profiles come from (L1); a PORT binding, and any relation between bindings (L1); what a consumer does with an `error` (L3); identity stability across contexts (L4, which matters more now that values exist — every identity stays context-local in v0.5); producing declarations and spans from source (L5); and per-value openness — scoping an open or partial fact to particular values, instead of opening every value's producer and consumer sets together, deferred until a pass needs it. What a target profile denotes (L6) is resolved in v0.7: the provider of the context's binding (D43; [v0.7 outline](./superpowers/specs/2026-09-27-nexus-v0.7-outline.md)). How declarations relate to NEXUS primitives (L2) is closed in v0.8: declarations are canonical and standalone (D17, confirmed), NEXUS attaches no fact to a primitive value, and units own requirements (D57, D64). Also open, from v0.8: exporting the aggregation (O11); a semantic kind for the start unit (O12); a context claiming it describes every unit of an application (O13); and a "uses" or containment relation between units (O14). Later work — whole-plan validation, capture and tooling — is described in the v0.4 outline's §14 and is not part of v0.5.

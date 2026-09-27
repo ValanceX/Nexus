@@ -2,6 +2,8 @@
 
 *Audited 2026-09-27, against `main` at `c5b16b8` (v0.6.0 released; `package.json` 0.6.0).*
 
+> **Follow-up (v0.8, 2026-09-27).** L2, which v0.7 left for v0.8, is closed in the v0.8 outline, [`../superpowers/specs/2026-09-27-nexus-v0.8-outline.md`](../superpowers/specs/2026-09-27-nexus-v0.8-outline.md) (D57, D64), with evidence in the [application semantics audit](./2026-09-27-application-semantics-audit.md). Requirements are owned by units, not primitives, and D17 is confirmed. The text below is kept as audited.
+
 This document is the evidence base for the v0.7 outline, [`../superpowers/specs/2026-09-27-nexus-v0.7-outline.md`](../superpowers/specs/2026-09-27-nexus-v0.7-outline.md). It records facts, and it doesn't define an API. It extends the [runtime/platform audit](./2026-09-27-runtime-platform-audit.md) (cited here as *RPA*) and answers only the capability questions that audit left for v0.7: L6, I15, and v0.6's open questions O1, O2, O3, O5 and O6.
 
 Baseline: `pnpm typecheck` is clean, `pnpm test` passes **332 tests in 23 files**, and `pnpm build` succeeds (Node 22.22, pnpm 10.33, effect 3.22). The working tree was clean.
