@@ -117,9 +117,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
         run: |
           if [ "$PUBLISH" = "true" ]; then
-            npm publish out/*.tgz --access public --provenance
+            npm publish ./out/*.tgz --access public --provenance
           else
-            npm publish out/*.tgz --access public --provenance=false --dry-run
+            npm publish ./out/*.tgz --access public --provenance=false --dry-run
           fi
       - name: GitHub release
         if: env.PUBLISH == 'true' && github.event_name == 'workflow_dispatch'
