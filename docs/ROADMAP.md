@@ -3,12 +3,12 @@ NEXUS Roadmap
 Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
-Current release: v0.5.0 (released 2026-09-27)
-Next release: v0.6, Runtime / Platform Boundary (implemented on the v0.6 branch; not yet released)
+Current release: v0.6.0 (released 2026-09-27; docs/releases/v0.6.md)
+Next release: v0.7, Platform Capability Model (not started)
 v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
 Audit: docs/architecture/2026-09-27-runtime-platform-audit.md
 
-Nothing below v0.5 in this document is implemented unless the audit says so.
+Nothing after v0.6 in this document is implemented.
 
 ---
 
@@ -322,6 +322,8 @@ Those belong to later work.
 ---
 
 7. v0.6 — Runtime & Platform Boundary
+
+Status: Released (v0.6.0, 2026-09-27)
 
 Objective
 
