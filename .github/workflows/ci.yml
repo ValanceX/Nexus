@@ -4,6 +4,8 @@ on:
   push:
   pull_request:
     branches: [main]
+  # The release workflow runs all of CI on the commit being released.
+  workflow_call:
 
 jobs:
   check:
