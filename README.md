@@ -71,6 +71,14 @@ NEXUS doesn't depend on the MESH compiler or language server. It sees MESH only 
 
 ## Getting started
 
+Install from npm:
+
+```console
+$ pnpm add @valancex/nexus
+```
+
+To work on NEXUS itself, from a clone:
+
 ```console
 $ pnpm install
 $ pnpm test        # run the test suite
@@ -98,7 +106,7 @@ $ pnpm build
 
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 
-Requires Node 22 or later. Not yet published to npm. See the [release notes](./docs/releases/) for what changed in each version.
+Requires Node 22 or later. Published to npm as [`@valancex/nexus`](https://www.npmjs.com/package/@valancex/nexus) from v0.8.0; earlier versions were not published. See the [release notes](./docs/releases/) for what changed in each version.
 
 ## Learn more
 
