@@ -143,3 +143,20 @@ describe("Architecture: the semantic model is a leaf (v0.4 D13)", () => {
     ]);
   });
 });
+
+// v0.6 D40, G1: the build compiles exactly src/, with no ambient host types.
+describe("Architecture: host independence is enforced at compile time (v0.6 G1)", () => {
+  const read = (name: string) => JSON.parse(readFileSync(join(repo, name), "utf8"));
+
+  it("builds src/ with no ambient types and no DOM", () => {
+    const build = read("tsconfig.json");
+
+    expect(build.include).toEqual(["src"]);
+    expect(build.compilerOptions.types).toEqual([]);
+    expect(build.compilerOptions.lib).toEqual(["ES2022"]);
+  });
+
+  it("gives Node types to tests only", () => {
+    expect(read("tsconfig.typecheck.json").compilerOptions.types).toEqual(["node"]);
+  });
+});
