@@ -1,10 +1,12 @@
-import { Cause, Context, Effect, Exit, Layer, Option, Scope } from "effect";
+import { Cause, Clock, Context, Effect, Exit, Layer, Option, Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
 import * as Capability from "../src/capability/index.js";
 import * as Runtime from "../src/runtime/index.js";
 import * as Service from "../src/service/index.js";
+
+import { referencePlatform } from "./platform/reference.js";
 
 interface FlashlightShape { readonly on: () => string }
 
@@ -253,5 +255,34 @@ describe("Platform: a capability is its id (v0.6 D37, I32)", () => {
     const other: Capability.Capability<{ readonly other: 1 }> = Haptics;
 
     void other;
+  });
+});
+
+describe("Platform: the reference test platform (v0.6 D41)", () => {
+  const app = Application.define({ name: "reference", runtime: Layer.empty });
+
+  it("10. supplies exactly the given resolutions", async () => {
+    const resolutions = litResolutions();
+
+    const environment = await withApp(Application.start(app, { platform: referencePlatform({ resolutions }) }), async (running) => running.environment);
+
+    expect(environment.resolutions).toBe(resolutions);
+  });
+
+  it("10. supplies the given Clock", async () => {
+    const clock: Clock.Clock = { ...Clock.make(), currentTimeMillis: Effect.succeed(42), unsafeCurrentTimeMillis: () => 42 };
+
+    const now = await withApp(Application.start(app, { platform: referencePlatform({ clock }) }), (running) => Runtime.run(running.runtime, Clock.currentTimeMillis));
+
+    expect(now).toBe(42);
+  });
+
+  it("10. without options, is the empty environment", async () => {
+    const result = await withApp(Application.start(app, { platform: referencePlatform() }), (running) => Promise.all([
+      Promise.resolve(running.environment.resolutions.size),
+      Runtime.run(running.runtime, Effect.map(Capability.resolve(Flashlight), (r) => r._tag)),
+    ]));
+
+    expect(result).toEqual([0, "Unavailable"]);
   });
 });

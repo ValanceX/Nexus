@@ -190,3 +190,29 @@ describe("Architecture: src/ imports only declared dependencies (v0.6 G2)", () =
     expect(violations(sources, (file, specifier) => specifier.startsWith(".") && isInside(tests, target(file, specifier)))).toEqual([]);
   });
 });
+
+// v0.6 D41: the reference platform is test-only evidence. It reaches NEXUS
+// only through src/, uses only Effect, and imports no Node builtin.
+describe("Architecture: the reference platform imports only effect and src/ (v0.6 D41)", () => {
+  // resolve() drops the trailing separator, which isInside's `dir + sep` would otherwise double.
+  const platformDir = resolve(fileURLToPath(new URL("../tests/platform/", import.meta.url)));
+  const srcDir = resolve(src);
+  const platformSources = sourcesUnder(platformDir);
+  const builtins = new Set(builtinModules);
+
+  it("finds what it checks", () => {
+    expect(platformSources).toContain(join(platformDir, "reference.ts"));
+    expect(specifiersOf(join(platformDir, "reference.ts"))).toContain("effect");
+  });
+
+  it("imports only effect, src/ and tests/platform/", () => {
+    expect(violations(platformSources, (file, specifier) => specifier.startsWith(".")
+      ? !(isInside(srcDir, target(file, specifier)) || isInside(platformDir, target(file, specifier)))
+      : specifier !== "effect"
+    )).toEqual([]);
+  });
+
+  it("imports no Node builtin", () => {
+    expect(violations(platformSources, (_file, specifier) => specifier.startsWith("node:") || builtins.has(specifier))).toEqual([]);
+  });
+});

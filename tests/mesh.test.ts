@@ -10,6 +10,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import * as Nexus from "../src/index.js";
 
+import { referencePlatform } from "./platform/reference.js";
+
 const { Mesh } = Nexus;
 
 // ---------------------------------------------------------------------------
@@ -99,8 +101,9 @@ interface Slice {
   readonly team: StateHandle<Team>;
 }
 
-const runSlice = <A, E>(body: (slice: Slice) => Effect.Effect<A, E, Scope.Scope>): Promise<A> => Effect.runPromise(Effect.scoped(Effect.Do.pipe(
-  Effect.bind("running", () => Nexus.Application.start(Nexus.Application.define({ name: "mesh-slice", runtime: Layer.empty }))),
+// `options` (v0.6) is the start options; the existing tests pass none, as in v0.5.
+const runSlice = <A, E>(body: (slice: Slice) => Effect.Effect<A, E, Scope.Scope>, options?: Nexus.Application.StartOptions): Promise<A> => Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+  Effect.bind("running", () => Nexus.Application.start(Nexus.Application.define({ name: "mesh-slice", runtime: Layer.empty }), options)),
   // In the application's runtime scope, so Application.shutdown ends its changes (state.md).
   Effect.bind("team", ({ running }) => Nexus.Application.createState(running, Team, initialTeam)),
   Effect.bind("result", ({ running, team }) => body({ running, team })),
@@ -412,4 +415,34 @@ describe("MESH adapter (spec §8)", () => {
       })
     );
   }));
+
+  // v0.6 D41: test 2's round trip, with the application started on the
+  // reference platform. The platform's capability must resolve inside the
+  // application, so an ignored platform fails this test.
+  it("9. the full command round trip on the reference platform (v0.6 D41)", () => {
+    const Probe = Nexus.Capability.define<{ readonly ok: true }>("reference.probe");
+    const platform = referencePlatform({ resolutions: new Map([[Probe.id, { _tag: "Available", implementation: { ok: true } }]]) });
+
+    return runSlice(({ running, team }) => {
+      const { table, calls } = sliceCommands(team);
+      const host = Mesh.host({ program, scope: Nexus.Selector.define(team, shaped), commands: table });
+
+      return Effect.Do.pipe(
+        Effect.bind("probe", () => Effect.promise(() => Nexus.Runtime.run(running.runtime, Nexus.Capability.require(Probe)))),
+        Effect.let("events", () => Nexus.Runtime.runFork(running.runtime, Stream.runCollect(Stream.take(Nexus.Event.subscribe(UserSelected), 1)))),
+        Effect.tap(() => Effect.sleep("1 millis")),
+        Effect.bind("render", () => host.render),
+        Effect.bind("dispatched", ({ render }) => inApp(running, host.dispatch(render, clickOf(render.tree, "avatar", 0), press))),
+        Effect.bind("state", () => team.get),
+        Effect.bind("published", ({ events }) => Fiber.join(events)),
+        Effect.map(({ probe, dispatched, state, published }) => {
+          expect(probe).toEqual({ ok: true });
+          expect(dispatched.intent).toEqual(readJson("expected/select-first.intent.json"));
+          expect(state.selectedUserId).toEqual(Option.some("u1"));
+          expect(Chunk.toReadonlyArray(published)).toEqual([{ userId: "u1" }]);
+          expect(calls.select).toBe(1);
+        })
+      );
+    }, { platform });
+  });
 });
