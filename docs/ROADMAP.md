@@ -1,20 +1,12 @@
-NEXUS Roadmap
+# NEXUS Roadmap
 
-Scope: NEXUS v0.5 → v1.0
-Status: Directional roadmap / architectural keepsake
-Package: "@valancex/nexus"
-Current release: v0.7.0 (released 2026-09-27; docs/releases/v0.7.md)
-Next release: v0.8, Application Semantics (not started)
-v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
-v0.7 outline: docs/superpowers/specs/2026-09-27-nexus-v0.7-outline.md
-Audits: docs/architecture/2026-09-27-runtime-platform-audit.md,
-        docs/architecture/2026-09-27-capability-model-audit.md
-
-Nothing after v0.7 in this document is implemented.
+**Scope:** NEXUS v0.5 → v1.0
+**Status:** Directional roadmap / architectural keepsake
+**Package:** `@valancex/nexus`
 
 ---
 
-1. Purpose
+## 1. Purpose
 
 This document defines the intended development direction for NEXUS from v0.5 through v1.0.
 
@@ -22,16 +14,17 @@ The previous roadmap treated platform concerns as something that could be addres
 
 NEXUS currently has only a partial distinction between:
 
-- application behavior;
-- runtime infrastructure;
-- platform capabilities;
-- Effect infrastructure;
-- integration concerns.
+* application behavior;
+* runtime infrastructure;
+* platform capabilities;
+* Effect infrastructure;
+* integration concerns.
 
 That distinction must be established before NEXUS can claim a mature application semantic model.
 
 The revised roadmap therefore follows:
 
+```text
 semantic foundation
         ↓
 runtime/platform separation
@@ -45,6 +38,7 @@ VALANCE integration
 real-world hardening
         ↓
 stable NEXUS
+```
 
 The objective of v1.0 is not to make NEXUS a universal runtime.
 
@@ -52,7 +46,7 @@ The objective is to establish a stable, platform-independent application runtime
 
 ---
 
-2. Architectural Position
+# 2. Architectural Position
 
 NEXUS is the application behavior and coordination layer of VALANCE.
 
@@ -60,6 +54,7 @@ It is built heavily on Effect.
 
 The intended relationship is:
 
+```text
 Effect
   ↓
 NEXUS runtime
@@ -67,6 +62,7 @@ NEXUS runtime
 NEXUS application semantics
   ↓
 platform capabilities
+```
 
 Effect provides the compositional runtime mechanism.
 
@@ -82,25 +78,25 @@ Tooling orchestrates development, building, and deployment.
 
 ---
 
-3. The Core Architectural Distinction
+# 3. The Core Architectural Distinction
 
 The architecture should distinguish four different concerns.
 
-3.1 Effect
+## 3.1 Effect
 
 Effect is the underlying mechanism.
 
 It provides concepts such as:
 
-- "Effect";
-- "Context";
-- "Layer";
-- resources;
-- concurrency;
-- scheduling;
-- streams;
-- error handling;
-- dependency composition.
+* `Effect`;
+* `Context`;
+* `Layer`;
+* resources;
+* concurrency;
+* scheduling;
+* streams;
+* error handling;
+* dependency composition.
 
 NEXUS should use these mechanisms extensively.
 
@@ -108,48 +104,48 @@ However, NEXUS should not merely expose raw Effect services as its architecture.
 
 ---
 
-3.2 NEXUS
+## 3.2 NEXUS
 
 NEXUS owns application-level semantics.
 
 This includes:
 
-- application lifecycle;
-- application state;
-- selectors;
-- commands;
-- application resources;
-- application behavior;
-- application-level capabilities;
-- semantic analysis;
-- application semantic facts.
+* application lifecycle;
+* application state;
+* selectors;
+* commands;
+* application resources;
+* application behavior;
+* application-level capabilities;
+* semantic analysis;
+* application semantic facts.
 
 NEXUS should not need to know whether it is executing in:
 
-- a browser;
-- a server;
-- a worker;
-- a test environment;
-- a native environment;
-- another future platform.
+* a browser;
+* a server;
+* a worker;
+* a test environment;
+* a native environment;
+* another future platform.
 
 ---
 
-3.3 Platform
+## 3.3 Platform
 
 A platform provides capabilities supplied by the environment in which the application executes.
 
 Examples may include:
 
-- clocks;
-- networking;
-- storage;
-- filesystem;
-- process/environment access;
-- browser APIs;
-- server APIs;
-- worker APIs;
-- native APIs.
+* clocks;
+* networking;
+* storage;
+* filesystem;
+* process/environment access;
+* browser APIs;
+* server APIs;
+* worker APIs;
+* native APIs.
 
 The platform owns knowledge of the environment.
 
@@ -157,45 +153,50 @@ NEXUS should consume platform capabilities through explicit contracts rather tha
 
 ---
 
-3.4 Tooling
+## 3.4 Tooling
 
 Tooling orchestrates the packages.
 
 It may eventually provide:
 
-- CLI;
-- build;
-- watch mode;
-- dev server;
-- HMR;
-- SSR orchestration;
-- prerendering;
-- debugging;
-- deployment workflows.
+* CLI;
+* build;
+* watch mode;
+* dev server;
+* HMR;
+* SSR orchestration;
+* prerendering;
+* debugging;
+* deployment workflows.
 
 Tooling should not become another semantic owner.
 
 ---
 
-4. Effect as the Foundation
+# 4. Effect as the Foundation
 
 The intended relationship is:
 
+```text
 NEXUS semantic capability
         ↓
 Effect service / Context
         ↓
 platform Layer
+```
 
 For example:
 
+```text
 Application requires:
     Clock
     Network
     Storage
+```
 
 A platform supplies:
 
+```text
 Browser:
     Clock
     Network
@@ -209,6 +210,7 @@ Server:
     Clock
     Network
     Filesystem
+```
 
 Effect provides the mechanism by which those implementations are composed into the running application.
 
@@ -216,118 +218,124 @@ This gives NEXUS a platform-independent dependency model without requiring NEXUS
 
 ---
 
-5. Important Boundary: NEXUS Is Not Effect
+# 5. Important Boundary: NEXUS Is Not Effect
 
 NEXUS should not simply turn every platform facility into a raw Effect service and call that the architecture.
 
 For example, an application should generally depend on a domain-level concept such as:
 
+```text
 AssetStore
+```
 
 rather than directly depending on:
 
+```text
 NodeFileSystem
+```
 
 The desired relationship is:
 
+```text
 NEXUS domain concept
         ↓
 Effect service
         ↓
 platform implementation
+```
 
 rather than:
 
+```text
 NEXUS
   ↓
 Node-specific Effect service
+```
 
 This preserves the distinction between:
 
-- application semantics;
-- runtime mechanism;
-- environment implementation.
+* application semantics;
+* runtime mechanism;
+* environment implementation.
 
 ---
 
-6. v0.5 — Semantic Foundation
+# 6. v0.5 — Semantic Foundation
 
-Status: Released
+**Status:** Released
 
-Objective
+## Objective
 
 Establish semantic analysis as a strict, independent leaf of NEXUS.
 
 v0.5 establishes the machinery required for NEXUS to represent validated semantic information without turning semantic analysis into a compiler, runtime planner, or platform layer.
 
-Established capabilities
+## Established capabilities
 
-- semantic declarations;
-- semantic contexts;
-- semantic analysis;
-- validated plain-data semantic output;
-- structured diagnostics;
-- provenance;
-- supported / opaque / incompatible classifications;
-- closed and open relationship sets;
-- explicit values and data flow;
-- compatibility with previous contracts;
-- MESH host integration boundary.
+* semantic declarations;
+* semantic contexts;
+* semantic analysis;
+* validated plain-data semantic output;
+* structured diagnostics;
+* provenance;
+* supported / opaque / incompatible classifications;
+* closed and open relationship sets;
+* explicit values and data flow;
+* compatibility with previous contracts;
+* MESH host integration boundary.
 
-Architectural invariants
+## Architectural invariants
 
-Semantic analysis remains a leaf
+### Semantic analysis remains a leaf
 
 The semantic layer must not depend on:
 
-- NEXUS runtime primitives;
-- application lifecycle;
-- MESH;
-- PORT;
-- renderer implementation;
-- platform discovery.
+* NEXUS runtime primitives;
+* application lifecycle;
+* MESH;
+* PORT;
+* renderer implementation;
+* platform discovery.
 
-Opaque remains distinct from incompatible
+### Opaque remains distinct from incompatible
 
-"opaque" means:
+`opaque` means:
 
-«NEXUS cannot establish the fact.»
+> NEXUS cannot establish the fact.
 
 It does not mean:
 
-- invalid;
-- unsafe;
-- unsupported;
-- incompatible;
-- failed.
+* invalid;
+* unsafe;
+* unsupported;
+* incompatible;
+* failed.
 
-Diagnostics remain descriptive
+### Diagnostics remain descriptive
 
 NEXUS reports facts and classifications.
 
 Consumers decide what those facts mean operationally.
 
-What v0.5 does not establish
+## What v0.5 does not establish
 
 v0.5 does not yet establish:
 
-- a complete platform model;
-- application capability requirements;
-- a final platform package structure;
-- SSR;
-- HMR;
-- browser runtime semantics;
-- native runtime semantics.
+* a complete platform model;
+* application capability requirements;
+* a final platform package structure;
+* SSR;
+* HMR;
+* browser runtime semantics;
+* native runtime semantics.
 
 Those belong to later work.
 
 ---
 
-7. v0.6 — Runtime & Platform Boundary
+# 7. v0.6 — Runtime & Platform Boundary
 
-Status: Released (v0.6.0, 2026-09-27)
-
-Objective
+## Objective
 
 Determine what actually belongs to NEXUS and what must be supplied by an execution environment.
 
@@ -335,45 +343,48 @@ This is the most important architectural step after v0.5.
 
 The central question is:
 
-«What is NEXUS, and what is the platform?»
+> What is NEXUS, and what is the platform?
 
-7.1 Audit the existing runtime
+## 7.1 Audit the existing runtime
 
 Every existing NEXUS primitive and runtime dependency should be classified as one of:
 
+```text
 NEXUS-owned
 Effect infrastructure
 platform-owned
 integration concern
+```
 
 The classification must come from the actual implementation.
 
 Do not design an imaginary platform abstraction first.
 
-7.2 Identify environmental assumptions
+## 7.2 Identify environmental assumptions
 
 Find assumptions such as:
 
-- time;
-- networking;
-- filesystem;
-- storage;
-- process state;
-- environment variables;
-- browser APIs;
-- server APIs;
-- external resources;
-- scheduling;
-- platform-specific lifecycle behavior.
+* time;
+* networking;
+* filesystem;
+* storage;
+* process state;
+* environment variables;
+* browser APIs;
+* server APIs;
+* external resources;
+* scheduling;
+* platform-specific lifecycle behavior.
 
 Determine whether each assumption is genuinely application semantics or environmental infrastructure.
 
-7.3 Establish the first platform boundary
+## 7.3 Establish the first platform boundary
 
 Platform-specific behavior should move behind explicit service boundaries where justified.
 
 Conceptually:
 
+```text
 NEXUS application
        ↓
 NEXUS capability
@@ -381,81 +392,28 @@ NEXUS capability
 Effect Context
        ↓
 Platform Layer
+```
 
 The exact API and package decomposition should emerge from the audit.
 
-7.4 Avoid premature package proliferation
+## 7.4 Avoid premature package proliferation
 
 Do not immediately create a large family such as:
 
+```text
 @valancex/platform-core
 @valancex/platform-web
 @valancex/platform-node
 @valancex/platform-worker
 @valancex/platform-native
 ...
+```
 
 unless the actual implementation demonstrates that these boundaries are useful.
 
 The first platform package should be derived from evidence.
 
-7.5 Audit findings (2026-09-27)
-
-The audit (docs/architecture/2026-09-27-runtime-platform-audit.md) found:
-
-- The executable core already uses no host API: no timers, Date, process,
-  fetch, filesystem, DOM or "node:" imports under src/. Nothing enforces
-  this yet.
-- The environment enters NEXUS indirectly, in three places:
-  - capability resolutions supplied in the application definition
-    (ApplicationDefinition.environment);
-  - environment names in a public NEXUS type
-    (CapabilitySource = "native" | "browser" | "remote" | "fallback");
-  - Effect default services (Clock, Scheduler, Random, Console, Tracer),
-    inherited from whichever fiber starts the application, or overridden
-    by the application's own layer.
-- The MESH adapter reaches the environment only through mesh-runtime's
-  engine loading, which is automatic in Node only.
-
-Questions v0.6 must decide before changing any API:
-
-I-1  Where does a platform supply the environment to Application.start?
-I-2  What happens to CapabilitySource?
-I-3  Is a platform-supplied capability implementation a value or a Layer?
-I-4  Which Effect default services, if any, belong to the platform contract?
-
-Derived sequence:
-
-guardrails (no behavior change)
-    ↓
-v0.6 outline answering I-1 … I-4
-    ↓
-one supply point at start
-    ↓
-capability provision moved there
-    ↓
-one headless Node platform, outside src/ core
-    ↓
-prove behavior unchanged (full suite, vertical slice, MESH slice)
-
-Specified (2026-09-27) by the v0.6 outline, which decides I-1 … I-4, and
-implemented as planned (see docs/releases/v0.6.md):
-
-I-1  Application.start(app, options?), options = { platform? } only; a
-     platform is a Layer providing Capability.Environment and requiring
-     nothing. The definition carries no environment. (D30, D31, D42)
-I-2  CapabilitySource is removed; NEXUS names no execution environment.
-     (D32, D33)
-I-3  One platform Layer. Host-owned implementations are values;
-     application-scoped ones are acquired in the application's scope and
-     released after every application resource. (D35, D36)
-I-4  NEXUS names no Effect default service. Precedence is Effect's:
-     caller < platform < application layer, pinned by tests. (D38, D39)
-
-The first platform is refined to a host-agnostic reference test platform,
-not a Node package: NEXUS core needs nothing Node-specific (D41).
-
-Exit condition
+## Exit condition
 
 A NEXUS application can be reasoned about independently of the environment in which it will eventually execute.
 
@@ -463,18 +421,17 @@ NEXUS no longer needs embedded knowledge of a specific platform to implement app
 
 ---
 
-8. v0.7 — Platform Capability Model
-
-Status: Released (v0.7.0, 2026-09-27)
+# 8. v0.7 — Platform Capability Model
 
 Once the runtime/platform boundary exists, establish how applications express environmental requirements.
 
 The central question becomes:
 
-«How does an application declare what it requires from its environment?»
+> How does an application declare what it requires from its environment?
 
-Conceptual model
+## Conceptual model
 
+```text
 Application
     │
     │ requires
@@ -488,30 +445,37 @@ Platform
     │ implemented through
     ▼
 Effect Layer
+```
 
 For example:
 
+```text
 Application requires:
     Network
     Storage
     Clock
+```
 
 A platform provides:
 
+```text
 Browser:
     Network
     Storage
     Clock
+```
 
 NEXUS can then reason about the relationship.
 
+```text
 required capability
         ×
 provided capability
         ↓
 supported / opaque / incompatible
+```
 
-Important restriction
+## Important restriction
 
 Do not create a universal capability encyclopedia.
 
@@ -519,16 +483,19 @@ Capabilities should emerge from actual NEXUS requirements.
 
 If an application does not need a capability, NEXUS does not need to invent a semantic abstraction for it.
 
-Relationship to existing semantic work
+## Relationship to existing semantic work
 
 The semantic classifications established in v0.4/v0.5 become useful here:
 
+```text
 supported
 opaque
 incompatible
+```
 
 For example:
 
+```text
 Application requires:
     Filesystem
 
@@ -537,9 +504,11 @@ Platform:
 
 Result:
     incompatible
+```
 
 or, when NEXUS cannot establish enough information:
 
+```text
 Application requires:
     X
 
@@ -548,89 +517,65 @@ Platform information:
 
 Result:
     opaque
+```
 
-Exit condition
+## Exit condition
 
 NEXUS can describe the environmental capabilities required by an application without embedding a specific environment into the application runtime.
 
-8.1 As decided and implemented (2026-09-27)
-
-Status: released (v0.7.0; docs/releases/v0.7.md).
-
-The v0.7 outline decides, with no public API change and no src/ change:
-
-L6   A semantic target profile states the provisions of the one provider
-     an analysis context is evaluated against. Semantic defines the
-     relation, not a vocabulary or a kind of environment. A binding fixes
-     the domain. (D43)
-I15  Revised: analysis stays independent of resolution; identifiers belong
-     to the context's binding. (D45)
-     Platform binding: a semantic identifier is Capability.id, verbatim.
-     Requirement = a declaration of necessity (not use).
-     Provision = a platform-authored TargetProfile, a claim about every
-     start: provided / notProvided / undecided. (D44, D46, D47)
-O1   NEXUS does not compose platforms. (D50)
-O2   No typed capability identity in Effect's R. (D51)
-O5   Platform stays Layer<EnvironmentShape, unknown, never>. (D52)
-O6   The pre-start description is the provision statement; it is never
-     passed to Application.start and never derived. (D47)
-
-A verdict never gates start (D49). Conformance of a statement to its
-Layer is the platform's obligation, proven by tests; NEXUS's own helper is
-test tooling only (C21).
-
-The relation reads:
-
-Application requires:     acme.storage, acme.network   (Capability ids)
-Platform statement:       provided: acme.network; notProvided: acme.storage
-Result:                   incompatible (explicit notProvided)
-Undecided (permissions, optional hardware, remote state):  opaque
-
 ---
 
-9. v0.8 — Application Semantics
+# 9. v0.8 — Application Semantics
 
 Only after the runtime/platform distinction is established should application semantics become a major focus.
 
 The central question is:
 
-«What facts can NEXUS reliably expose about an application?»
+> What facts can NEXUS reliably expose about an application?
 
 NEXUS may expose facts about:
 
-- state;
-- selectors;
-- commands;
-- resources;
-- relationships;
-- dependencies;
-- application capabilities;
-- required platform capabilities;
-- provenance;
-- behavior.
+* state;
+* selectors;
+* commands;
+* resources;
+* relationships;
+* dependencies;
+* application capabilities;
+* required platform capabilities;
+* provenance;
+* behavior.
 
 For example:
 
+```text
 Application
  ├── Selector<User>
  ├── Command<SelectUser>
  ├── Resource<UserRepository>
  │       └── requires Network
  └── requires Storage
+```
 
 The semantic model now has a clear separation between:
 
+```text
 application semantics
+```
 
 and:
 
+```text
 platform semantics
+```
 
 and:
 
+```text
 Effect implementation
+```
 
-Important boundary
+## Important boundary
 
 NEXUS describes its own domain.
 
@@ -638,18 +583,19 @@ It should not become a general analyzer of every external system.
 
 ---
 
-10. v0.9 — VALANCE Integration Readiness
+# 10. v0.9 — VALANCE Integration Readiness
 
 At this point the NEXUS runtime should be mature enough to define its integration boundaries with the other VALANCE packages.
 
 The central question becomes:
 
-«Can NEXUS, MESH, PORT, and a platform participate in a real system without weakening their ownership boundaries?»
+> Can NEXUS, MESH, PORT, and a platform participate in a real system without weakening their ownership boundaries?
 
-NEXUS
+## NEXUS
 
 Provides:
 
+```text
 application
 state
 selectors
@@ -658,42 +604,50 @@ resources
 semantic facts
 capability requirements
 platform boundary
+```
 
-MESH
+## MESH
 
 Provides:
 
+```text
 MPRX
 template semantics
 runtime evaluation
 render-v1
 events
 command intents
+```
 
-PORT
+## PORT
 
 Provides:
 
+```text
 target lowering
 target implementation
 target-specific capabilities
+```
 
-Platform
+## Platform
 
 Provides:
 
+```text
 environment capabilities
 Effect Layers
 environment-specific resources
+```
 
 The packages should remain independently usable.
 
 ---
 
-11. Integration Landmark
+# 11. Integration Landmark
 
-The first serious VALANCE integration should contain five conceptual pieces:
+The first serious VALANCE integration should contain **five conceptual pieces**:
 
+```text
                     MESH
                      │
                   template
@@ -713,15 +667,17 @@ The first serious VALANCE integration should contain five conceptual pieces:
                      │
                      ▼
                 real target
+```
 
 This is deliberately different from the original three-package integration model.
 
 The platform is now explicitly represented.
 
-First web experiment
+## First web experiment
 
 A browser-oriented path might eventually resemble:
 
+```text
 MPRX
  ↓
 MESH
@@ -733,9 +689,11 @@ web platform
 PORT web target
  ↓
 browser
+```
 
 A server-oriented path might resemble:
 
+```text
 MPRX
  ↓
 MESH
@@ -747,6 +705,7 @@ server platform
 PORT web-server target
  ↓
 HTML response
+```
 
 These are integration experiments.
 
@@ -754,14 +713,17 @@ They are not special NEXUS modes.
 
 ---
 
-12. SSR Is a Platform/Target Composition
+# 12. SSR Is a Platform/Target Composition
 
 SSR should not become:
 
+```text
 NEXUS.ssr()
+```
 
 SSR is better understood as a composition of:
 
+```text
 NEXUS
 +
 server platform
@@ -771,9 +733,11 @@ MESH runtime
 web-server PORT
 +
 tooling/host orchestration
+```
 
 Conceptually:
 
+```text
 HTTP request
      │
      ▼
@@ -790,6 +754,7 @@ PORT web-server lowering
      │
      ▼
 HTML response
+```
 
 The application remains application logic.
 
@@ -803,12 +768,13 @@ This keeps SSR from becoming a web-specific concept inside NEXUS.
 
 ---
 
-13. Other Rendering Modes
+# 13. Other Rendering Modes
 
 The same architecture should allow other rendering modes without creating special NEXUS features for each one.
 
 Potential examples include:
 
+```text
 browser rendering
 server rendering
 prerendering
@@ -819,9 +785,11 @@ terminal rendering
 native rendering
 preview rendering
 testing rendering
+```
 
 The common structure is:
 
+```text
 application behavior
         ↓
 application state / facts
@@ -829,6 +797,7 @@ application state / facts
 MESH render semantics
         ↓
 PORT target realization
+```
 
 The environment is supplied separately through the platform.
 
@@ -836,7 +805,7 @@ This means the architecture does not need to predict every future rendering mode
 
 ---
 
-14. v0.10 — Integrated Hardening
+# 14. v0.10 — Integrated Hardening
 
 The first real integration should be treated as an architectural experiment.
 
@@ -844,25 +813,25 @@ v0.10 should capture what the experiment teaches.
 
 Investigate:
 
-- application state boundaries;
-- platform service lifetimes;
-- request scope;
-- application scope;
-- resource cleanup;
-- serialization;
-- hydration;
-- render consistency;
-- target capability mismatch;
-- platform capability mismatch;
-- diagnostics;
-- command/event identity;
-- replacement and reload behavior.
+* application state boundaries;
+* platform service lifetimes;
+* request scope;
+* application scope;
+* resource cleanup;
+* serialization;
+* hydration;
+* render consistency;
+* target capability mismatch;
+* platform capability mismatch;
+* diagnostics;
+* command/event identity;
+* replacement and reload behavior.
 
 The purpose is to discover which abstractions have earned existence.
 
 ---
 
-15. HMR
+# 15. HMR
 
 HMR should not be treated as a NEXUS feature.
 
@@ -870,6 +839,7 @@ It belongs primarily to tooling.
 
 Conceptually:
 
+```text
 source change
     ↓
 dev server
@@ -883,17 +853,20 @@ NEXUS lifecycle semantics
 platform resource reconciliation
     ↓
 PORT target update
+```
 
 However, integration may reveal that NEXUS needs a general application replacement or reconciliation contract.
 
-If so, that contract should be designed around application semantics rather than around the term "HMR".
+If so, that contract should be designed around application semantics rather than around the term `HMR`.
 
 For example, NEXUS may eventually need to answer:
 
+```text
 What state survives replacement?
 What resources are recreated?
 What resources remain?
 What must be disposed?
+```
 
 Those are NEXUS lifecycle questions.
 
@@ -901,12 +874,13 @@ The fact that HMR caused them is incidental.
 
 ---
 
-16. Tooling Architecture
+# 16. Tooling Architecture
 
 Tooling should remain outside NEXUS core.
 
 Conceptually:
 
+```text
                     VALANCE TOOLCHAIN
                            │
              ┌─────────────┼─────────────┐
@@ -918,42 +892,43 @@ Conceptually:
                     NEXUS / MESH / PORT
                            │
                         Platform
+```
 
 Tooling may orchestrate:
 
-- compilation;
-- file watching;
-- module graphs;
-- development servers;
-- HMR;
-- SSR;
-- prerendering;
-- asset serving;
-- diagnostics;
-- debugging;
-- production builds.
+* compilation;
+* file watching;
+* module graphs;
+* development servers;
+* HMR;
+* SSR;
+* prerendering;
+* asset serving;
+* diagnostics;
+* debugging;
+* production builds.
 
 Tooling should compose the package contracts rather than becoming a semantic layer that all packages depend on.
 
 ---
 
-17. Capability Ownership
+# 17. Capability Ownership
 
 There are several kinds of capability and they must not be conflated.
 
-Application capability
+## Application capability
 
 Something the application itself can do or requires.
 
 Owned semantically by NEXUS.
 
-Platform capability
+## Platform capability
 
 Something the execution environment can provide.
 
 Owned by the platform.
 
-Target capability
+## Target capability
 
 Something a rendering target can realize.
 
@@ -961,6 +936,7 @@ Owned by PORT/target integration.
 
 For example:
 
+```text
 Application:
     requires Network
 
@@ -969,27 +945,31 @@ Platform:
 
 PORT:
     requires DOM event support
+```
 
 These are different statements.
 
-A platform having "DOM" does not automatically mean PORT can realize every DOM rendering behavior.
+A platform having `DOM` does not automatically mean PORT can realize every DOM rendering behavior.
 
 Likewise, a target supporting a feature does not mean the NEXUS application has access to the underlying platform capability.
 
 ---
 
-18. Information Flow
+# 18. Information Flow
 
 VALANCE should prefer:
 
+```text
 producer
    ↓
 explicit contract
    ↓
 consumer
+```
 
 over:
 
+```text
 producer
    ↓
 generic middleware
@@ -997,6 +977,7 @@ generic middleware
 arbitrary information transport
    ↓
 consumer
+```
 
 Effect's service/context model can provide the mechanism for dependency composition.
 
@@ -1006,27 +987,29 @@ The meaning of information must be defined by the contract, not by the path thro
 
 ---
 
-19. Preserve Information Until Its Boundary
+# 19. Preserve Information Until Its Boundary
 
 A recurring architectural principle is:
 
-«Do not discard information merely because the current layer does not need it.»
+> Do not discard information merely because the current layer does not need it.
 
 Instead:
 
+```text
 rich representation
        ↓
 explicit boundary
        ↓
 consumer-specific interpretation
+```
 
 Examples:
 
-- semantic facts retain provenance;
-- diagnostics retain spans;
-- render events retain handler identity;
-- platform capabilities retain explicit identity;
-- target lowering remains inspectable.
+* semantic facts retain provenance;
+* diagnostics retain spans;
+* render events retain handler identity;
+* platform capabilities retain explicit identity;
+* target lowering remains inspectable.
 
 However, preservation does not justify creating a universal representation for everything.
 
@@ -1034,66 +1017,67 @@ Information should remain owned by the layer that gives it meaning.
 
 ---
 
-20. What NEXUS Must Not Become
+# 20. What NEXUS Must Not Become
 
 Throughout v0.5 → v1.0, the following remain explicit non-goals.
 
-Not a compiler
+## Not a compiler
 
 NEXUS must not become a TypeScript or MPRX compiler.
 
-Not a renderer
+## Not a renderer
 
 NEXUS does not render UI.
 
-Not PORT
+## Not PORT
 
 Target lowering belongs to PORT.
 
-Not MESH
+## Not MESH
 
 Template and render semantics belong to MESH.
 
-Not a platform
+## Not a platform
 
 NEXUS should not contain browser/server/native implementations.
 
-Not a platform registry
+## Not a platform registry
 
 NEXUS should not become a global encyclopedia of every environment's capabilities.
 
-Not a universal middleware bus
+## Not a universal middleware bus
 
 NEXUS should not expose arbitrary information merely because middleware can transport it.
 
-Not a web framework
+## Not a web framework
 
 SSR, hydration, browser APIs, HTTP servers, and HMR should not become intrinsic NEXUS concepts.
 
-Not a tooling framework
+## Not a tooling framework
 
 Dev servers, CLIs, build graphs, and deployment orchestration belong outside NEXUS core.
 
-Not an optimizer
+## Not an optimizer
 
 Optimization should follow evidence from real execution and integration.
 
-Not an automatic discovery system
+## Not an automatic discovery system
 
 NEXUS should not infer the external environment unless an explicit platform contract provides the necessary information.
 
-Not a giant semantic graph
+## Not a giant semantic graph
 
 Relationships should be added because concrete consumers require them.
 
-Not an integration-driven monolith
+## Not an integration-driven monolith
 
 The existence of MESH, PORT, and platform packages must not force NEXUS internals to absorb their concerns.
 
 ---
 
-21. Revised Release Sequence
+# 21. Revised Release Sequence
 
+```text
 v0.5
 Semantic Foundation
     │
@@ -1132,66 +1116,68 @@ Integrated Hardening
     ▼
 v1.0
 Stable NEXUS
+```
 
 ---
 
-22. Release Discipline
+# 22. Release Discipline
 
 Each release should answer four questions.
 
-22.1 What new contract exists?
+## 22.1 What new contract exists?
 
 The release must establish an explicit capability.
 
-22.2 What remains intentionally unresolved?
+## 22.2 What remains intentionally unresolved?
 
 Deferred decisions must be named rather than silently guessed.
 
-22.3 What evidence is required?
+## 22.3 What evidence is required?
 
 The release should identify tests, consumers, or integration scenarios that justify its new contract.
 
-22.4 What must not change?
+## 22.4 What must not change?
 
 Existing package boundaries and invariants should remain intact unless the release explicitly revises them.
 
 ---
 
-23. v1.0 Definition of Done
+# 23. v1.0 Definition of Done
 
 NEXUS is ready for v1.0 when:
 
-- application lifecycle semantics are stable;
-- commands and selectors have stable contracts;
-- application state behavior is stable;
-- resource semantics are stable;
-- semantic analysis has a stable public model;
-- semantic classifications are stable;
-- diagnostics have stable structure and meaning;
-- provenance is stable enough for supported consumers;
-- application semantics can describe meaningful NEXUS behavior;
-- application capability requirements have a stable representation;
-- platform capability boundaries are explicit;
-- NEXUS does not contain environment-specific runtime assumptions that belong in platform packages;
-- platform implementations can provide NEXUS requirements through explicit contracts;
-- NEXUS/MESH integration uses explicit contracts;
-- NEXUS/PORT integration does not require NEXUS to own target concerns;
-- capability relationships have been tested against a real platform;
-- the first real VALANCE vertical slice has succeeded;
-- integration failure semantics are explicit;
-- no critical public contract depends on package internals;
-- lessons from real integration have been incorporated into the public contracts.
+* application lifecycle semantics are stable;
+* commands and selectors have stable contracts;
+* application state behavior is stable;
+* resource semantics are stable;
+* semantic analysis has a stable public model;
+* semantic classifications are stable;
+* diagnostics have stable structure and meaning;
+* provenance is stable enough for supported consumers;
+* application semantics can describe meaningful NEXUS behavior;
+* application capability requirements have a stable representation;
+* platform capability boundaries are explicit;
+* NEXUS does not contain environment-specific runtime assumptions that belong in platform packages;
+* platform implementations can provide NEXUS requirements through explicit contracts;
+* NEXUS/MESH integration uses explicit contracts;
+* NEXUS/PORT integration does not require NEXUS to own target concerns;
+* capability relationships have been tested against a real platform;
+* the first real VALANCE vertical slice has succeeded;
+* integration failure semantics are explicit;
+* no critical public contract depends on package internals;
+* lessons from real integration have been incorporated into the public contracts.
 
 ---
 
-24. Final Architectural Principle
+# 24. Final Architectural Principle
 
 The roadmap can be summarized as:
 
-«NEXUS should become platform-independent before it becomes integration-dependent.»
+> **NEXUS should become platform-independent before it becomes integration-dependent.**
 
 The intended architecture is:
 
+```text
                          VALANCE
                             │
        ┌────────────────────┼────────────────────┐
@@ -1212,9 +1198,11 @@ The intended architecture is:
              │              │              │
           Web Platform   Server         Future
                          Platform       Platforms
+```
 
 The fundamental dependency direction is:
 
+```text
 Effect
   ↓
 NEXUS
@@ -1222,9 +1210,11 @@ NEXUS
 platform contracts
   ↓
 platform implementations
+```
 
 while rendering follows:
 
+```text
 NEXUS application
         ↓
 MESH
@@ -1232,62 +1222,23 @@ MESH
 PORT
         ↓
 target
+```
 
 and tooling composes everything:
 
+```text
 Tooling
   ↓
 NEXUS + MESH + PORT + Platform
+```
 
 The goal is not to predict every platform, rendering mode, or development workflow.
 
-The goal is to make the boundaries strong enough that new platforms, targets, and tooling can be added without redefining what NEXUS is.
+The goal is to make the boundaries strong enough that new platforms, targets, and tooling can be added **without redefining what NEXUS is**.
 
-«NEXUS owns application behavior.
-Effect provides the compositional mechanism.
-Platforms provide environmental capability.
-MESH provides rendering semantics.
-PORT realizes those semantics.
-Tooling composes the system for development and deployment.»
-
----
-
-25. Deferred Decisions
-
-Deferred decisions are named, never silently guessed (§22.2). Each is resolved
-in the outline of the release named. Details and evidence are in the audit.
-
-L1 — NEXUS / PORT / target relationship
-     Open. Depends on a real PORT target and a platform experiment.
-     Earliest: I1.
-
-L2 — Declarations attached to NEXUS primitives, and facts NEXUS states
-     about its own primitives
-     Resolved in v0.5 by D17: declarations are canonical and standalone.
-     v0.8 (Application Semantics) reopens the second half. The v0.8 outline
-     must revise D17 explicitly if it does.
-
-L3 — Downstream meaning of an "error" diagnostic
-     Open. v0.7 gives it a meaning under the platform binding (a declared
-     requirement the platform's statement explicitly doesn't provide) but
-     no consumer exists yet. Resolved by the first tool or host that calls
-     Semantic.analyze.
-
-L4 — Identity stability across analysis contexts
-     Open. Resolved only when incremental analysis or dev tooling needs it.
-
-L5 — Producers of declarations and source spans
-     Open. Resolved when source capture is introduced.
-
-L6 — What a semantic "target profile" denotes (platform capability, PORT
-     target capability, or neutral), and whether I15's separate identifier
-     spaces survive
-     Resolved in v0.7 (D43, D45): neutral relation; the binding fixes the
-     domain; the platform binding uses Capability.id verbatim; I15 revised.
-     Released names and codes unchanged.
-
-L7 — Who initializes the MESH engine outside Node
-     Open. v0.9 / I1 (the first browser host).
-
-L8 — Handle validity across module instances (bundles, workers, reload)
-     Open. v0.10 (replacement and reload behavior).
+> **NEXUS owns application behavior.
+> Effect provides the compositional mechanism.
+> Platforms provide environmental capability.
+> MESH provides rendering semantics.
+> PORT realizes those semantics.
+> Tooling composes the system for development and deployment.**
