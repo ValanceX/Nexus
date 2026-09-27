@@ -13,7 +13,7 @@ MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT reali
 ## Why NEXUS
 
 - **Logic you can test without a browser.** Commands, state, and selectors are plain typed values, so you can exercise them directly in unit tests.
-- **No device checks in feature code.** Haptics, camera, storage, network, and AI are resolved once at startup into typed *capabilities*, with explicit fallbacks when they're missing. No more `if (device.hasX)`.
+- **No device checks in feature code.** Haptics, camera, storage, network, and AI are typed *capabilities*. The platform the app is started on supplies them once at startup, and the app handles a missing one explicitly. No more `if (device.hasX)`, and NEXUS itself names no browser, server or device.
 - **Typed from edge to edge.** Command inputs and state are validated with Effect Schema where data enters, and events are typed by their schema. Failures are typed errors, not surprise exceptions.
 - **Clean startup and shutdown.** Long-lived resources (sockets, devices, workers) are always released, even when something fails halfway. Shutdown ends every state and event stream the app owns, and nothing can stop the app behind its lifecycle's back.
 - **Built on [Effect](https://effect.website).** NEXUS adds application-level concepts on top of Effect instead of reinventing dependency injection, scopes, or concurrency.
@@ -65,7 +65,7 @@ NEXUS has nine primitives, each with one job:
 |---|---|
 | Run business rules, services, and use cases | Render anything (that's PORT) |
 | Own application state and derived data | Parse or compile MPRX (that's MESH) |
-| Resolve device capabilities in one place | Run hidden side effects inside UI bindings |
+| Consume capabilities through one typed contract | Run hidden side effects inside UI bindings, or implement platforms |
 
 NEXUS doesn't depend on the MESH compiler or language server. It sees MESH only through `@valancex/mesh-runtime`'s render trees and command intents, via the host adapter in `src/mesh` (exported as `Mesh`), never through compiler internals. The nine primitives never import the adapter.
 

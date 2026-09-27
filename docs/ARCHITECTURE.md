@@ -41,7 +41,7 @@ It is responsible for:
 * application commands
 * typed services and dependencies
 * derived state
-* environment capabilities
+* capability contracts (their implementations are supplied by a platform)
 * long-lived resources
 * typed events
 * effect execution
@@ -165,7 +165,7 @@ responsible for:
 * defining the application composition
 * bootstrapping dependencies
 * initializing application state
-* resolving environment capabilities
+* receiving its environment from the platform supplied at start
 * starting long-lived services/resources
 * owning the application lifetime
 * shutting the application down
@@ -468,8 +468,10 @@ A `Capability` is an *application* capability. It is unrelated to the
 *target* capabilities that v0.4's semantic analysis checks operations
 against (§16.1).
 
-A `Capability` represents functionality provided by the runtime
-environment. This is a Valance-specific concept.
+A `Capability` is a NEXUS identity (`id`) with a typed contract, for
+functionality the execution environment may or may not provide. Its
+implementation is supplied by a platform (§10.1). This is a Valance-specific
+concept.
 
 Examples: AI inference, Haptics, Camera, Microphone, Sensors, GPU
 acceleration, Specialized display, Biometric hardware, Storage, Network.
@@ -502,7 +504,7 @@ The application should not contain `if (device.hasHaptics) { ... }`.
 Instead:
 
 ```text
-NEXUS
+platform (supplied at start)
   ↓
 Capability resolution
   ↓
@@ -511,38 +513,32 @@ Haptics capability
 Application consumes typed capability
 ```
 
-### 10.1 Capability Resolution
+### 10.1 Capability Resolution (v0.6)
 
-At application startup, `Environment` (§4) resolves available capabilities.
-Today the resolutions are supplied already resolved, in the application's
-definition; discovering them by inspecting the runtime is the intended
-future shape, below, and isn't built yet:
+NEXUS doesn't discover, detect or probe its environment. A **platform**
+supplies it, at exactly one place: `Application.start(app, { platform })`
+(§4). A platform is any `Layer` that provides the resolved `Environment` and
+requires nothing, so NEXUS knows no platform by name. Browser, server,
+worker, native and test platforms are all just such layers.
 
 ```text
-Environment
-    ↓
-Capability Discovery
-    ↓
-Capability Resolution
-    ↓
-Capability Implementation
-    ↓
-Application
+Effect                                   Layer, Scope, Context, default services
+  ↓
+NEXUS                                    Capability (id + contract), resolve, require
+  ↓
+platform contract                        Application.Platform = Layer<EnvironmentShape, unknown, never>
+  ↓
+platform implementation                  any Layer of that type
 ```
 
-Resolution strategies may include: native implementation, browser
-implementation, remote implementation, fallback implementation, no-op
-implementation, unavailable.
-
-> **Superseded direction (2026-09-27).** The discovery pipeline above is no
-> longer the intended future shape. Under [`ROADMAP.md`](./ROADMAP.md), NEXUS
-> does not discover or detect its environment: a **platform** supplies
-> capability implementations through an explicit contract, and v0.6 moves
-> that supply out of the application definition. The current contract in
-> this section and in [`primitives/capability.md`](./primitives/capability.md)
-> is unchanged until v0.6 decides otherwise. See §25.2 and the
-> [runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md)
-> (sections E and F).
+At start, the platform is built first, in the application-owned runtime
+scope. Its answer for each capability `id` is fixed there: `Available`
+with an implementation, or `Unavailable` with a reason. An `id` it doesn't
+mention is `Unavailable`. Implementations may be host-owned values
+(`Capability.EnvironmentLive`) or application-scoped resources acquired by
+the platform layer; the application can't tell which. NEXUS assigns no
+meaning to how an implementation was produced: there is no source or
+provenance field. With no platform, the environment is empty.
 
 Unsupported capabilities must be explicit. Do not silently pretend a
 capability exists.
@@ -1151,6 +1147,9 @@ diagnostic contract and PORT's absence are intact; and v0.3 holds.
              Effect
                 │
                 ↓
+   platform (Application.Platform, v0.6)
+                │
+                ↓
        Infrastructure / OS
 
 MESH and PORT remain replaceable.
@@ -1208,7 +1207,7 @@ NEXUS that means:
 The longer-term NEXUS side of this, including semantic capture, IR and
 target compatibility, is in [`FUTURE_DIRECTION.md`](./FUTURE_DIRECTION.md).
 
-### 25.2 Roadmap alignment: runtime/platform boundary (v0.6 onward)
+### 25.2 Roadmap alignment: runtime/platform boundary (built in v0.6)
 
 The release sequence from v0.5 to v1.0 is set by [`ROADMAP.md`](./ROADMAP.md).
 Its central change is that the platform boundary is established *before*
@@ -1220,23 +1219,25 @@ NEXUS application → MESH → PORT → target
 Tooling composes NEXUS + MESH + PORT + platform; it owns no semantics.
 ```
 
-This section describes direction, not contract. Every section above still
-describes v0.5.0 as built. Where they conflict with the roadmap, the
-[runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md)
-records the conflict and the release that resolves it. In summary:
+v0.6 builds the first part of this: the runtime/platform boundary (§26
+decision 12; the [v0.6 outline](./superpowers/specs/2026-09-27-nexus-v0.6-outline.md);
+the [runtime/platform audit](./architecture/2026-09-27-runtime-platform-audit.md)).
 
-- The executable core uses no host API. Its environmental inputs are
-  indirect: capability resolutions supplied in the application definition
-  (§4, §10), `CapabilitySource`'s environment names, and Effect's default
-  services inherited from whichever fiber starts the application.
-- v0.6 decides where a platform supplies the environment. No
-  existing lifecycle, command, state, selector, event, semantic or MESH
-  adapter contract changes without an explicit v0.6 decision.
-- In §16.1 and the semantic model, "target" means an execution environment,
-  not a PORT target. The released names stay. What they denote is
-  deferred decision L6, for v0.7.
-- The §24 diagram's `Effect → Infrastructure / OS` step becomes an
-  explicit platform boundary.
+- The environment reaches an application only through the platform passed
+  to `Application.start` (§4, §10.1). The application definition carries
+  none.
+- The platform Layer is provided to the application-owned runtime scope,
+  so the application's lifetime governs platform resources: acquired
+  before, and released after, every application resource.
+- NEXUS names no execution environment and no Effect default service.
+- The core's host independence is enforced at compile time and by import
+  checks.
+- In §16.1 and the semantic model, "target" still means an execution
+  environment, not a PORT target. The released names stay. What they
+  denote is deferred decision L6, for v0.7.
+- Platform packages, platform composition, capability provenance and
+  semantic platform requirements are not built. The roadmap places them in
+  later releases.
 
 ---
 
@@ -1334,3 +1335,25 @@ decision" rule:
     produces `Built`, and `Semantic.analyze` is `build` plus a compatibility
     pass over `Built`. New passes read `Built`; new input fields extend
     `build`.
+12. **Runtime/platform boundary** (v0.6; see
+    `superpowers/specs/2026-09-27-nexus-v0.6-outline.md`, D30–D42).
+    - A platform (`Application.Platform`, a `Layer` providing `Environment`
+      and requiring nothing) supplies the environment, only through
+      `Application.start(app, { platform })`. With no platform, the
+      environment is empty (D30). `StartOptions` holds exactly `platform`;
+      any further field needs its own decision (D42).
+    - The platform Layer is provided to the application-owned runtime
+      scope: platform acquisition, application acquisition, running,
+      shutdown, application release, platform release. This holds on both
+      termination routes and on every start-failure path (C15, I31). A
+      platform failure is `ServiceGraphFailed` (D34).
+    - NEXUS names no execution environment (D33) and no Effect default
+      service. Precedence is Effect's: caller, then platform, then
+      application layer (D38, D39).
+    - A capability is its `id` plus a typed contract (D37).
+    - The core's host independence is enforced (D40). The first platform is
+      a test-only reference platform, not a package (D41).
+    - This is an intentional breaking change within v0.x:
+      `ApplicationDefinition.environment`, `CapabilitySource`,
+      `Available.source` and `Capability.tag` are removed, with no
+      compatibility wrappers.

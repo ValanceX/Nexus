@@ -66,6 +66,16 @@ There is no `shutdown`. A runtime ends when its owner ends it: the caller's
 `Scope`, for a standalone runtime; the application's lifecycle, for an
 application runtime.
 
+**Effect's default services.** `Clock`, `Console`, `Random`,
+`ConfigProvider` and `Tracer` are Effect's own default services, and NEXUS
+names none of them (v0.6). A runtime inherits them from the fiber that
+builds it (`start` or `make`), which keeps, for example, a caller's tracing
+span. For an application, the platform is the intended place to set them,
+and its `runtime` layer may override them in turn. The precedence is
+Effect's layer semantics: caller, then platform, then application layer,
+the later one winning. `tests/default-services.test.ts` pins that order.
+The NEXUS core itself reads none of them.
+
 ## Errors
 
 ```ts

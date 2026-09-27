@@ -4,7 +4,7 @@ Scope: NEXUS v0.5 → v1.0
 Status: Directional roadmap / architectural keepsake
 Package: "@valancex/nexus"
 Current release: v0.5.0 (released 2026-09-27)
-Next release: v0.6, Runtime / Platform Boundary (outline and plan for review; not implemented)
+Next release: v0.6, Runtime / Platform Boundary (implemented on the v0.6 branch; not yet released)
 v0.6 outline: docs/superpowers/specs/2026-09-27-nexus-v0.6-outline.md
 Audit: docs/architecture/2026-09-27-runtime-platform-audit.md
 
@@ -434,7 +434,8 @@ one headless Node platform, outside src/ core
     ↓
 prove behavior unchanged (full suite, vertical slice, MESH slice)
 
-Specified (2026-09-27) by the v0.6 outline, which decides I-1 … I-4:
+Specified (2026-09-27) by the v0.6 outline, which decides I-1 … I-4, and
+implemented as planned (see docs/releases/v0.6.md):
 
 I-1  Application.start(app, options?), options = { platform? } only; a
      platform is a Layer providing Capability.Environment and requiring

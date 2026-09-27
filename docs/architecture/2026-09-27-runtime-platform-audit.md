@@ -17,6 +17,8 @@ Three claims were checked by experiment, not just by reading. The experiments we
 > - Effect 3.22's default services are `Clock`, `Console`, `Random`, `ConfigProvider` (whose default reads `process.env`) and `Tracer`. The `Scheduler` is a FiberRef, not a service. The inventory below listed `Scheduler` and missed `ConfigProvider`.
 > - Answer 8's "headless Node host platform" is refined to a host-agnostic reference test platform (outline D41). NEXUS core requires no Node-specific capability, so a Node platform would supply nothing a test platform doesn't.
 >
+> v0.6 implements that outline (ARCHITECTURE §26 decision 12; `docs/releases/v0.6.md`).
+>
 > The text below is kept as audited.
 
 ---
