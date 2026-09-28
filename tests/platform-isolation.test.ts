@@ -220,6 +220,42 @@ describe("Platform isolation: failed and interrupted starts (I44, I46, I49, C31)
 
     expect(observed).toEqual({ interrupted: true, releasedBeforeInterruptReturned: ["platform acquire", "platform release"], caller: false });
   });
+
+  // The interruption arrives while the build is inside an uninterruptible
+  // acquisition. Start waits for it, as it does when the build runs in the caller's
+  // own fiber: every release runs, in reverse order, before the interrupted start
+  // has exited, so it leaves nothing acquired (C15, I31, C31). Without forwarding
+  // the interruption to the build fiber, start exits first and the build's
+  // resources are released only afterwards, by Effect's supervision.
+  it.each(["merge", "provideMerge"] as const)("an interruption mid-acquisition waits for it: everything is released before the interrupted start exits (%s)", async (composition) => {
+    const log: Array<string> = [];
+
+    const observed = await Effect.runPromise(Effect.gen(function* () {
+      const acquiring = yield* Deferred.make<void>();
+      const proceed = yield* Deferred.make<void>();
+      const app = Layer.provideMerge(
+        Layer.scopedDiscard(Effect.acquireRelease(
+          Effect.zipRight(Deferred.succeed(acquiring, undefined), Effect.zipRight(Deferred.await(proceed), Effect.sync(() => { log.push("second acquire"); }))),
+          () => Effect.sync(() => { log.push("second release"); })
+        )),
+        Layer.scopedDiscard(Effect.acquireRelease(Effect.sync(() => { log.push("first acquire"); }), () => Effect.sync(() => { log.push("first release"); })))
+      );
+      const fiber = yield* Effect.fork(Effect.scoped(Nexus.Application.start(define(app), { platform: trackedPlatform(composition, log) })).pipe(
+        Effect.onExit(() => Effect.sync(() => { log.push("start exited"); }))
+      ));
+      yield* Deferred.await(acquiring);
+      const interrupting = yield* Effect.fork(Fiber.interrupt(fiber));
+      // Let the interruption reach the starting fiber while the acquisition still waits.
+      yield* Effect.sleep("20 millis");
+      yield* Deferred.succeed(proceed, undefined);
+      const exit = yield* Fiber.join(interrupting);
+
+      return { interrupted: Exit.isInterrupted(exit), caller: yield* is42 };
+    }));
+
+    expect(observed).toEqual({ interrupted: true, caller: false });
+    expect(log).toEqual(["platform acquire", "first acquire", "second acquire", "second release", "first release", "platform release", "start exited"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
