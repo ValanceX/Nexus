@@ -1,7 +1,7 @@
 // Runtime internals. Not re-exported by src/index.ts: nothing here is public.
 import type { Bus } from "../event/internal.js";
 
-import { Deferred, Effect, Exit, Runtime as EffectRuntime, Scope } from "effect";
+import { Deferred, Effect, Exit, Fiber, Runtime as EffectRuntime, Scope } from "effect";
 
 declare const NexusRuntimeTypeId: unique symbol;
 
@@ -64,6 +64,23 @@ export const scopeOf = (handle: NexusRuntime<never>): Scope.Scope | undefined =>
 /** The one defect value for lifecycle and handle misuse. Deliberately not a public error type. */
 export const refusal = (reason: string): Error => new Error(`NEXUS: ${reason}`);
 
+/**
+ * Runs `effect` in a child fiber of the calling fiber, and returns its result,
+ * without ever taking the child's FiberRefs (v0.9 C29, C30). The child inherits
+ * the caller's FiberRefs when it's forked, so the caller's values still enter.
+ * Nothing the child writes comes back: it's observed with `Fiber.await`, never
+ * `Fiber.join`, which would copy its FiberRefs into the caller (P1).
+ *
+ * Interrupting the caller interrupts the child and waits for it to finish, so
+ * whatever the child acquired is released before the caller carries on (C31).
+ */
+export const isolated = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> => Effect.uninterruptibleMask((restore) =>
+  Effect.flatMap(Effect.fork(restore(effect)), (fiber) => restore(Fiber.await(fiber)).pipe(
+    Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+    Effect.flatten
+  ))
+);
+
 export const makeLifecycle = (bus: Bus): Effect.Effect<Lifecycle> => Effect.Do.pipe(
   Effect.bind("scope", () => Scope.make()),
   Effect.bind("drained", () => Deferred.make<void>()),
@@ -112,7 +129,9 @@ export const terminateLifecycle = (lifecycle: Lifecycle): Effect.Effect<void> =>
     Effect.andThen(Effect.sync(() => { lifecycle.state.accepting = false; })),
     Effect.andThen(lifecycle.bus.close),
     // A failed release must not strand the lifecycle: finish it, then re-raise.
-    Effect.andThen(Effect.exit(Scope.close(lifecycle.scope, Exit.void))),
+    // Released in its own fiber, so no release writes a FiberRef into the
+    // fiber that terminates (I46).
+    Effect.andThen(Effect.exit(isolated(Scope.close(lifecycle.scope, Exit.void)))),
     Effect.tap(() => lifecycle.hooks.onEnd),
     Effect.tap(() => Deferred.succeed(lifecycle.terminated, undefined)),
     Effect.flatMap((released) => released)

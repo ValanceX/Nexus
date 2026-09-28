@@ -2,7 +2,7 @@ import type { EventBusShape } from "../event/index.js";
 
 import { Effect, Fiber, Layer, Runtime as EffectRuntime, Scope } from "effect";
 
-import { admitting, makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
+import { admitting, isolated, makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
 import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
@@ -29,10 +29,14 @@ export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.E
   Effect.tap(({ lifecycle }) => Effect.addFinalizer(() => terminateLifecycle(lifecycle))),
   // The built Context feeds straight into Effect.runtime, which is kept in the
   // private registry, never on the handle (N3).
-  Effect.bind("runtime", ({ bus, lifecycle }) => Layer.buildWithScope(Layer.provideMerge(layer, Layer.succeed(EventBus, bus.shape)), lifecycle.scope).pipe(
+  //
+  // Built, and the runtime captured, in the application's own fiber (I44–I47):
+  // it starts with the caller's FiberRefs, and the layers' FiberRef writes
+  // (Layer.setClock, …) stay in it, so the caller never sees them.
+  Effect.bind("runtime", ({ bus, lifecycle }) => isolated(Layer.buildWithScope(Layer.provideMerge(layer, Layer.succeed(EventBus, bus.shape)), lifecycle.scope).pipe(
     Effect.mapError((cause): RuntimeInitError => ({ _tag: "LayerBuildFailed", cause })),
     Effect.andThen((context) => Effect.runtime<R | EventBusShape>().pipe(Effect.provide(context)))
-  )),
+  ))),
   Effect.map(({ lifecycle, runtime }) => register<R | EventBusShape>({ runtime, lifecycle }))
 );
 
