@@ -1,9 +1,12 @@
 name: CI
 
 on:
+  # Branch pushes only: a release tag runs all of CI through release.yml.
   push:
+    branches: ["**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
   # The release workflow runs all of CI on the commit being released.
   workflow_call:
 
