@@ -1,5 +1,5 @@
-// Spec tests 1–8: NEXUS driving MESH v0.5 end to end, against the published
-// @valancex/mesh-runtime and MESH's own slice (tests/fixtures/mesh-slice).
+// Spec tests 1–8: NEXUS driving MESH end to end (v0.5, now v0.6), against the
+// published @valancex/mesh-runtime and MESH's own slice (tests/fixtures/mesh-slice).
 import type { RenderNode, RenderTree } from "@valancex/mesh-runtime";
 import type { StateHandle } from "../src/state/index.js";
 
@@ -412,6 +412,38 @@ describe("MESH adapter (spec §8)", () => {
         expect(afterStep3).toEqual(Option.some(failed));
 
         expect(firstCardName(fresh.tree)).toBe("Ada King");
+      })
+    );
+  }));
+
+  // MESH v0.6 (render trees carry each number, boolean and null prop's MESH
+  // text as propText): the host renders with the runtime it depends on, and
+  // passes the tree through unchanged, so a renderer gets MESH's text.
+  it("10. MESH v0.6: a host's render carries propText, and a later render its new text", () => runSlice(({ team }) => {
+    const { table } = sliceCommands(team);
+    const users = read("users.mprx").replace("<button on.click", "<button disabled={compact} on.click");
+
+    return Effect.Do.pipe(
+      Effect.bind("variant", () => Effect.promise(async () => {
+        const result = await compile({ source: users, path: "users.mprx", model: { manifest: model, path: "components.json", component: "users" } });
+
+        if (result.template === undefined) {
+          throw new Error(`users.mprx doesn't compile: ${JSON.stringify(result.diagnostics)}`);
+        }
+
+        return { ...program, templates: [JSON.stringify(result.template), program.templates[1]!] };
+      })),
+      Effect.let("host", ({ variant }) => Mesh.host({ program: variant, scope: Nexus.Selector.define(team, shaped), commands: table })),
+      Effect.bind("before", ({ host }) => host.render),
+      Effect.tap(() => team.update((current) => Effect.succeed({ ...current, compact: false }))),
+      Effect.bind("after", ({ host }) => host.render),
+      Effect.map(({ before, after }) => {
+        const button = (tree: RenderTree) => (tree.root.children as ReadonlyArray<RenderNode>).find((child) => child.type === "node" && child.component === "button")!;
+
+        expect(button(before.tree)).toMatchObject({ props: { disabled: true }, propText: { disabled: "true" } });
+        expect(button(after.tree)).toMatchObject({ props: { disabled: false }, propText: { disabled: "false" } });
+        // A string prop has no propText entry: MESH's own tree, unchanged.
+        expect((before.tree.root as RenderNode & { readonly propText?: unknown }).propText).toBeUndefined();
       })
     );
   }));

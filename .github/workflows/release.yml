@@ -1,27 +1,31 @@
 name: Release
 
-# Builds, packs and publishes @valancex/nexus to npm with provenance, and
-# makes the GitHub release if there isn't one yet (as MESH's release.yml).
+# Builds a NEXUS release from its tag and publishes it, as MESH's
+# release.yml does: all of CI on the tagged commit, then @valancex/nexus
+# packed, published to npm with provenance, and a GitHub release with the
+# tarball and the version's release notes.
 #
-# - Publishing a GitHub release publishes. Its tag must be `v` + the
-#   package.json version.
-# - A manual run publishes only with `publish` set, and only from the
-#   release's tag or from `main` once that version's tag exists; otherwise
-#   it's a dry run: everything but the publishing.
+# - A pushed `v*` tag publishes. Its tag must be `v` + the package.json
+#   version. Tagging the release commit is the maintainer's step.
+# - A manual run publishes only with `publish` set, and only from a tag;
+#   otherwise it's a dry run: everything but the publishing.
 # - A pull request that changes this workflow or package.json runs the
-#   dry run. Pushes, including tag pushes, never publish.
+#   dry run.
+#
+# The release notes are docs/releases/vX.Y.Z.md when that file exists (a
+# patch release), and otherwise docs/releases/vX.Y.md.
 #
 # Publishing needs the `NPM_ACCESS_TOKEN` secret: an npm granular access
 # token that can publish to the @valancex organisation. It expires; a
 # release needs a current one.
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish to npm and make the GitHub release (only from a release tag, or main once the tag exists)"
+        description: "Publish to npm and make the GitHub release (only from a tag)"
         type: boolean
         default: false
   pull_request:
@@ -72,7 +76,7 @@ jobs:
       contents: write # the GitHub release
       id-token: write # npm provenance
     env:
-      PUBLISH: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+      PUBLISH: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -89,22 +93,27 @@ jobs:
           version="$(node -p 'require("./package.json").version')"
           tag="v${version}"
           echo "TAG=${tag}" >> "$GITHUB_ENV"
-          if [ "$PUBLISH" = "true" ]; then
-            if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-              if [ "$GITHUB_REF_NAME" != "$tag" ]; then
-                echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
-                exit 1
-              fi
-            elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
-              if ! git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null; then
-                echo "::error::No ${tag} tag: tag the release before publishing it from main"
-                exit 1
-              fi
-            else
-              echo "::error::Publishing runs only from a release tag or main, not ${GITHUB_REF}"
-              exit 1
-            fi
+          if [ "$(ls out/*.tgz | wc -l)" != "1" ] || [ ! -f "out/valancex-nexus-${version}.tgz" ]; then
+            echo "::error::Expected exactly one tarball, valancex-nexus-${version}.tgz"
+            exit 1
           fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::The tag is ${GITHUB_REF_NAME}, but package.json is ${version}: tag ${tag}"
+            exit 1
+          fi
+          if [ "$PUBLISH" = "true" ] && [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "::error::Publishing needs a tag: push ${tag}"
+            exit 1
+          fi
+          notes="docs/releases/v${version}.md"
+          if [ ! -f "$notes" ]; then
+            notes="docs/releases/v$(echo "$version" | cut -d. -f1,2).md"
+          fi
+          if [ ! -f "$notes" ]; then
+            echo "::error::No release notes at docs/releases/v${version}.md or ${notes}"
+            exit 1
+          fi
+          echo "NOTES=${notes}" >> "$GITHUB_ENV"
           if npm view "@valancex/nexus@${version}" version > /dev/null 2>&1; then
             if [ "$PUBLISH" = "true" ]; then
               echo "::error::@valancex/nexus@${version} is already on npm"
@@ -116,19 +125,15 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_ACCESS_TOKEN }}
         run: |
+          # Absolute, so npm reads the tarball as a file, not a GitHub spec.
+          tarball="$PWD/out/valancex-nexus-${TAG#v}.tgz"
           if [ "$PUBLISH" = "true" ]; then
-            npm publish ./out/*.tgz --access public --provenance
+            npm publish "$tarball" --access public --provenance
           else
-            npm publish ./out/*.tgz --access public --provenance=false --dry-run
+            npm publish "$tarball" --access public --provenance=false --dry-run
           fi
       - name: GitHub release
-        if: env.PUBLISH == 'true' && github.event_name == 'workflow_dispatch'
+        if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "GitHub release ${TAG} already exists"
-          else
-            notes="docs/releases/v$(echo "${TAG#v}" | cut -d. -f1,2).md"
-            gh release create "$TAG" --title "NEXUS $TAG" --notes-file "$notes" --verify-tag out/*.tgz
-          fi
+        run: gh release create "$TAG" --title "NEXUS $TAG" --notes-file "$NOTES" --verify-tag out/*.tgz

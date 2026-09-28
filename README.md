@@ -104,6 +104,8 @@ $ pnpm build
 
 **v0.8: application semantics.** A requirement belongs to a *unit* of the application: the start unit (its service graph build) or an admitted unit (typically a command), each described by one standalone declaration. No primitive carries a requirement. The application's necessity is its start unit's requirement. The union over the units a context describes is its requirement set, which is not necessity. No API changes. See [`docs/semantic.md`](./docs/semantic.md), "Application contexts", and the [release notes](./docs/releases/v0.8.md).
 
+**v0.8.1:** MESH v0.6's runtime (`@valancex/mesh-runtime` `^0.6.0`), so a MESH host's render trees carry MESH v0.6's `propText`, and a release workflow as MESH's, publishing from a pushed tag. No API changes. See the [release notes](./docs/releases/v0.8.1.md).
+
 The MESH host adapter (`Mesh`, from v0.2) renders a selector's value through `@valancex/mesh-runtime` and routes command intents to commands through explicit bindings, proven against MESH's own slice program.
 
 Requires Node 22 or later. Published to npm as [`@valancex/nexus`](https://www.npmjs.com/package/@valancex/nexus) from v0.8.0; earlier versions were not published. See the [release notes](./docs/releases/) for what changed in each version.
