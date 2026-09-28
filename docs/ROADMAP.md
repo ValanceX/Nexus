@@ -673,6 +673,36 @@ The packages should remain independently usable.
 
 ---
 
+10.1 As decided and implemented (2026-09-28)
+
+Status: implemented in 0.9.0, and prepared for release
+(docs/releases/v0.9.md). Publication is pending the v0.9.0 tag.
+
+The integration audit (docs/architecture/2026-09-28-valance-integration-audit.md)
+found the first composed evidence the question above needed. It found one
+defect at the platform boundary:
+- **P1.** A platform's FiberRef layers reached the fiber that started the
+  application.
+- **J1.** Runtime.runFork handed that fiber the application's own fiber.
+
+v0.9 establishes caller isolation (the v0.9 outline, I44–I49, C29–C32):
+FiberRefs flow from the caller into the application, never back, across the
+boundaries NEXUS creates. Those boundaries are start/make, termination,
+run, and runFork's handle. There is no public API change.
+
+A Chromium tracer bullet in PORT's private integration workspace composes a
+real application end to end:
+MPRX → the MESH compiler/runtime → NEXUS (state, commands, one capability)
+→ a test platform → a composer → PORT Web → Chromium.
+
+It needed no ownership change, no platform package and no browser-specific
+NEXUS API. Two questions stay open:
+- O15: rendering runs outside the application's lifecycle;
+- O19: an application can deliberately return its execution state as a
+  value.
+
+---
+
 # 11. Integration Landmark
 
 The first serious VALANCE integration should contain **five conceptual pieces**:

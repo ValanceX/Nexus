@@ -1457,3 +1457,41 @@ decision" rule:
       revised).
     - L2 is closed, and D17 is confirmed (D64). No provenance is added (D63).
     - No public API change and no `src/` change (D67).
+15. **Platform isolation** (v0.9; see
+    `superpowers/specs/2026-09-28-nexus-v0.9-outline.md`, C29–C32, D68–D71,
+    I44–I49; `architecture/2026-09-28-valance-integration-audit.md`, P1;
+    `architecture/2026-09-28-j1-application-fiber-boundary.md`, J1).
+    - **The boundary.** FiberRefs flow from the caller into the application,
+      never back. The rule is stated for FiberRefs, not named services. NEXUS
+      still names no default service (D38), and the D39 precedence (caller,
+      then platform, then application layer) holds inside the application.
+    - **Why it was needed.**
+      - **P1.** Building in the caller's fiber let a FiberRef layer
+        (`Layer.setClock`, …) change the caller. With `Layer.merge`, the
+        change survived the application.
+      - **J1.** `runFork` returned the application's own fiber, so
+        `Fiber.join` on it imported the application's FiberRefs.
+    - **The mechanism, in one form, at three places.** An internal helper
+      runs work in a child fiber, observes it with `Fiber.await` (never
+      `Fiber.join`), and forwards interruption, waiting for the child. It is
+      used:
+      - for the service graph build and runtime capture (C29);
+      - for closing the runtime's scope at termination (C30);
+      - behind the fiber `runFork` returns, which is now an execution handle
+        NEXUS controls (C32).
+
+      There is no snapshot and restore of FiberRefs, and no list of
+      FiberRefs.
+    - **Scope** (I44–I47). Isolation covers the boundaries NEXUS creates and
+      controls: `start`/`make`, both termination routes (including failed
+      and interrupted starts), `run`, and `runFork`'s handle. It doesn't
+      cover values an application's effect chooses to return, such as a
+      fiber, `FiberRefs` or a runtime (O19, deferred). Rendering through
+      `Mesh.host` stays outside the application's lifecycle (O15,
+      unresolved).
+    - **Compatibility.**
+      - **API:** no exported name, type or module changes; `runFork` still
+        returns `Fiber.RuntimeFiber<A, E>`.
+      - **Behavior:** a guarantee of v0.9. Code outside an application no
+        longer sees FiberRefs set by a platform or an application layer, and
+        `runFork`'s handle has its own `id()` and `status`.

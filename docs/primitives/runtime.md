@@ -62,6 +62,32 @@ non-Effect callers (a MESH host running an adapter `dispatch` that invokes
 a command, a test calling into the application). `runFork` is for callers
 that need a `Fiber` handle back, e.g. to interrupt a long-running command.
 
+**The `runFork` handle** (v0.9, C32). The fiber `runFork` returns is an
+execution handle NEXUS controls. It is not the fiber the effect runs in: the
+effect runs in the application's own fiber, with the application's FiberRefs.
+
+The handle guarantees:
+- **completion:** `Fiber.await`, `Fiber.poll` and `Fiber.status` observe the
+  effect's completion;
+- **results:** `Fiber.join` and `Effect.fromFiber` give the effect's own
+  result, and its typed failures and defects, unchanged;
+- **interruption:** `Fiber.interrupt` interrupts the effect, runs its
+  finalizers, and returns once it has finished, even if it is called before
+  anything has run;
+- **FiberRef isolation:** `Fiber.join`, `Effect.fromFiber`, `Fiber.inheritAll`
+  and any other operation on the handle import none of the application's or
+  platform's FiberRefs into the caller;
+- **refusal:** after termination has been requested, the handle ends as a
+  defect, and the effect never runs, as before.
+
+It doesn't guarantee, and nothing may rely on:
+- that `id()` identifies the fiber the effect runs in;
+- that `Fiber.status` describes that fiber's own state (it describes the
+  handle's);
+- that the handle is the same fiber NEXUS uses internally.
+
+NEXUS exposes no way to reach the internal fiber.
+
 There is no `shutdown`. A runtime ends when its owner ends it: the caller's
 `Scope`, for a standalone runtime; the application's lifecycle, for an
 application runtime.
@@ -75,6 +101,43 @@ and its `runtime` layer may override them in turn. The precedence is
 Effect's layer semantics: caller, then platform, then application layer,
 the later one winning. `tests/default-services.test.ts` pins that order.
 The NEXUS core itself reads none of them.
+
+**Caller isolation** (v0.9, I44–I49). The runtime is built, and its Effect
+runtime captured, in a child fiber of the caller. The child inherits the
+caller's FiberRefs, so the precedence above holds inside the runtime. The
+runtime's scope is also closed in a child fiber, at termination. NEXUS never
+joins either child.
+
+So FiberRefs flow from the caller into the runtime, and never back. A
+FiberRef set by a layer (`Layer.setClock`, `setRandom`, `setConfigProvider`,
+`Layer.locallyScoped`, …), in its acquisition or its release, reaches neither
+of these:
+- the fiber that builds or terminates the runtime, whether it succeeds, fails
+  or is interrupted;
+- another runtime started later.
+
+Code running *in* the runtime sees it. A finalizer sees what its acquisition
+saw, as in Effect. The caller's own FiberRef changes are its own.
+
+**What isolation covers, and what it doesn't.** It covers the execution
+boundaries NEXUS creates and controls:
+- `start` and `make`;
+- termination, by either route;
+- `run`'s `Promise`;
+- `runFork`'s handle.
+
+It doesn't cover values the application's own effects return. An effect
+that returns a fiber it forked, its `FiberRefs` or its Effect `Runtime` hands
+that state to its caller by its own choice. `A` is unconstrained, and NEXUS
+doesn't inspect results. Whether that should ever be constrained is open
+(v0.9 outline, O19).
+
+**Rendering is outside this.** A MESH host's `render` and `renders`
+(`Mesh.host`) are not admitted work. They run wherever their caller runs
+them, typically a composer on Effect's default runtime. They are outside the
+application's lifecycle and runtime. This is current behavior, and an
+intentional, unresolved question (v0.9 outline, O15). It is not a
+guarantee.
 
 ## Errors
 

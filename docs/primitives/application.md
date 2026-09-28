@@ -193,6 +193,20 @@ through its `runtime` (see [runtime.md](./runtime.md)).
   layers (`Layer.setClock`, …). Precedence is Effect's: the fiber that calls
   `start`, then the platform, then the `runtime` layer, the later one
   winning (see [runtime.md](./runtime.md)).
+- **Caller isolation** (v0.9, I44–I47). FiberRefs flow from the caller into
+  the application, never back. The platform's and the `runtime` layer's
+  FiberRef settings apply only inside the application. This covers default
+  services, log levels, and any `Layer.locallyScoped`.
+
+  The caller never observes them across a boundary NEXUS creates:
+  - `start`, including a failed or interrupted start;
+  - `Application.shutdown`, or closing the start scope;
+  - `Runtime.run`;
+  - the handle `Runtime.runFork` returns.
+
+  The caller doesn't observe them before, during or after the run, and no
+  later application does either. See [runtime.md](./runtime.md) for what this
+  does and doesn't cover.
 - `Application` must never be reachable from `Command`/`Service`/`State`
   code — those only ever see `RunningApplication`'s narrower surface
   (state reads, selector reads, command invocation).
