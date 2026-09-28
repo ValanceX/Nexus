@@ -9,7 +9,7 @@
 //
 // Every observation compares identities (is this the platform's value?), never wall
 // clock readings.
-import { Clock, Config, ConfigProvider, Context, Deferred, Effect, Exit, Fiber, FiberRef, Layer, LogLevel, Random, Scope } from "effect";
+import { Cause, Clock, Config, ConfigProvider, Context, Deferred, Effect, Either, Exit, Fiber, FiberRef, Layer, LogLevel, Option, Random, Scope } from "effect";
 import * as DefaultServices from "effect/DefaultServices";
 import { describe, expect, it } from "vitest";
 
@@ -347,5 +347,154 @@ describe("Platform isolation: runSync and a standalone runtime (I49, M12)", () =
     }));
 
     expect(observed).toEqual({ inside: true, during: false, after: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// J1a: the execution handle Runtime.runFork returns (outline §14, C32; the J1
+// memo, docs/architecture/2026-09-28-j1-application-fiber-boundary.md).
+//
+// Application and platform FiberRefs flow down into the application's execution,
+// never up through the handle NEXUS returns. So await, join, Effect.fromFiber and
+// inheritAll on it import nothing into the caller, and interrupting it reaches the
+// application's execution. The handle's physical identity (id(), status) is not a
+// contract: these tests never compare it with anything.
+
+describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C32)", () => {
+  // The platform (or application layer) sets Clock 42 and the minimum log level Error; the
+  // caller runs on Clock 7 and log level Debug, both different from the platform's and from Effect's defaults.
+  const applicationSettings = (): Layer.Layer<never> => Layer.merge(Layer.setClock(fixed(42)), Layer.locallyScoped(FiberRef.currentMinimumLogLevel, LogLevel.Error));
+  const callerView = Effect.all({ clock: Clock.currentTimeMillis, logLevel: Effect.map(FiberRef.get(FiberRef.currentMinimumLogLevel), (level) => level._tag) });
+  const callerOwn = { clock: 7, logLevel: "Debug" };
+  const applicationOwn = { clock: 42, logLevel: "Error" };
+
+  // As the caller: Clock 7 and log level Debug for the whole body.
+  const asCaller = <A, E>(body: Effect.Effect<A, E>): Promise<A> =>
+    Effect.runPromise(Effect.withClock(Effect.zipRight(FiberRef.set(FiberRef.currentMinimumLogLevel, LogLevel.Debug), body), fixed(7)));
+
+  const operations: ReadonlyArray<{ readonly name: string; readonly use: (fiber: Fiber.RuntimeFiber<unknown, unknown>) => Effect.Effect<unknown, unknown> }> = [
+    { name: "Fiber.await", use: (fiber) => Fiber.await(fiber) },
+    { name: "Fiber.join", use: (fiber) => Fiber.join(fiber) },
+    { name: "Effect.fromFiber", use: (fiber) => Effect.fromFiber(fiber) },
+    { name: "Fiber.inheritAll", use: (fiber) => Effect.zipRight(Fiber.await(fiber), Fiber.inheritAll(fiber)) },
+  ];
+
+  const cases = operations.flatMap((operation) => (["merge", "provideMerge"] as const).flatMap((composition) =>
+    (["platform", "application layer"] as const).flatMap((placement) =>
+      (["Application.shutdown", "closing the start scope"] as const).map((route) => ({ operation, composition, placement, route })))));
+
+  it.each(cases)("$operation.name on the handle ($composition, in the $placement, stopped by $route) imports nothing into the caller", async ({ operation, composition, placement, route }) => {
+    const settings = compositions[composition](empty(), applicationSettings());
+    const platform = placement === "platform" ? settings : empty();
+    const runtime = placement === "application layer" ? settings : Layer.empty;
+
+    const observed = await asCaller(Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const running = yield* Nexus.Application.start(define(runtime), { platform }).pipe(Scope.extend(scope));
+      const inside = yield* inApp(running, callerView);
+      yield* Effect.exit(operation.use(Nexus.Runtime.runFork(running.runtime, callerView)));
+      const afterOperation = yield* callerView;
+      yield* stop(route, running, scope);
+      const afterStop = yield* callerView;
+      const later = yield* Effect.scoped(Effect.flatMap(Nexus.Application.start(define()), (next) => inApp(next, callerView)));
+
+      return { inside, afterOperation, afterStop, later };
+    }));
+
+    expect(observed).toEqual({ inside: applicationOwn, afterOperation: callerOwn, afterStop: callerOwn, later: callerOwn });
+  });
+
+  // Starts an application on the Clock 42 / Error platform, runs `body` as the caller, and shuts it down.
+  const withApplication = <A, E>(body: (running: Nexus.Application.RunningApplication<never>) => Effect.Effect<A, E>): Promise<A> =>
+    asCaller(Effect.scoped(Effect.gen(function* () {
+      const running = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), applicationSettings()) });
+      const result = yield* body(running);
+      yield* Nexus.Application.shutdown(running);
+
+      return result;
+    })));
+
+  it("join returns the application's own result, computed with the application's FiberRefs", async () => {
+    const observed = await withApplication((running) => Effect.all({
+      joined: Fiber.join(Nexus.Runtime.runFork(running.runtime, callerView)),
+      fromFiber: Effect.fromFiber(Nexus.Runtime.runFork(running.runtime, Effect.succeed({ answer: 1 }))),
+      awaited: Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.succeed("value"))),
+    }));
+
+    expect(observed).toEqual({ joined: applicationOwn, fromFiber: { answer: 1 }, awaited: Exit.succeed("value") });
+  });
+
+  it("a typed failure reaches await and join unchanged, and so does a defect", async () => {
+    class Refused { readonly _tag = "Refused"; constructor(readonly reason: string) {} }
+    const boom = new Error("boom");
+
+    const observed = await withApplication((running) => Effect.all({
+      awaited: Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.fail(new Refused("no")))),
+      joined: Effect.either(Fiber.join(Nexus.Runtime.runFork(running.runtime, Effect.fail(new Refused("no"))))),
+      defect: Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.die(boom))),
+    }));
+
+    expect(observed.awaited).toEqual(Exit.fail(new Refused("no")));
+    expect(Exit.isFailure(observed.awaited) && Option.getOrUndefined(Cause.failureOption(observed.awaited.cause))).toBeInstanceOf(Refused);
+    expect(observed.joined).toEqual(Either.left(new Refused("no")));
+    expect(Exit.isFailure(observed.defect) && Option.getOrUndefined(Cause.dieOption(observed.defect.cause))).toBe(boom);
+  });
+
+  it("interrupting the handle interrupts the application's execution: its finalizer runs before interrupt returns", async () => {
+    const log: Array<string> = [];
+
+    const observed = await withApplication((running) => Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const handle = Nexus.Runtime.runFork(running.runtime, Effect.zipRight(Deferred.succeed(started, undefined), Effect.never).pipe(
+        Effect.onInterrupt(() => Effect.flatMap(Clock.currentTimeMillis, (t) => Effect.sync(() => { log.push(`finalizer, clock ${t}`); })))
+      ));
+      yield* Deferred.await(started);
+      const exit = yield* Fiber.interrupt(handle);
+
+      return { interrupted: Exit.isInterrupted(exit), logAtReturn: [...log], caller: yield* callerView };
+    }));
+
+    // The finalizer is application execution: it sees the application's Clock.
+    expect(observed).toEqual({ interrupted: true, logAtReturn: ["finalizer, clock 42"], caller: callerOwn });
+  });
+
+  it("poll and status observe completion", async () => {
+    const observed = await withApplication((running) => Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>();
+      const handle = Nexus.Runtime.runFork(running.runtime, Effect.as(Deferred.await(gate), "done"));
+      const pollWhileRunning = yield* Fiber.poll(handle);
+      const statusWhileRunning = (yield* Fiber.status(handle))._tag;
+      yield* Deferred.succeed(gate, undefined);
+      const exit = yield* Fiber.await(handle);
+
+      return { pollWhileRunning, statusWhileRunning, exit, pollAfter: yield* Fiber.poll(handle), statusAfter: (yield* Fiber.status(handle))._tag };
+    }));
+
+    expect(observed.pollWhileRunning).toEqual(Option.none());
+    expect(observed.statusWhileRunning).not.toBe("Done");
+    expect(observed.exit).toEqual(Exit.succeed("done"));
+    expect(observed.pollAfter).toEqual(Option.some(Exit.succeed("done")));
+    expect(observed.statusAfter).toBe("Done");
+  });
+
+  it.each(["Application.shutdown", "closing the start scope"] as const)("after the application stops (%s), runFork is refused as before: a defect, the effect never runs, and nothing reaches the caller", async (route) => {
+    let ran = false;
+
+    const observed = await asCaller(Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const running = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), applicationSettings()) }).pipe(Scope.extend(scope));
+      yield* stop(route, running, scope);
+      const awaited = yield* Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.sync(() => { ran = true; })));
+      const joined = yield* Effect.exit(Fiber.join(Nexus.Runtime.runFork(running.runtime, Effect.sync(() => { ran = true; }))));
+
+      return {
+        awaitedDefect: Exit.isFailure(awaited) && String(Option.getOrUndefined(Cause.dieOption(awaited.cause))),
+        joinedDefect: Exit.isFailure(joined) && String(Option.getOrUndefined(Cause.dieOption(joined.cause))),
+        caller: yield* callerView,
+      };
+    }));
+
+    expect(observed).toEqual({ awaitedDefect: "Error: NEXUS: the runtime has begun terminating", joinedDefect: "Error: NEXUS: the runtime has begun terminating", caller: callerOwn });
+    expect(ran).toBe(false);
   });
 });
