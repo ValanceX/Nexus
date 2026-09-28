@@ -2,7 +2,7 @@ import type { EventBusShape } from "../event/index.js";
 
 import { Effect, Fiber, Layer, Runtime as EffectRuntime, Scope } from "effect";
 
-import { admitting, makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
+import { admitting, isolated, makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
 import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
@@ -29,10 +29,14 @@ export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.E
   Effect.tap(({ lifecycle }) => Effect.addFinalizer(() => terminateLifecycle(lifecycle))),
   // The built Context feeds straight into Effect.runtime, which is kept in the
   // private registry, never on the handle (N3).
-  Effect.bind("runtime", ({ bus, lifecycle }) => Layer.buildWithScope(Layer.provideMerge(layer, Layer.succeed(EventBus, bus.shape)), lifecycle.scope).pipe(
+  //
+  // Built, and the runtime captured, in the application's own fiber (I44–I47):
+  // it starts with the caller's FiberRefs, and the layers' FiberRef writes
+  // (Layer.setClock, …) stay in it, so the caller never sees them.
+  Effect.bind("runtime", ({ bus, lifecycle }) => isolated(Layer.buildWithScope(Layer.provideMerge(layer, Layer.succeed(EventBus, bus.shape)), lifecycle.scope).pipe(
     Effect.mapError((cause): RuntimeInitError => ({ _tag: "LayerBuildFailed", cause })),
     Effect.andThen((context) => Effect.runtime<R | EventBusShape>().pipe(Effect.provide(context)))
-  )),
+  ))),
   Effect.map(({ lifecycle, runtime }) => register<R | EventBusShape>({ runtime, lifecycle }))
 );
 
@@ -55,8 +59,27 @@ export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effec
   return runtime instanceof Error ? Effect.runPromise(Effect.die(runtime)) : EffectRuntime.runPromise(runtime)(effect);
 };
 
+/**
+ * The fiber returned is an execution handle NEXUS controls, never the fiber the
+ * effect runs in (v0.9 C32, J1a). The effect runs in the application's own fiber,
+ * with the application's FiberRefs; the handle observes it with `Fiber.await`,
+ * never `Fiber.join`, and runs on Effect's default runtime, so it holds none of
+ * those FiberRefs, and `join`, `Effect.fromFiber` or `inheritAll` on it import
+ * nothing of the application's into the caller (I44). Results, typed failures and
+ * defects pass through unchanged. Interrupting the handle interrupts the effect,
+ * and waits for it to finish.
+ */
 export const runFork = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E> => {
   const runtime = runtimeFor(nexusRuntime);
 
-  return runtime instanceof Error ? Effect.runFork(Effect.die(runtime)) : EffectRuntime.runFork(runtime)(effect);
+  if (runtime instanceof Error) {
+    return Effect.runFork(Effect.die(runtime));
+  }
+
+  const execution = EffectRuntime.runFork(runtime)(effect);
+
+  return Effect.runFork(Fiber.await(execution).pipe(
+    Effect.onInterrupt(() => Fiber.interrupt(execution)),
+    Effect.flatten
+  ));
 };
