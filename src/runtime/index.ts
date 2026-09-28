@@ -59,8 +59,27 @@ export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effec
   return runtime instanceof Error ? Effect.runPromise(Effect.die(runtime)) : EffectRuntime.runPromise(runtime)(effect);
 };
 
+/**
+ * The fiber returned is an execution handle NEXUS controls, never the fiber the
+ * effect runs in (v0.9 C32, J1a). The effect runs in the application's own fiber,
+ * with the application's FiberRefs; the handle observes it with `Fiber.await`,
+ * never `Fiber.join`, and runs on Effect's default runtime, so it holds none of
+ * those FiberRefs, and `join`, `Effect.fromFiber` or `inheritAll` on it import
+ * nothing of the application's into the caller (I44). Results, typed failures and
+ * defects pass through unchanged. Interrupting the handle interrupts the effect,
+ * and waits for it to finish.
+ */
 export const runFork = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E> => {
   const runtime = runtimeFor(nexusRuntime);
 
-  return runtime instanceof Error ? Effect.runFork(Effect.die(runtime)) : EffectRuntime.runFork(runtime)(effect);
+  if (runtime instanceof Error) {
+    return Effect.runFork(Effect.die(runtime));
+  }
+
+  const execution = EffectRuntime.runFork(runtime)(effect);
+
+  return Effect.runFork(Fiber.await(execution).pipe(
+    Effect.onInterrupt(() => Fiber.interrupt(execution)),
+    Effect.flatten
+  ));
 };

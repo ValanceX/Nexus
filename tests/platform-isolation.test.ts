@@ -458,6 +458,23 @@ describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C3
     expect(observed).toEqual({ interrupted: true, logAtReturn: ["finalizer, clock 42"], caller: callerOwn });
   });
 
+  it("interrupting the handle at once, before anything has run, still stops the application's execution", async () => {
+    let completed = false;
+
+    const observed = await withApplication((running) => Effect.gen(function* () {
+      // A timer, not Effect.sleep: the application's Clock here is a stub without sleep.
+      const handle = Nexus.Runtime.runFork(running.runtime, Effect.zipRight(Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 30))), Effect.sync(() => { completed = true; })));
+      const exit = yield* Fiber.interrupt(handle);
+      // Longer than the effect would have taken.
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 80)));
+
+      return { interrupted: Exit.isInterrupted(exit) };
+    }));
+
+    expect(observed).toEqual({ interrupted: true });
+    expect(completed).toBe(false);
+  });
+
   it("poll and status observe completion", async () => {
     const observed = await withApplication((running) => Effect.gen(function* () {
       const gate = yield* Deferred.make<void>();
