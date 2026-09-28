@@ -675,8 +675,7 @@ The packages should remain independently usable.
 
 10.1 As decided and implemented (2026-09-28)
 
-Status: implemented in 0.9.0, and prepared for release
-(docs/releases/v0.9.md). Publication is pending the v0.9.0 tag.
+Status: released (v0.9.0; docs/releases/v0.9.md).
 
 The integration audit (docs/architecture/2026-09-28-valance-integration-audit.md)
 found the first composed evidence the question above needed. It found one

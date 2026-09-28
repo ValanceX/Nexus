@@ -12,6 +12,18 @@ Each section keeps four kinds of statement apart:
 
 A statement given under one label is not repeated as another.
 
+> **Follow-up (v0.9, 2026-09-28).** This audit drove NEXUS v0.9.0 and PORT 0.2.1. The text below is kept as audited.
+> - **P1** is fixed: the application is built and terminated in its own fiber.
+> - A Chromium tracer bullet then found **J1**: `Runtime.runFork` handed out the application's own fiber. Fixed: it now returns an execution handle NEXUS controls. See [the J1 memo](./2026-09-28-j1-application-fiber-boundary.md).
+> - **Missing evidence (§15), items 1–5,** is now evidenced by PORT's `integration/browser/slice.browser.test.ts`: a real browser, MESH's `init`, a composition with a platform, a composed command consuming a capability, and a platform setting a default service.
+> - **The §14 table,** updated. The composition now runs in real Chromium, with a platform, one capability and real clicks. Platform isolation is proven for the boundaries NEXUS creates (outline I44–I49, B1–B4). Target realization is proven in Chromium as well as jsdom.
+> - **Still open:**
+>   - P3/Q2, rendering outside the lifecycle (O15);
+>   - P4 and P5, cross-repository documentation drift;
+>   - P6, the composer is still test code;
+>   - O19, application-returned execution state;
+>   - items 6–10 of §15.
+
 ## Method
 
 - **Repositories read:** all of NEXUS `src/`, and every NEXUS test that touches the platform, MESH or capabilities. From MESH: `packages/mesh-runtime/src/` (in full), and in `docs/`, `manual/runtime.md` ("The host", event resolution, updates, obligations) and `guides/integrating-mesh-with-nexus.md`. From PORT: `packages/port-web/src/`, all of `integration/`, and `docs/ARCHITECTURE.md` and `docs/CONTRACT.md`. Also the earlier audits: NEXUS's runtime/platform audit, capability model audit and application-semantics audit, and PORT's integration audit.
@@ -642,7 +654,7 @@ Several environment operations the composed application performs go through no p
 - `package.json`: removed `pnpm.overrides` (`"@valancex/nexus>@valancex/mesh-runtime": "^0.6.0"`);
 - `integration/package.json`: `@valancex/nexus` changed from `^0.8.0` to `^0.8.1`;
 - `pnpm-lock.yaml`: regenerated. The `overrides:` block is gone, and `@valancex/nexus@0.8.0` became `0.8.1`. No other package changed;
-- `integration/README.md` and `CHANGELOG.md` (`[Unreleased]`): updated to match. The released v0.2 notes are left as they were published.
+- `integration/README.md` and `CHANGELOG.md`: updated to match (released in PORT 0.2.1). The released v0.2 notes are left as they were published.
 
 Verification: `pnpm install --frozen-lockfile`, `pnpm typecheck` and `pnpm test` pass (port-web 242, integration 15), and `pnpm why @valancex/mesh-runtime -r` finds one version, 0.6.0. `@valancex/port-web` is unchanged.
 
