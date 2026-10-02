@@ -22,6 +22,7 @@ is a constraint on the API, not just prose (see Rules).
 interface SelectorHandle<B> {
   readonly value: Effect.Effect<B>;
   readonly changes: Stream.Stream<B>;
+  readonly values: Stream.Stream<B>;
 }
 ```
 
@@ -54,6 +55,11 @@ projected value is unchanged. (MESH's `renders`, one render per commit,
 relies on exactly this.)
 
 A selector's `changes` completes when its underlying `State`'s does.
+
+`values` (v0.10) is `changes` preceded by the projection of the value current at subscription, with no gap between
+them (see [state.md](./state.md)). It projects on every commit like `changes` and doesn't deduplicate. For
+`combine`, each input's current value is atomic with that input's own subscription, so the combined stream always
+ends at the latest of both.
 `combine`'s completes as soon as either side's does.
 
 ## Errors

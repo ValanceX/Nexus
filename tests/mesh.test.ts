@@ -255,6 +255,31 @@ describe("MESH adapter (spec §8)", () => {
     );
   }));
 
+  it("5b. values: the current render first, then one per commit; a commit during the first render is rendered next, not lost (v0.10)", () => runSlice(({ team }) => {
+    const { table } = sliceCommands(team);
+    const selector = Nexus.Selector.define(team, shaped);
+    let committed = false;
+    // A commit lands after the host has subscribed and before its first render is produced.
+    const racing: typeof selector = {
+      ...selector,
+      values: Stream.tap(selector.values, () => Effect.suspend(() => {
+        if (committed) {
+          return Effect.void;
+        }
+
+        committed = true;
+
+        return team.update((current) => Effect.succeed({ ...current, first: second.first })).pipe(Effect.asVoid);
+      })),
+    };
+    const host = Mesh.host({ program, scope: racing, commands: table });
+
+    return Stream.runCollect(Stream.take(host.values, 2)).pipe(Effect.map((renders) => {
+      // The first render is of the value current at subscription; the commit that raced it follows.
+      expect(Chunk.toReadonlyArray(renders).map((render) => firstCardName(render.tree))).toEqual(["Ada Lovelace", "Ada King"]);
+    }));
+  }));
+
   describe("6. errors (spec §6.4)", () => {
     it("MeshDiagnostics: a scope selector that leaks a field into the exact `first` record", () => runSlice(({ team }) => {
       const { table } = sliceCommands(team);

@@ -26,8 +26,18 @@ interface StateHandle<A> {
   readonly update: <E = never>(f: (current: A) => Effect.Effect<A, E>) => Effect.Effect<A, E>;
   readonly set: (next: A) => Effect.Effect<A, StateValidationError>;
   readonly changes: Stream.Stream<A>;
+  readonly values: Stream.Stream<A>;
 }
 ```
+
+**`values` is `changes` with the current value in front, atomically (v0.10).** `changes` is future commits
+only, so "read the value, then watch `changes`" has a gap: a commit between the two is seen by neither, and the
+observer keeps a value older than the state. `values` emits the value current at subscription, then every later
+commit in order, and nothing can be committed between the first element and the subscription to the rest. An
+observer that must start from the present, a renderer for example, subscribes to `values`; one that already holds
+the present (or doesn't care) uses `changes`. A slow consumer is never skipped: commits that land while it works
+are delivered in order after it. `values` ends when the owning scope closes, like `changes`, and is empty if
+subscribed after that.
 
 `update` takes an effectful transition (not just a pure `(A) => A`)
 because some legitimate transitions need to run a Schema decode/validate
