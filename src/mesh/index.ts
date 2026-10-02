@@ -47,6 +47,13 @@ export interface Host<E, R> {
   readonly render: Effect.Effect<Render, MeshDiagnostics>;
   /** One render per future scope commit. A diagnostic fails and ends the stream (spec §6.2). */
   readonly renders: Stream.Stream<Render, MeshDiagnostics>;
+  /**
+   * The render of the scope's value current at subscription, then one per later commit, in commit order.
+   * The current value and the subscription to later commits are one atomic step (`Selector.values`), so a
+   * commit made while the first render is being produced is rendered next, never lost. The caller still
+   * decides what each render means (draw, update); the adapter keeps none (M2). Failure and ending as `renders`.
+   */
+  readonly values: Stream.Stream<Render, MeshDiagnostics>;
   readonly dispatch: (render: Render, handler: string, payload?: unknown) => Effect.Effect<Dispatched, MeshDiagnostics | UnmappedCommand | E, R>;
 }
 
@@ -78,6 +85,7 @@ export const host = <E, R>({ program, scope, commands }: HostOptions<E, R>): Hos
   // Sequential, future commits only, and a failed render ends the stream.
   // That's Effect's default for mapEffect, and it's the v0.2 NEXUS contract.
   renders: Stream.mapEffect(scope.changes, (snapshot) => renderSnapshot(program, snapshot)),
+  values: Stream.mapEffect(scope.values, (snapshot) => renderSnapshot(program, snapshot)),
   // M1: `render` goes to the runtime exactly as the caller supplied it.
   dispatch: (render, handler, payload) => Effect.promise(() => meshDispatch(render, handler, payload)).pipe(
     Effect.flatMap((result) => result.diagnostics === undefined

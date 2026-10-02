@@ -868,6 +868,8 @@ This means the architecture does not need to predict every future rendering mode
 
 The first real integration should be treated as an architectural experiment.
 
+Status: v0.10.0 is released (docs/releases/v0.10.md) and ships one finding of the Valance integration: `values`, the current value and then every change, with no gap (`State`, `Selector`, `Mesh.Host`). It is not the whole of this section: the investigation list below is not closed.
+
 v0.10 should capture what the experiment teaches.
 
 Investigate:

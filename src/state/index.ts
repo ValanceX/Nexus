@@ -4,7 +4,15 @@ export interface StateHandle<A> {
   readonly get: Effect.Effect<A>;
   readonly update: <E = never>(f: (current: A) => Effect.Effect<A, E>) => Effect.Effect<A, E>;
   readonly set: (next: A) => Effect.Effect<A, StateValidationError>;
+  /** Future commits only: the current value is not emitted. */
   readonly changes: Stream.Stream<A>;
+  /**
+   * The value current at the moment of subscription, then every later commit, in order. Nothing is committed
+   * between the first element and the subscription to the rest: the two are one atomic step, so an observer
+   * that starts from `values` can never hold a value older than the state it is subscribed to.
+   * Ends when the owning scope closes, like `changes`.
+   */
+  readonly values: Stream.Stream<A>;
 }
 
 export type StateInitError = {
@@ -46,6 +54,9 @@ export const create = <A>(schema: Schema.Schema<A>, initial: A): Effect.Effect<S
     // Dropped because SubscriptionRef.changes replays the current value on
     // subscribe, and `changes` is specified as future commits only.
     changes: Stream.drop(ref.changes, 1).pipe(Stream.interruptWhenDeferred(closed)),
+    // SubscriptionRef.changes reads the current value and subscribes to later commits under one lock; `changes`
+    // above throws that first element away, `values` keeps it. A subscription made after the scope closed is empty.
+    values: Stream.unwrap(Effect.map(Deferred.isDone(closed), (done) => done ? Stream.empty : ref.changes.pipe(Stream.interruptWhenDeferred(closed)))),
   }))
 );
 

@@ -759,6 +759,7 @@ const host = Mesh.host({
 
 host.render;                                // Effect<Render, MeshDiagnostics>: the current value
 host.renders;                               // Stream<Render, MeshDiagnostics>: one per future commit
+host.values;                                // Stream<Render, MeshDiagnostics>: the current render, then one per commit (v0.10)
 host.dispatch(render, handler, payload);    // Effect<Dispatched, MeshDiagnostics | UnmappedCommand | E, R>
 ```
 
@@ -781,6 +782,8 @@ host.dispatch(render, handler, payload);    // Effect<Dispatched, MeshDiagnostic
 | the command's own error | typed | passes through unchanged |
 | a `toInput` throw | defect | a broken binding |
 | `TypeError`, `MeshVersionError`, `MeshInternalError`, or any other runtime rejection | defect | a programming, package or runtime defect |
+
+**`values`, observing from the present (v0.10).** A caller that draws the current render and then follows later ones must not do it as `render` followed by `renders`: a commit between them is rendered by neither, so the screen stays behind the state (found by the Valance tracer bullet: state 1, DOM 0). `values` emits the render of the value current at subscription, then one per later commit, atomically (`Selector.values`, `State.values`). A commit made while the first render is being produced is rendered next. The adapter still keeps no render (M2) and decides nothing about drawing versus updating: the first element is the caller's first draw only because the caller says so. Failure and ending are as for `renders`.
 
 **`renders` lifecycle.** `renders` emits one `Render` per future commit of the scope selector, in commit order. A render diagnostic is terminal: the stream fails with `MeshDiagnostics` and ends. It emits nothing for that commit, doesn't re-emit an earlier render, and ignores later commits. A caller that wants to recover subscribes again or calls `render`. This is the v0.2 NEXUS stream contract, not a MESH requirement. The adapter owns no scope. When the scope that owns the underlying `State` closes (for example on `Application.shutdown`, for state created with `Application.createState`), `changes` completes, and so does `renders`, without error.
 
