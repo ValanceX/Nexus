@@ -108,6 +108,8 @@ $ pnpm build
 
 **v0.9: caller isolation.** An application's platform and its layers can't change the code that starts, stops or observes it. FiberRefs flow into the application, never back. That covers Effect's default services (`Clock`, `Random`, `ConfigProvider`, …), log levels and any `Layer.locallyScoped`, across `start`, shutdown, `Runtime.run` and the handle `Runtime.runFork` returns, whose `Fiber.join` no longer imports the application's FiberRefs. No API changes; it is a behavioral guarantee. It was proven in a real Chromium composition of MESH, NEXUS and PORT. See the [release notes](./docs/releases/v0.9.md).
 
+**v0.10.2:** MESH v0.8's runtime (`@valancex/mesh-runtime` `^0.8.0`), so an application on MESH v0.8 has one MESH runtime, not a second v0.7 one inside `Mesh.host`. No API changes. See the [release notes](./docs/releases/v0.10.2.md).
+
 **v0.10.1:** MESH v0.7's runtime (`@valancex/mesh-runtime` `^0.7.0`), so an application on MESH v0.7 has one MESH runtime, not a second, uninitialized v0.6 one inside `Mesh.host`. No API changes. See the [release notes](./docs/releases/v0.10.1.md).
 
 **v0.8.1:** MESH v0.6's runtime (`@valancex/mesh-runtime` `^0.6.0`), so a MESH host's render trees carry MESH v0.6's `propText`, and a release workflow as MESH's, publishing from a pushed tag. No API changes. See the [release notes](./docs/releases/v0.8.1.md).
