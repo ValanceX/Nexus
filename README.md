@@ -77,6 +77,8 @@ Install from npm:
 $ pnpm add @valancex/nexus
 ```
 
+An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.8.0 || ^0.9.0`.
+
 To work on NEXUS itself, from a clone:
 
 ```console
@@ -107,6 +109,8 @@ $ pnpm build
 **v0.10: `values`.** `State`, `Selector` and `Mesh.host` gain `values`: the current value (or its render), then every later commit, with no gap between them. It closes the window in "read the current value, then subscribe to `changes`", where a commit in between was seen by neither, and the Valance tracer bullet lost an update that way. Purely additive; `changes` and `renders` are unchanged. See the [release notes](./docs/releases/v0.10.md).
 
 **v0.9: caller isolation.** An application's platform and its layers can't change the code that starts, stops or observes it. FiberRefs flow into the application, never back. That covers Effect's default services (`Clock`, `Random`, `ConfigProvider`, …), log levels and any `Layer.locallyScoped`, across `start`, shutdown, `Runtime.run` and the handle `Runtime.runFork` returns, whose `Fiber.join` no longer imports the application's FiberRefs. No API changes; it is a behavioral guarantee. It was proven in a real Chromium composition of MESH, NEXUS and PORT. See the [release notes](./docs/releases/v0.9.md).
+
+**v0.10.3:** `@valancex/mesh-runtime` is now a peer dependency (`^0.8.0 || ^0.9.0`), not a dependency, so an application on any listed MESH line has exactly one MESH runtime, the one it supplies and initializes. No API changes. An application must now install the runtime itself. See the [release notes](./docs/releases/v0.10.3.md).
 
 **v0.10.2:** MESH v0.8's runtime (`@valancex/mesh-runtime` `^0.8.0`), so an application on MESH v0.8 has one MESH runtime, not a second v0.7 one inside `Mesh.host`. No API changes. See the [release notes](./docs/releases/v0.10.2.md).
 
