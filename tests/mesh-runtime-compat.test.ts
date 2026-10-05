@@ -1,6 +1,7 @@
-// The MESH runtime boundary (v0.10.1): NEXUS depends on exactly the MESH runtime line the application uses.
-// Under 0.x semver `^0.6.0` excludes 0.7, so an application on MESH 0.7 got a second runtime inside `Mesh.host`
-// (a browser's `init()` reaches only one). The adapter calls `render` and `dispatch` and passes the render through.
+// The MESH runtime boundary: the application supplies the one MESH runtime NEXUS renders with.
+// It is a peer dependency, not a dependency: a dependency under 0.x semver (`^0.8.0` excludes 0.9) gave an application on a
+// newer MESH a second, private runtime inside `Mesh.host`, and a browser's `init()` reaches only one. The adapter calls
+// `render` and `dispatch` and passes the render through.
 import type { RenderNode } from "@valancex/mesh-runtime";
 
 import { compile } from "@valancex/mesh-compiler";
@@ -12,17 +13,21 @@ import { describe, expect, it } from "vitest";
 import * as Nexus from "../src/index.js";
 
 const root = new URL("../", import.meta.url);
-const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { readonly dependencies: Record<string, string> };
+const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { readonly dependencies: Record<string, string>; readonly peerDependencies: Record<string, string> };
 
 describe("the MESH runtime boundary", () => {
-  it("the declared range admits the installed runtime, and it is the only one installed", () => {
-    const range = manifest.dependencies["@valancex/mesh-runtime"]!;
+  it("the runtime is the application's peer, not NEXUS's own dependency, and the development install is the only one", () => {
+    const range = manifest.peerDependencies["@valancex/mesh-runtime"]!;
     const installed = (JSON.parse(readFileSync(createRequire(import.meta.url).resolve("@valancex/mesh-runtime/package.json"), "utf8")) as { version: string }).version;
     const [major, minor] = installed.split(".");
 
-    // `^0.minor.patch` on a 0.x version admits only that minor (semver caret).
-    expect(range).toMatch(/^\^0\.\d+\.\d+$/);
-    expect(range.slice(1).split(".")[1]).toBe(minor);
+    // No private copy can be installed beside the application's.
+    expect(manifest.dependencies["@valancex/mesh-runtime"]).toBeUndefined();
+    // Each alternative is `^0.minor.patch`, which on a 0.x version admits only that minor (semver caret); the installed runtime is admitted.
+    const alternatives = range.split(" || ");
+
+    expect(alternatives.every((alternative) => /^\^0\.\d+\.\d+$/.test(alternative))).toBe(true);
+    expect(alternatives.map((alternative) => alternative.slice(1).split(".")[1])).toContain(minor);
     expect(major).toBe("0");
     // One MESH runtime in the resolved graph (the lockfile's, not the store directory's, which keeps what was once installed).
     const locked = [...new Set([...readFileSync(new URL("pnpm-lock.yaml", root), "utf8").matchAll(/^ {2}'?(@valancex\/mesh-runtime@[^:'\s]+)'?:/gm)].map((match) => match[1]))];

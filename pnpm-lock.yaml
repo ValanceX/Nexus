@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@valancex/mesh-runtime':
-        specifier: ^0.8.0
-        version: 0.8.0
       effect:
         specifier: ^3.10.0
         version: 3.22.2
@@ -21,6 +18,9 @@ importers:
       '@valancex/mesh-compiler':
         specifier: ^0.8.0
         version: 0.8.0
+      '@valancex/mesh-runtime':
+        specifier: ^0.9.0
+        version: 0.9.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -315,8 +315,8 @@ packages:
     resolution: {integrity: sha512-CH6eJYGNmC32I6W9oZQMxXUa2QXkVAiEhP284l2J1DVRn0o22bo9THykvFUqqgczo+/HNM2JS2air66u99cCBA==}
     engines: {node: '>=22'}
 
-  '@valancex/mesh-runtime@0.8.0':
-    resolution: {integrity: sha512-HTEBPnRPDalJQWjJaJoqrosqbwdt7lxwXKbUm5PcMiZ8W41vKpwMzyCOm8BYmeB9T+6KL03GhIc0DuocoUZ9vA==}
+  '@valancex/mesh-runtime@0.9.0':
+    resolution: {integrity: sha512-w540OVud5qJAjoIx1FK8YfRgH7SncR79J136KUN/O6NczkCDsHSooLzjCPcV8REpcJGSEBq1AwVYMT1GkqlCkg==}
     engines: {node: '>=22'}
 
   '@vitest/expect@2.1.9':
@@ -706,7 +706,7 @@ snapshots:
 
   '@valancex/mesh-compiler@0.8.0': {}
 
-  '@valancex/mesh-runtime@0.8.0': {}
+  '@valancex/mesh-runtime@0.9.0': {}
 
   '@vitest/expect@2.1.9':
     dependencies:
