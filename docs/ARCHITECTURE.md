@@ -787,7 +787,7 @@ host.dispatch(render, handler, payload);    // Effect<Dispatched, MeshDiagnostic
 
 **`renders` lifecycle.** `renders` emits one `Render` per future commit of the scope selector, in commit order. A render diagnostic is terminal: the stream fails with `MeshDiagnostics` and ends. It emits nothing for that commit, doesn't re-emit an earlier render, and ignores later commits. A caller that wants to recover subscribes again or calls `render`. This is the v0.2 NEXUS stream contract, not a MESH requirement. The adapter owns no scope. When the scope that owns the underlying `State` closes (for example on `Application.shutdown`, for state created with `Application.createState`), `changes` completes, and so does `renders`, without error.
 
-**Packaging.** `@valancex/mesh-runtime` is a regular dependency. Splitting the adapter into an optional subpath or package is deferred until there's a demonstrated need to support NEXUS installations that don't use MESH (§26, decision 8).
+**Packaging.** `@valancex/mesh-runtime` is a peer dependency (from v0.10.3; it was a regular dependency before): the application supplies the one MESH runtime, which is also the one it initializes in a browser. Splitting the adapter into an optional subpath or package is deferred until there's a demonstrated need to support NEXUS installations that don't use MESH (§26, decision 8).
 
 The binding table is the only way MPRX reaches behavior. MPRX must not be able to: call arbitrary Effect, access arbitrary Service, instantiate Resource, perform hardware operations, mutate State directly, execute arbitrary TypeScript.
 
