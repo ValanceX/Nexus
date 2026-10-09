@@ -6,6 +6,8 @@ import { admitting, isolated, makeLifecycle, recordOf, refusal, register, termin
 import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
+export { isRefusal, Refusal } from "./internal.js";
+export type { RefusalReason } from "./internal.js";
 
 export type RuntimeInitError = {
   readonly _tag: "LayerBuildFailed";
@@ -47,10 +49,10 @@ const runtimeFor = <R>(nexusRuntime: NexusRuntime<R>): EffectRuntime.Runtime<R> 
   const record = recordOf(nexusRuntime);
 
   if (record === undefined) {
-    return refusal("not a runtime NEXUS made");
+    return refusal("not-a-runtime");
   }
 
-  return admitting(record.lifecycle) ? record.runtime as EffectRuntime.Runtime<R> : refusal("the runtime has begun terminating");
+  return admitting(record.lifecycle) ? record.runtime as EffectRuntime.Runtime<R> : refusal("terminating");
 };
 
 export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A> => {

@@ -61,8 +61,57 @@ export const recordOf = (handle: NexusRuntime<never>): RuntimeRecord | undefined
 
 export const scopeOf = (handle: NexusRuntime<never>): Scope.Scope | undefined => recordOf(handle)?.lifecycle.scope;
 
-/** The one defect value for lifecycle and handle misuse. Deliberately not a public error type. */
-export const refusal = (reason: string): Error => new Error(`NEXUS: ${reason}`);
+/** Why NEXUS refused: the stable identity of a refusal. */
+export type RefusalReason =
+  /** Termination has been requested, so no new work is admitted. */
+  | "terminating"
+  /** The handle is not a runtime NEXUS made. */
+  | "not-a-runtime"
+  /** The handle is not an application NEXUS started. */
+  | "not-an-application";
+
+const REFUSAL: unique symbol = Symbol.for("@valancex/nexus/Refusal") as never;
+
+const REFUSALS: Record<RefusalReason, string> = {
+  terminating: "the runtime has begun terminating",
+  "not-a-runtime": "not a runtime NEXUS made",
+  "not-an-application": "not an application NEXUS started",
+};
+
+/**
+ * The defect lifecycle and handle misuse die with. It is a defect, never a
+ * typed failure (the `E` channel is for what a caller handles; using a handle
+ * after termination began is misuse, and a command racing a shutdown is not
+ * something its caller can fix). It carries a stable `reason`, so a caller can
+ * tell the causes apart without reading the message.
+ */
+export class Refusal extends Error {
+  readonly reason: RefusalReason;
+  /** Marks the value as a refusal across copies of the package. */
+  readonly [REFUSAL]: true = true;
+
+  constructor(reason: RefusalReason) {
+    super(`NEXUS: ${REFUSALS[reason]}`);
+    this.reason = reason;
+  }
+}
+
+/**
+ * Whether `value`, usually a defect taken from a `Cause`, is a refusal. It
+ * reads the value's shape, not its class, so it still works when two copies of
+ * the package are installed.
+ */
+export const isRefusal = (value: unknown): value is Refusal => {
+  if (!(value instanceof Error) || (value as unknown as Record<symbol, unknown>)[REFUSAL] !== true) {
+    return false;
+  }
+
+  const reason: unknown = (value as Error & { reason?: unknown }).reason;
+
+  return typeof reason === "string" && Object.hasOwn(REFUSALS, reason);
+};
+
+export const refusal = (reason: RefusalReason): Refusal => new Refusal(reason);
 
 /**
  * Runs `effect` in a child fiber of the calling fiber, and returns its result,
@@ -162,7 +211,7 @@ export const admit = <A, E>(handle: NexusRuntime<never>, effect: Effect.Effect<A
   const record = recordOf(handle);
 
   if (record === undefined) {
-    return Effect.die(refusal("not a runtime NEXUS made"));
+    return Effect.die(refusal("not-a-runtime"));
   }
 
   const { lifecycle } = record;
@@ -176,7 +225,7 @@ export const admit = <A, E>(handle: NexusRuntime<never>, effect: Effect.Effect<A
   // admitted effect is always uncounted however it ends.
   return Effect.uninterruptibleMask((restore) => Effect.suspend(() => {
     if (!admitting(lifecycle)) {
-      return Effect.die(refusal("the runtime has begun terminating"));
+      return Effect.die(refusal("terminating"));
     }
 
     lifecycle.state.admitted += 1;

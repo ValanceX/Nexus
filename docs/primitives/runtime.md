@@ -165,6 +165,16 @@ closing), `run` and `runFork` don't start the effect: the call ends as a defect,
 `run`'s `Promise` rejects, and `runFork`'s fiber exits with a die. A handle
 NEXUS didn't make is refused the same way.
 
+The defect is a `Runtime.Refusal`, an `Error` whose `reason` is stable:
+`"terminating"` (termination has been requested), `"not-a-runtime"` (a handle
+NEXUS didn't make) or `"not-an-application"` (the same, for an application
+handle). `Runtime.isRefusal(defect)` recognizes one, including across two
+installed copies of the package. Match on `reason`, never on the message. It
+stays a defect and never a typed failure: using a handle after termination
+began is misuse, and an `E` channel on every `run` for it would make each
+caller handle what it cannot fix. A command that races a shutdown reads the
+reason from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug.
+
 ## Rules
 
 - `Runtime.make` must fully build the service graph (`Layer` to
