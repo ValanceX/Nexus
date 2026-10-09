@@ -158,7 +158,9 @@ v0.8 outline C24–C28). There are two kinds:
   `ServiceGraphFailed`.
 - **An admitted unit** is an effect run through `Runtime.run` or
   `Runtime.runFork`, typically a command. Without the capability, only that
-  effect fails, and the application keeps running.
+  effect fails, and the application keeps running. (The word names what a
+  requirement attaches to; termination does not wait for these effects, see
+  [runtime.md](./runtime.md).)
 
 Each unit is described by one standalone declaration. No `Capability`,
 `Command`, `Service` tag, `Layer` or application definition carries a

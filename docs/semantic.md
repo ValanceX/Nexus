@@ -353,7 +353,7 @@ v0.8 decides what owns a requirement, and what "an application's requirements" m
 
 **Units own requirements.** A *unit* is a part of an application that NEXUS executes as a whole, at one execution position. One declaration describes one unit. There are two kinds:
 - **The start unit** is the application's service graph build: its `runtime` Layer, built by `Application.start` after the platform. If it can't get a capability it needs, `start` fails with `ServiceGraphFailed`.
-- **An admitted unit** is an effect run through `Runtime.run` or `Runtime.runFork` while the application runs, typically a command. If it can't get a capability it needs, only that effect fails.
+- **An admitted unit** is an effect run through `Runtime.run` or `Runtime.runFork` while the application runs, typically a command. If it can't get a capability it needs, only that effect fails. ("Admitted" is this model's word for what a requirement attaches to. It is not a promise about shutdown: termination does not wait for these effects; see [runtime.md](./primitives/runtime.md).)
 
 Primitive values (`Application`, `Command`, a `Service` tag, a `Layer`) carry no requirement. A unit is described by exactly one declaration: a second declaration with the same `id` is rejected (`duplicate-identity`), and merging several statements about one unit is the producer's job.
 

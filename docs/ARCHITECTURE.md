@@ -265,7 +265,9 @@ Concretely: a `NexusRuntime` is an **opaque handle**. Callers pass it to
 `Runtime.run`/`Runtime.runFork`, and nothing reachable from it is the
 Effect runtime, the service `Context` or the runtime's `Scope`. A runtime
 terminates once, in a fixed order: the request stops admitting new work at
-once, termination waits for work already admitted, begins (for an
+once, termination waits for work NEXUS itself admitted (such as an
+application-owned `State` being created, not effects run with `Runtime.run`
+or `runFork`), begins (for an
 application, entering `Stopping`), closes its event bus, then releases its
 resources. An application's runtime can't be shut
 down directly; a standalone runtime from `Runtime.make` ends when its
