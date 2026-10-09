@@ -14,7 +14,7 @@ What each public surface of NEXUS promises. The tiers have one meaning each. (ME
 | Surface | Tier |
 |---|---|
 | `Application`, `Runtime` (`make`, `run`, `runFork`), `Service`, `State`, `Selector`, `Command`, `Capability`, `Resource`, `Event` (`define`, `publish`, `subscribe`), `Runtime.Refusal`, `Runtime.isRefusal`, the type `Runtime.RefusalCode` and the refusal `code`s (since 0.11.0) | Stable |
-| `Runtime.refusalOf`; `Selector.combine(...).changes` emitting on the first commit of either input (it waited for both before) | Unreleased |
+| `Runtime.refusalOf`; `Selector.combine(...).changes` emitting on the first commit of either input (it waited for both before) (since 0.12.0) | Stable |
 | `Mesh` (the MESH host adapter, with its optional peer `@valancex/mesh-runtime`) | Stable |
 | `Semantic` (`build`, `analyze` and its types) | Provisional |
 | `Event.EventBusShape`, `Event.EventBusLive` | Internal: plumbing. A layer may name the bus as a requirement (`Layer.Layer<R, E, EventBusShape>`), and that use is supported, but the shape itself may change in any release |

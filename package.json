@@ -1,6 +1,6 @@
 {
   "name": "@valancex/nexus",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Valance application/runtime logic layer — orchestration, domain logic, commands, state, and capability resolution.",
   "type": "module",
   "license": "MIT",
@@ -41,7 +41,7 @@
     "effect": "^3.10.0"
   },
   "peerDependencies": {
-    "@valancex/mesh-runtime": "^0.8.0 || ^0.9.0"
+    "@valancex/mesh-runtime": "^0.8.0 || ^0.9.0 || ^0.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
