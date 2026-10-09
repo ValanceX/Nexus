@@ -7,7 +7,7 @@ import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
 export { isRefusal, Refusal } from "./internal.js";
-export type { RefusalReason } from "./internal.js";
+export type { RefusalCode } from "./internal.js";
 
 export type RuntimeInitError = {
   readonly _tag: "LayerBuildFailed";

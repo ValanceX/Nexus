@@ -61,8 +61,8 @@ export const recordOf = (handle: NexusRuntime<never>): RuntimeRecord | undefined
 
 export const scopeOf = (handle: NexusRuntime<never>): Scope.Scope | undefined => recordOf(handle)?.lifecycle.scope;
 
-/** Why NEXUS refused: the stable identity of a refusal. */
-export type RefusalReason =
+/** The stable identity of a refusal: why NEXUS refused. */
+export type RefusalCode =
   /** Termination has been requested, so no new work is admitted. */
   | "terminating"
   /** The handle is not a runtime NEXUS made. */
@@ -72,7 +72,7 @@ export type RefusalReason =
 
 const REFUSAL: unique symbol = Symbol.for("@valancex/nexus/Refusal") as never;
 
-const REFUSALS: Record<RefusalReason, string> = {
+const REFUSALS: Record<RefusalCode, string> = {
   terminating: "the runtime has begun terminating",
   "not-a-runtime": "not a runtime NEXUS made",
   "not-an-application": "not an application NEXUS started",
@@ -82,17 +82,17 @@ const REFUSALS: Record<RefusalReason, string> = {
  * The defect lifecycle and handle misuse die with. It is a defect, never a
  * typed failure (the `E` channel is for what a caller handles; using a handle
  * after termination began is misuse, and a command racing a shutdown is not
- * something its caller can fix). It carries a stable `reason`, so a caller can
+ * something its caller can fix). It carries a stable `code` (as the other packages' thrown errors do; `_tag` stays for typed failures in the `E` channel), so a caller can
  * tell the causes apart without reading the message.
  */
 export class Refusal extends Error {
-  readonly reason: RefusalReason;
+  readonly code: RefusalCode;
   /** Marks the value as a refusal across copies of the package. */
   readonly [REFUSAL]: true = true;
 
-  constructor(reason: RefusalReason) {
-    super(`NEXUS: ${REFUSALS[reason]}`);
-    this.reason = reason;
+  constructor(code: RefusalCode) {
+    super(`NEXUS: ${REFUSALS[code]}`);
+    this.code = code;
   }
 }
 
@@ -106,12 +106,12 @@ export const isRefusal = (value: unknown): value is Refusal => {
     return false;
   }
 
-  const reason: unknown = (value as Error & { reason?: unknown }).reason;
+  const code: unknown = (value as Error & { code?: unknown }).code;
 
-  return typeof reason === "string" && Object.hasOwn(REFUSALS, reason);
+  return typeof code === "string" && Object.hasOwn(REFUSALS, code);
 };
 
-export const refusal = (reason: RefusalReason): Refusal => new Refusal(reason);
+export const refusal = (code: RefusalCode): Refusal => new Refusal(code);
 
 /**
  * Runs `effect` in a child fiber of the calling fiber, and returns its result,

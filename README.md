@@ -126,6 +126,7 @@ Requires Node 22 or later. Published to npm as [`@valancex/nexus`](https://www.n
 
 - [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
 - [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
+- [**API stability**](./docs/stability.md): what each public surface promises
 - [**Semantic analysis**](./docs/semantic.md): the semantic model, `Semantic.build`, the IR and `Semantic.analyze`
 - [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, the platform capability model in v0.7, application semantics in v0.8, and caller isolation, from VALANCE integration readiness, in v0.9. The cross-package evidence is in the [integration audit](./docs/architecture/2026-09-28-valance-integration-audit.md)
 

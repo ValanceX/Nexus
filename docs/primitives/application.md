@@ -132,7 +132,7 @@ completes normally. Only the call that performed the termination, the
 the release's original failure, as a defect. `createState`'s only typed error is
 `StateInitError`, for an invalid initial value. Using an application whose
 termination has begun is misuse, and is reported as a defect (a
-`Runtime.Refusal` with a stable `reason`), never a typed error: `createState` is refused (it creates no `State`), and so is work run
+`Runtime.Refusal` with a stable `code`), never a typed error: `createState` is refused (it creates no `State`), and so is work run
 through its `runtime` (see [runtime.md](./runtime.md)).
 
 ## Rules

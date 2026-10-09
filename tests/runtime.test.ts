@@ -343,7 +343,7 @@ describe("Runtime termination and work started with runFork", () => {
 });
 
 describe("Runtime refusals", () => {
-  it("are defects that carry a stable reason, whatever the message says", async () => {
+  it("are defects that carry a stable code, whatever the message says", async () => {
     const reasons = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runtime = yield* Runtime.make(ClockLive);
       const foreign = yield* Fiber.await(Runtime.runFork({} as never, Effect.void));
@@ -352,7 +352,7 @@ describe("Runtime refusals", () => {
       const reasonOf = (exit: Exit.Exit<unknown, unknown>) => {
         if (Exit.isSuccess(exit)) { return "succeeded"; }
         const defect = Cause.dieOption(exit.cause);
-        return Option.isSome(defect) && Runtime.isRefusal(defect.value) ? defect.value.reason : "not a refusal";
+        return Option.isSome(defect) && Runtime.isRefusal(defect.value) ? defect.value.code : "not a refusal";
       };
       return [reasonOf(foreign), reasonOf(late)];
     })));
