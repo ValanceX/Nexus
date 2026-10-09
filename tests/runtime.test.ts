@@ -317,3 +317,27 @@ describe("Runtime", () => {
     });
   });
 });
+
+describe("Runtime termination and work started with runFork", () => {
+  it("does not wait for a running effect: the effect carries on after termination completes", async () => {
+    const log: Array<string> = [];
+
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const runtime = yield* Runtime.make(ClockLive);
+      const gate = yield* Deferred.make<void>();
+
+      Runtime.runFork(runtime, Effect.gen(function* () {
+        log.push("started");
+        yield* Deferred.await(gate);
+        log.push("finished");
+      }));
+      yield* Effect.sleep(10);
+      yield* terminate(runtime);
+      log.push("terminated");
+      yield* Deferred.succeed(gate, undefined);
+      yield* Effect.sleep(10);
+    })));
+
+    expect(log).toEqual(["started", "terminated", "finished"]);
+  });
+});

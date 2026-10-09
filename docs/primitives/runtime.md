@@ -182,7 +182,12 @@ NEXUS didn't make is refused the same way.
   completes normally, and only the caller that performed the termination
   re-raises the release's original failure, as a defect.
 - Effects already running when termination begins are not interrupted by
-  it; only new work is refused.
+  it; only new work is refused. Termination does **not wait** for them
+  either: it closes the runtime's `Scope` while they run, so a `Resource`
+  they use can be released under them. Work started with `runFork` that must
+  finish first should be awaited (`Fiber.await`) before the runtime is
+  terminated. Only work admitted by NEXUS itself, such as an
+  application-owned `State` being created, is waited for.
 - `Runtime` must never expose the Effect `Runtime`, the service `Context`
   or its `Scope` — no ambient lookup outside `Service`/`Capability`
   resolution. See §5's "must not become a global service locator."

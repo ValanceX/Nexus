@@ -118,7 +118,7 @@ every `State.update` call.
 ```ts
 const UserState = Schema.Struct({
   users: Schema.Array(User),
-  selectedUser: Schema.OptionFromNullOr(UserId),
+  selectedUser: Schema.OptionFromSelf(UserId),
   loading: Schema.Boolean,
 });
 
