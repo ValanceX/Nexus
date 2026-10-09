@@ -317,3 +317,48 @@ describe("Runtime", () => {
     });
   });
 });
+
+describe("Runtime termination and work started with runFork", () => {
+  it("does not wait for a running effect: the effect carries on after termination completes", async () => {
+    const log: Array<string> = [];
+
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const runtime = yield* Runtime.make(ClockLive);
+      const gate = yield* Deferred.make<void>();
+
+      Runtime.runFork(runtime, Effect.gen(function* () {
+        log.push("started");
+        yield* Deferred.await(gate);
+        log.push("finished");
+      }));
+      yield* Effect.sleep(10);
+      yield* terminate(runtime);
+      log.push("terminated");
+      yield* Deferred.succeed(gate, undefined);
+      yield* Effect.sleep(10);
+    })));
+
+    expect(log).toEqual(["started", "terminated", "finished"]);
+  });
+});
+
+describe("Runtime refusals", () => {
+  it("are defects that carry a stable code, whatever the message says", async () => {
+    const reasons = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const runtime = yield* Runtime.make(ClockLive);
+      const foreign = yield* Fiber.await(Runtime.runFork({} as never, Effect.void));
+      yield* terminate(runtime);
+      const late = yield* Fiber.await(Runtime.runFork(runtime, Effect.void));
+      const reasonOf = (exit: Exit.Exit<unknown, unknown>) => {
+        if (Exit.isSuccess(exit)) { return "succeeded"; }
+        const defect = Cause.dieOption(exit.cause);
+        return Option.isSome(defect) && Runtime.isRefusal(defect.value) ? defect.value.code : "not a refusal";
+      };
+      return [reasonOf(foreign), reasonOf(late)];
+    })));
+
+    expect(reasons).toEqual(["not-a-runtime", "terminating"]);
+    expect(Runtime.isRefusal(new Error("NEXUS: the runtime has begun terminating"))).toBe(false);
+    expect(Runtime.isRefusal(new Runtime.Refusal("terminating"))).toBe(true);
+  });
+});

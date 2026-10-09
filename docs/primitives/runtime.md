@@ -165,6 +165,16 @@ closing), `run` and `runFork` don't start the effect: the call ends as a defect,
 `run`'s `Promise` rejects, and `runFork`'s fiber exits with a die. A handle
 NEXUS didn't make is refused the same way.
 
+The defect is a `Runtime.Refusal`, an `Error` whose `code` is stable:
+`"terminating"` (termination has been requested), `"not-a-runtime"` (a handle
+NEXUS didn't make) or `"not-an-application"` (the same, for an application
+handle). `Runtime.isRefusal(defect)` recognizes one, including across two
+installed copies of the package. Match on `code`, never on the message. (Thrown and defect errors carry `code`; typed failures in the `E` channel carry `_tag`.) It
+stays a defect and never a typed failure: using a handle after termination
+began is misuse, and an `E` channel on every `run` for it would make each
+caller handle what it cannot fix. A command that races a shutdown reads the
+code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug.
+
 ## Rules
 
 - `Runtime.make` must fully build the service graph (`Layer` to
@@ -182,7 +192,12 @@ NEXUS didn't make is refused the same way.
   completes normally, and only the caller that performed the termination
   re-raises the release's original failure, as a defect.
 - Effects already running when termination begins are not interrupted by
-  it; only new work is refused.
+  it; only new work is refused. Termination does **not wait** for them
+  either: it closes the runtime's `Scope` while they run, so a `Resource`
+  they use can be released under them. Work started with `runFork` that must
+  finish first should be awaited (`Fiber.await`) before the runtime is
+  terminated. Only work admitted by NEXUS itself, such as an
+  application-owned `State` being created, is waited for.
 - `Runtime` must never expose the Effect `Runtime`, the service `Context`
   or its `Scope` — no ambient lookup outside `Service`/`Capability`
   resolution. See §5's "must not become a global service locator."

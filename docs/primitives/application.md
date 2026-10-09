@@ -131,8 +131,8 @@ completes normally. Only the call that performed the termination, the
 `shutdown` or the closing of the start scope that claimed it, then re-raises
 the release's original failure, as a defect. `createState`'s only typed error is
 `StateInitError`, for an invalid initial value. Using an application whose
-termination has begun is misuse, and is reported as a defect, never a typed
-error: `createState` is refused (it creates no `State`), and so is work run
+termination has begun is misuse, and is reported as a defect (a
+`Runtime.Refusal` with a stable `code`), never a typed error: `createState` is refused (it creates no `State`), and so is work run
 through its `runtime` (see [runtime.md](./runtime.md)).
 
 ## Rules

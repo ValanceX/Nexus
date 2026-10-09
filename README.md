@@ -110,6 +110,8 @@ $ pnpm build
 
 **v0.9: caller isolation.** An application's platform and its layers can't change the code that starts, stops or observes it. FiberRefs flow into the application, never back. That covers Effect's default services (`Clock`, `Random`, `ConfigProvider`, …), log levels and any `Layer.locallyScoped`, across `start`, shutdown, `Runtime.run` and the handle `Runtime.runFork` returns, whose `Fiber.join` no longer imports the application's FiberRefs. No API changes; it is a behavioral guarantee. It was proven in a real Chromium composition of MESH, NEXUS and PORT. See the [release notes](./docs/releases/v0.9.md).
 
+**v0.11.0:** `Runtime.Refusal`, `Runtime.isRefusal` and the type `Runtime.RefusalCode`: the defect NEXUS dies with when a handle is misused or used after termination began now carries a stable `code` (`"terminating"`, `"not-a-runtime"` or `"not-an-application"`), so a command racing a shutdown can tell this from a bug without reading a message. It is still a defect, never a typed failure. Nothing else changes in behavior. Also: a statement of what shutdown does not wait for, and an [API stability](./docs/stability.md) page. See the [release notes](./docs/releases/v0.11.md).
+
 **v0.10.3:** `@valancex/mesh-runtime` is now a peer dependency (`^0.8.0 || ^0.9.0`), not a dependency, so an application on any listed MESH line has exactly one MESH runtime, the one it supplies and initializes. No API changes. An application must now install the runtime itself. See the [release notes](./docs/releases/v0.10.3.md).
 
 **v0.10.2:** MESH v0.8's runtime (`@valancex/mesh-runtime` `^0.8.0`), so an application on MESH v0.8 has one MESH runtime, not a second v0.7 one inside `Mesh.host`. No API changes. See the [release notes](./docs/releases/v0.10.2.md).
@@ -126,6 +128,7 @@ Requires Node 22 or later. Published to npm as [`@valancex/nexus`](https://www.n
 
 - [**Architecture**](./docs/ARCHITECTURE.md): the design, the reasoning behind each primitive, and the rules that keep NEXUS independent
 - [**Primitives reference**](./docs/primitives/README.md): detailed API docs for each building block
+- [**API stability**](./docs/stability.md): what each public surface promises
 - [**Semantic analysis**](./docs/semantic.md): the semantic model, `Semantic.build`, the IR and `Semantic.analyze`
 - [**Roadmap**](./docs/ROADMAP.md): v0.5 to v1.0; the runtime/platform boundary shipped in v0.6, the platform capability model in v0.7, application semantics in v0.8, and caller isolation, from VALANCE integration readiness, in v0.9. The cross-package evidence is in the [integration audit](./docs/architecture/2026-09-28-valance-integration-audit.md)
 

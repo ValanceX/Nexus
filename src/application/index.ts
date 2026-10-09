@@ -111,7 +111,7 @@ export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Ef
     const record = recordOf(runtime);
 
     return record === undefined
-      ? Effect.die(refusal("not a runtime NEXUS made"))
+      ? Effect.die(refusal("not-a-runtime"))
       : Effect.succeed(Context.get(record.runtime.context as Context.Context<Capability.EnvironmentShape>, Capability.Environment));
   }),
   Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Running" })),
@@ -138,7 +138,7 @@ export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Ef
 export const shutdown = <R>(running: RunningApplication<R>): Effect.Effect<void> => {
   const record = apps.get(running);
 
-  return record === undefined ? Effect.die(refusal("not an application NEXUS started")) : terminate(record.runtime);
+  return record === undefined ? Effect.die(refusal("not-an-application")) : terminate(record.runtime);
 };
 
 export const status = <R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus> => running.status;
@@ -156,6 +156,6 @@ export const createState = <R, A>(running: RunningApplication<R>, schema: Schema
   const scope = scopeOf(running.runtime);
 
   return scope === undefined || !apps.has(running)
-    ? Effect.die(refusal("not an application NEXUS started"))
+    ? Effect.die(refusal("not-an-application"))
     : admit(running.runtime, Scope.extend(State.create(schema, initial), scope));
 };

@@ -7,7 +7,7 @@ import * as Nexus from "../src/index.js";
 // so none of these change.
 const expected = {
   Application: ["createState", "define", "shutdown", "start", "status"],
-  Runtime: ["make", "run", "runFork"],
+  Runtime: ["Refusal", "isRefusal", "make", "run", "runFork"],
   Service: ["define", "layer", "layerSync"],
   State: ["create", "get", "set", "update"],
   Selector: ["combine", "define"],
