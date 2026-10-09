@@ -2,6 +2,8 @@
 
 > **In plain terms:** You describe an operation in plain data — what it is, where it was declared, and which capabilities it can't work without. NEXUS checks that description against a profile you supply, which states what one provider provides, and tells you, before anything runs, whether the operation is **supported**, **opaque** (NEXUS can't tell) or **incompatible** (proven not to work with that provider). In v0.7 the provider is a *platform*, and the capabilities are application capabilities, named by their `id` (see Targets and bindings).
 
+> **Stability: Provisional.** `Semantic` can change its shape in a release, with the change named in the release notes. See [API stability](./stability.md).
+
 `Semantic` is not a primitive. It is the semantic analysis foundation added in v0.4 and given a validated IR in v0.5 (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) §16.1, the [v0.4 outline](./superpowers/specs/2026-09-26-nexus-v0.4-outline.md) and the [v0.5 outline](./superpowers/specs/2026-09-26-nexus-v0.5-outline.md)). It is a leaf module: it imports nothing, nothing in NEXUS but the package entry imports it, and nothing it produces changes how anything executes.
 
 ## Responsibility

@@ -8,7 +8,6 @@ What each public surface of NEXUS promises. The tiers have one meaning each. (ME
 | **Unreleased** | On the development branch and not in any release. Complete and tested, but it may change before one. |
 | **Provisional** | Named so in the documentation. Its shape is not final, even after a release. |
 | **Internal** | Not a contract. Exists because something else needs it; may change in any release without notice. |
-| **Unclassified** | Public, but the owner has not yet said which tier it is in. Treat as Provisional until it is classified. |
 
 ## By surface
 
@@ -17,8 +16,8 @@ What each public surface of NEXUS promises. The tiers have one meaning each. (ME
 | `Application`, `Runtime` (`make`, `run`, `runFork`), `Service`, `State`, `Selector`, `Command`, `Capability`, `Resource`, `Event` (`define`, `publish`, `subscribe`) | Stable |
 | `Runtime.Refusal`, `Runtime.isRefusal`, the type `Runtime.RefusalCode`, and the refusal `code`s | Unreleased |
 | `Mesh` (the MESH host adapter, with its optional peer `@valancex/mesh-runtime`) | Stable |
-| `Event.EventBusShape`, `Event.EventBusLive` | Unclassified (documented as plumbing a layer may need to name the bus) |
-| `Semantic` (`build`, `analyze` and its types) | Unclassified |
+| `Semantic` (`build`, `analyze` and its types) | Provisional |
+| `Event.EventBusShape`, `Event.EventBusLive` | Internal: plumbing. A layer may name the bus as a requirement (`Layer.Layer<R, E, EventBusShape>`), and that use is supported, but the shape itself may change in any release |
 | Anything under `dist/` that the package's `exports` doesn't list | Internal |
 
 An error's stable identity is its `code` when it is thrown or dies (`Runtime.Refusal`), and its `_tag` when it is a typed failure in the `E` channel.
