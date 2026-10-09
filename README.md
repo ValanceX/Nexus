@@ -77,7 +77,7 @@ Install from npm:
 $ pnpm add @valancex/nexus
 ```
 
-An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.8.0 || ^0.9.0 || ^0.10.0`.
+An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.10.0`.
 
 To work on NEXUS itself, from a clone:
 
@@ -92,7 +92,7 @@ $ pnpm build
 
 Current version: 0.12.0. Newest first.
 
-**v0.12 (prepared 2026-10-09; not yet released: v0.11.0 is the latest release):** `Runtime.refusalOf(cause)`, which finds a `Refusal` in the rejection `Runtime.run` gives (the `FiberFailure` that wraps the `Cause`) so a caller does not unwrap it by hand; `Selector.combine(...).changes` now emits on the first commit of either input (it waited for both before); and MESH 0.10 joins the `@valancex/mesh-runtime` peer range. See the [release notes](./docs/releases/v0.12.md).
+**v0.12 (prepared 2026-10-09; not yet released: v0.11.0 is the latest release):** `Runtime.refusalOf(cause)`, which finds a `Refusal` in the rejection `Runtime.run` gives (the `FiberFailure` that wraps the `Cause`) so a caller does not unwrap it by hand; `Selector.combine(...).changes` now emits on the first commit of either input (it waited for both before); `Mesh.update`, MESH 0.10's incremental render through the adapter; and the `@valancex/mesh-runtime` peer range becomes `^0.10.0`. See the [release notes](./docs/releases/v0.12.md).
 
 **v0.11:** `Runtime.Refusal`, `Runtime.isRefusal` and the type `Runtime.RefusalCode`: the defect NEXUS dies with when a handle is misused or used after termination began now carries a stable `code` (`"terminating"`, `"not-a-runtime"` or `"not-an-application"`), so a command racing a shutdown can tell this from a bug without reading a message. It is still a defect, never a typed failure. Nothing else changes in behavior. Also: a statement of what shutdown does not wait for, and an [API stability](./docs/stability.md) page. See the [release notes](./docs/releases/v0.11.md).
 

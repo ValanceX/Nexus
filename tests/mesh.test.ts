@@ -503,3 +503,32 @@ describe("MESH adapter (spec §8)", () => {
     }, { platform });
   });
 });
+
+// ---------------------------------------------------------------------------
+// `Mesh.update` (v0.12): the runtime's incremental operation through the adapter, nothing more.
+
+describe("Mesh.update", () => {
+  const snapshotOf = (team: Team): Record<string, unknown> => shaped(team) as unknown as Record<string, unknown>;
+
+  it("gives the new render and the patches that turn the previous tree into its tree, and the new render dispatches", async () => {
+    const host = Mesh.host({ program, scope: { value: Effect.succeed(snapshotOf(initialTeam)), changes: Stream.empty, values: Stream.make(snapshotOf(initialTeam)) }, commands: {} });
+    const previous = await Effect.runPromise(host.render);
+    const next = { ...initialTeam, title: "Renamed" };
+    const updated = await Effect.runPromise(Mesh.update(previous, snapshotOf(next)));
+    const fresh = await Effect.runPromise(Mesh.host({ program, scope: { value: Effect.succeed(snapshotOf(next)), changes: Stream.empty, values: Stream.make(snapshotOf(next)) }, commands: {} }).render);
+
+    expect(updated.render.tree).toEqual(fresh.tree);
+    expect(updated.patches.format).toBe("mesh-render-patch");
+    expect(updated.patches.patches.length).toBeGreaterThan(0);
+    expect(updated.patches.patches.length).toBeLessThan(5);
+  });
+
+  it("a snapshot MESH refuses is MeshDiagnostics, and the previous render is untouched", async () => {
+    const host = Mesh.host({ program, scope: { value: Effect.succeed(snapshotOf(initialTeam)), changes: Stream.empty, values: Stream.make(snapshotOf(initialTeam)) }, commands: {} });
+    const previous = await Effect.runPromise(host.render);
+    const exit = await Effect.runPromiseExit(Mesh.update(previous, { title: 1 } as unknown as Record<string, unknown>));
+
+    expect(Exit.isFailure(exit) && Cause.failureOption(exit.cause).pipe(Option.map((failure) => failure._tag))).toEqual(Option.some("MeshDiagnostics"));
+    expect(previous.tree).toEqual((await Effect.runPromise(host.render)).tree);
+  });
+});
