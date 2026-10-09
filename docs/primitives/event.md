@@ -37,16 +37,17 @@ and it is available for runtime validation or serialization wherever events
 cross a boundary that needs it (persistence, synchronization, or a consumer
 receiving events from an untyped source). `publish` doesn't use it.
 
-`EventBusShape` is the bus service's type. It's exported so a layer can
-name the bus as a requirement (`Layer.Layer<R, E, EventBusShape>`); its
-members are plumbing. Code publishes and subscribes through `Event.publish`
+`EventBusShape` is the bus service's type, and `EventBusLive` a bus layer. Both are
+**Internal** ([API stability](../stability.md)): exported so a layer can name the bus as a
+requirement (`Layer.Layer<R, E, EventBusShape>`), which is supported, but their members are
+plumbing and may change in any release. Code publishes and subscribes through `Event.publish`
 and `Event.subscribe`.
 
 The bus is deliberately small and scoped — one per runtime (built alongside
 it, closed with it), not a process-global singleton. There is exactly one
-bus per running application; there is no API for creating additional
+bus per running application; there is no supported API for creating additional
 independent buses until a concrete need for that appears (§12, §2.1).
-`EventBusLive` is a standalone bus that closes with its layer's scope.
+`EventBusLive` (Internal) is a standalone bus that closes with its layer's scope.
 
 ## API
 
@@ -73,6 +74,11 @@ of an event can fail, that failure belongs to the subscriber's own effect
 that itself), not to `publish`.
 
 ## Rules
+
+- **Subscription starts when the stream is run, not when `Event.subscribe` is called.** Events published before then are not delivered. Each run is an independent subscription, and each receives every later event in publish order.
+- **Tag uniqueness.** `subscribe` matches on `_tag` only. Two `EventDef`s with the same tag receive each other's payloads, unvalidated. Keep tags unique per application.
+- **Unbounded buffering.** The bus is an unbounded `PubSub` and each subscriber has an unbounded queue: a slow subscriber's queue grows without limit until the bus closes. With no subscribers nothing is retained.
+- **`publish` returns when the event is enqueued,** not when subscribers have handled it.
 
 - Events are typed and immutable. **`publish` is type-directed:** it accepts
   a `Payload` typed by its `EventDef`, and performs no runtime decode or

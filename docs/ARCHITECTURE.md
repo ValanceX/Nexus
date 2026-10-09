@@ -379,7 +379,7 @@ const selectedUser = Selector.define(
   state =>
     state.selectedUser.pipe(
       Option.flatMap(id =>
-        Array.findFirst(user => user.id === id)
+        Array.findFirst(state.users, user => user.id === id)
       )
     )
 );
@@ -975,12 +975,12 @@ const UserId = Schema.String.pipe(
 
 const UserState = Schema.Struct({
   users: Schema.Array(User),
-  selectedUser: Schema.OptionFromNullOr(UserId)
+  selectedUser: Schema.OptionFromSelf(UserId)
 });
 
-const Users = State.create(UserState, {
+const Users = yield* State.create(UserState, {
   users: [],
-  selectedUser: null
+  selectedUser: Option.none()
 });
 
 const UserRepository = Service.define("UserRepository");
@@ -993,7 +993,7 @@ const selectUser = Command.define(
   ({ userId }) =>
     State.update(
       Users,
-      state => ({
+      state => Effect.succeed({
         ...state,
         selectedUser: Option.some(userId)
       })
@@ -1346,7 +1346,7 @@ decision" rule:
 8. **MESH host adapter invariants and packaging** (v0.2). M1–M4 in §15 are
    normative. `renders` fails terminally on a render diagnostic, which is a
    NEXUS stream contract, not a MESH one. `@valancex/mesh-runtime` is a regular
-   dependency, and splitting the adapter into an optional subpath or package
+   dependency (superseded: a peer dependency from v0.10.3), and splitting the adapter into an optional subpath or package
    is deferred until there's a demonstrated need to support NEXUS installations
    that don't use MESH. This is a v0.2 scope decision, not a final long-term
    packaging choice.
@@ -1500,3 +1500,17 @@ decision" rule:
       - **Behavior:** a guarantee of v0.9. Code outside an application no
         longer sees FiberRefs set by a platform or an application layer, and
         `runFork`'s handle has its own `id()` and `status`.
+
+16. **Values, refusals and stability** (v0.10 and v0.11). `values` on `State`,
+    `Selector` and `Mesh.host` gives the current value and then every later
+    commit with no gap (v0.10). Misuse and use after termination began die with a
+    `Runtime.Refusal` defect carrying a stable `code` (`terminating`,
+    `not-a-runtime`, `not-an-application`); it stays a defect and never a typed
+    failure, because an `E` channel on every `run` would make each caller handle
+    what it cannot fix. The rule for error identity: a thrown or dying error carries
+    `code`, a typed failure in the `E` channel carries `_tag` (v0.11). Termination does
+    not wait for effects started with `Runtime.run` or `runFork`; it waits only for
+    work NEXUS itself admitted, and closes the scope under the rest. Public
+    surfaces have tiers (stable, unreleased, provisional, internal) in
+    [`stability.md`](./stability.md); `Semantic` is Provisional and the event-bus
+    plumbing Internal. A draining or interactive shutdown is not designed.

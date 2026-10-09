@@ -6,8 +6,9 @@ See [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §11. A `Resource` is a
 long-lived external resource requiring acquisition and release
 (WebSocket, DB connection, camera, worker, file handle, ...). It is never
 an `Application`-level managed object (§4) — it's acquired inside whichever
-`Service` implementation or `Command` effect needs it, scoped to
-`Runtime`'s application `Scope` (§5).
+`Service` implementation or `Command` effect needs it, scoped to the `Scope`
+of the layer that builds it (released at termination) or of the command's
+`Effect.scoped` (released when the command ends).
 
 ## Responsibility
 
@@ -58,8 +59,8 @@ failure already unwinding).
 
 - `acquire` must run in a `Scope` — never called bare at `Application`
   startup and held for the process lifetime "by convention"; the owning
-  `Scope` (a `Command`'s own scope, or the `Runtime`'s application scope
-  for something intentionally application-lifetime) is what makes release
+  `Scope` (a layer's, released at termination, or a `Command`'s own
+  `Effect.scoped`, released when the command ends) is what makes release
   automatic and interruption-safe.
 - `release` must run on every exit path: success, typed failure,
   interruption, and defect — this is what "must occur even when commands

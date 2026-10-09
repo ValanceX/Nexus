@@ -870,6 +870,8 @@ The first real integration should be treated as an architectural experiment.
 
 Status: v0.10.0 is released (docs/releases/v0.10.md) and ships one finding of the Valance integration: `values`, the current value and then every change, with no gap (`State`, `Selector`, `Mesh.Host`). It is not the whole of this section: the investigation list below is not closed. Patch releases v0.10.1 to v0.10.3 (2026-10-02 to 2026-10-05) only moved the MESH runtime dependency (v0.10.3 made it a peer); they changed no API.
 
+Status: v0.11.0 is released (docs/releases/v0.11.md, 2026-10-09): `Runtime.Refusal` and `isRefusal` (misuse and use-after-termination defects carry a stable `code`), the statement that termination does not wait for effects started with `run`/`runFork`, and an API stability page. No behavior change. A draining or interactive shutdown is not designed.
+
 v0.10 should capture what the experiment teaches.
 
 Investigate:

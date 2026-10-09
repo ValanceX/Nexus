@@ -49,6 +49,9 @@ namespace Runtime {
   function make<R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope>;
   function run<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A>;
   function runFork<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E>;
+  class Refusal extends Error { readonly code: RefusalCode }
+  function isRefusal(value: unknown): value is Refusal;
+  type RefusalCode = "terminating" | "not-a-runtime" | "not-an-application";
 }
 ```
 
@@ -173,7 +176,10 @@ installed copies of the package. Match on `code`, never on the message. (Thrown 
 stays a defect and never a typed failure: using a handle after termination
 began is misuse, and an `E` channel on every `run` for it would make each
 caller handle what it cannot fix. A command that races a shutdown reads the
-code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug.
+code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug. `run`'s `Promise` rejects with a
+`FiberFailure`, not with the `Refusal`, so `isRefusal(rejection)` is false there;
+to read the `code`, use `Fiber.await(Runtime.runFork(runtime, effect))` and
+`Cause.dieOption` on the failed `Exit`.
 
 ## Rules
 
@@ -186,11 +192,15 @@ code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug.
   created) to finish; begin (for an application, it enters `Stopping`);
   close the runtime's event bus, so no event is delivered after this point
   and every subscription ends normally; then close the runtime's `Scope`,
-  which releases every `Resource` (§11) acquired anywhere in that runtime,
-  including by commands that already completed. A termination that has
+  which releases every `Resource` (§11) acquired while the runtime's layers
+  (including the platform) were built. A `Resource` acquired inside a
+  command is released when that command's own `Scope` closes
+  (`Effect.scoped`), not at termination. A termination that has
   begun always completes, even when a release fails: every waiting caller
   completes normally, and only the caller that performed the termination
   re-raises the release's original failure, as a defect.
+- **Concurrent calls.** Calls to `run` and `runFork` run independently and unordered; the runtime serializes nothing. `Application.shutdown` is an Effect, asynchronous.
+- **"Admitted".** In this page "admitted" means work termination waits for (NEXUS's own, such as an application-owned `State` being created). The capability model's "admitted unit" (an effect run through `Runtime.run`) is a different thing and is not waited for.
 - Effects already running when termination begins are not interrupted by
   it; only new work is refused. Termination does **not wait** for them
   either: it closes the runtime's `Scope` while they run, so a `Resource`

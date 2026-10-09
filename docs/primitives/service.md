@@ -32,7 +32,7 @@ type Service<Shape> = Context.Tag<Shape, Shape>;
 ```ts
 namespace Service {
   function define<Shape>(name: string): Service<Shape>;
-  function layer<Shape, R = never, E = never>(service: Service<Shape>, implementation: Effect.Effect<Shape, E, R>): Layer.Layer<Shape, E, R>;
+  function layer<Shape, E = never, R = never>(service: Service<Shape>, implementation: Effect.Effect<Shape, E, R>): Layer.Layer<Shape, E, R>;
   function layerSync<Shape>(service: Service<Shape>, implementation: () => Shape): Layer.Layer<Shape>;
 }
 ```

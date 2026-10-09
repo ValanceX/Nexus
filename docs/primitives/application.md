@@ -103,6 +103,8 @@ stops the application exactly as `shutdown` does. `Application` does not
 manage process-level concerns (signal handling, `process.exit`) — that
 belongs to whatever embeds NEXUS.
 
+NEXUS offers no `Symbol.asyncDispose`: ownership is the `Scope` passed to `start`, and `shutdown` is an Effect. NEXUS logs nothing; failures reach the caller as typed errors or defects.
+
 `createState` creates **application-owned** `State`. It lives in the
 application runtime's own scope, so it ends when the application stops: its
 `changes`, and every selector and stream derived from it, complete normally.
