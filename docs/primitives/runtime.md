@@ -51,6 +51,7 @@ namespace Runtime {
   function runFork<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E>;
   class Refusal extends Error { readonly code: RefusalCode }
   function isRefusal(value: unknown): value is Refusal;
+  function refusalOf(value: unknown): Refusal | undefined;
   type RefusalCode = "terminating" | "not-a-runtime" | "not-an-application";
 }
 ```
@@ -177,9 +178,10 @@ stays a defect and never a typed failure: using a handle after termination
 began is misuse, and an `E` channel on every `run` for it would make each
 caller handle what it cannot fix. A command that races a shutdown reads the
 code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug. `run`'s `Promise` rejects with a
-`FiberFailure`, not with the `Refusal`, so `isRefusal(rejection)` is false there;
-to read the `code`, use `Fiber.await(Runtime.runFork(runtime, effect))` and
-`Cause.dieOption` on the failed `Exit`.
+`FiberFailure`, not with the `Refusal`, so `isRefusal(rejection)` is false there.
+`Runtime.refusalOf(value)` finds the refusal in any of the three places it can be: the
+`Refusal` itself, a `Cause` (take it from an `Exit`), or `run`'s rejection; it returns
+`undefined` for a bug or for anything else.
 
 ## Rules
 

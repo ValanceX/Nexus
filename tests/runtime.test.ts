@@ -362,3 +362,26 @@ describe("Runtime refusals", () => {
     expect(Runtime.isRefusal(new Runtime.Refusal("terminating"))).toBe(true);
   });
 });
+
+describe("Runtime.refusalOf", () => {
+  it("finds the refusal in run's rejection, in a Cause and in the refusal itself, and nothing in a bug", async () => {
+    const rejection = await Effect.runPromise(Effect.gen(function* () {
+      const runtime = yield* Runtime.make(ClockLive);
+
+      yield* terminate(runtime);
+
+      return yield* Effect.promise(() => Runtime.run(runtime, Effect.void).then(() => undefined, (error: unknown) => error));
+    }).pipe(Effect.scoped));
+
+    expect(Runtime.isRefusal(rejection)).toBe(false);
+    expect(Runtime.refusalOf(rejection)?.code).toBe("terminating");
+    expect(Runtime.refusalOf(Cause.die(new Runtime.Refusal("not-a-runtime")))?.code).toBe("not-a-runtime");
+    expect(Runtime.refusalOf(new Runtime.Refusal("terminating"))?.code).toBe("terminating");
+
+    const bug = await Effect.runPromise(Effect.promise(() => Effect.runPromise(Effect.die(new Error("a bug"))).then(() => undefined, (error: unknown) => error)));
+
+    expect(Runtime.refusalOf(bug)).toBeUndefined();
+    expect(Runtime.refusalOf("text")).toBeUndefined();
+    expect(Runtime.refusalOf(Cause.fail("typed"))).toBeUndefined();
+  });
+});

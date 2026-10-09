@@ -60,7 +60,7 @@ A selector's `changes` completes when its underlying `State`'s does.
 them (see [state.md](./state.md)). It projects on every commit like `changes` and doesn't deduplicate. For
 `combine`, each input's current value is atomic with that input's own subscription, so the combined stream always
 ends at the latest of both.
-`combine`'s streams complete when both inputs have completed. `combine.changes` emits only after every input has committed at least once; use `values` to start from the present.
+`combine`'s streams complete when both inputs have completed. `combine.changes` emits on every later commit of either input, combined with the other's latest value (the present is not emitted; `values` starts from it).
 
 ## Errors
 

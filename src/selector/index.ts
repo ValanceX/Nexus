@@ -18,7 +18,8 @@ export const define = <A, B>(state: StateHandle<A>, project: (a: A) => B): Selec
 
 export const combine = <A, B, C>(a: SelectorHandle<A>, b: SelectorHandle<B>, project: (a: A, b: B) => C): SelectorHandle<C> => ({
   value: Effect.zipWith(a.value, b.value, project),
-  changes: Stream.zipLatestWith(a.changes, b.changes, project),
+  // Every later commit of either input, combined with the other's latest value: the combined `values`, without its first element (the present).
+  changes: Stream.drop(Stream.zipLatestWith(a.values, b.values, project), 1),
   // Each side's current value is atomic with its own subscription, so the combination ends at the latest of both.
   values: Stream.zipLatestWith(a.values, b.values, project),
 });

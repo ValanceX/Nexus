@@ -62,6 +62,10 @@ failure already unwinding).
   `Scope` (a layer's, released at termination, or a `Command`'s own
   `Effect.scoped`, released when the command ends) is what makes release
   automatic and interruption-safe.
+  The type enforces it: `Resource.acquire` has `Scope` in its requirements, so
+  `Runtime.run` rejects it at compile time. Bypassing that (an untyped call) is not a
+  supported use: such a resource is released when the `Scope` that `Runtime.make` (or
+  `Application.start`) was given closes, not when the runtime terminates.
 - `release` must run on every exit path: success, typed failure,
   interruption, and defect — this is what "must occur even when commands
   fail... an effect is interrupted... initialization partially fails" (§11)

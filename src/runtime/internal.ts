@@ -1,7 +1,7 @@
 // Runtime internals. Not re-exported by src/index.ts: nothing here is public.
 import type { Bus } from "../event/internal.js";
 
-import { Deferred, Effect, Exit, Fiber, Runtime as EffectRuntime, Scope } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Runtime as EffectRuntime, Scope } from "effect";
 
 declare const NexusRuntimeTypeId: unique symbol;
 
@@ -109,6 +109,27 @@ export const isRefusal = (value: unknown): value is Refusal => {
   const code: unknown = (value as Error & { code?: unknown }).code;
 
   return typeof code === "string" && Object.hasOwn(REFUSALS, code);
+};
+
+/**
+ * The refusal in `value`, if there is one: `value` itself, or the first defect of
+ * a `Cause`, or of the `FiberFailure` that `Runtime.run`'s Promise rejects with.
+ * `undefined` for anything else, a bug included.
+ */
+export const refusalOf = (value: unknown): Refusal | undefined => {
+  if (isRefusal(value)) {
+    return value;
+  }
+
+  const cause = EffectRuntime.isFiberFailure(value) ? value[EffectRuntime.FiberFailureCauseId] : Cause.isCause(value) ? value : undefined;
+
+  if (cause === undefined) {
+    return undefined;
+  }
+
+  const defect = Cause.dieOption(cause);
+
+  return Option.isSome(defect) && isRefusal(defect.value) ? defect.value : undefined;
 };
 
 export const refusal = (code: RefusalCode): Refusal => new Refusal(code);

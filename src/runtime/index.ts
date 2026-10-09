@@ -6,7 +6,7 @@ import { admitting, isolated, makeLifecycle, recordOf, refusal, register, termin
 import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
-export { isRefusal, Refusal } from "./internal.js";
+export { isRefusal, Refusal, refusalOf } from "./internal.js";
 export type { RefusalCode } from "./internal.js";
 
 export type RuntimeInitError = {
