@@ -85,8 +85,8 @@ describe("Platform: the supply point (v0.6 D30, D42)", () => {
     Application.define({ name: "x", runtime: Layer.empty, environment: new Map() });
   });
 
-  it("StartOptions is exactly { platform? } (type, D42)", () => {
-    expectTypeOf<Application.StartOptions>().toEqualTypeOf<{ readonly platform?: Application.Platform }>();
+  it("StartOptions is exactly { platform?, shutdown? } (type, D42; `shutdown` is v0.12's second justified concern)", () => {
+    expectTypeOf<Application.StartOptions>().toEqualTypeOf<{ readonly platform?: Application.Platform; readonly shutdown?: Runtime.ShutdownOptions }>();
   });
 });
 
