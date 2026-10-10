@@ -90,7 +90,7 @@ $ pnpm build
 
 ## Status
 
-Current version: 0.12.0. Newest first.
+Current version: 0.12.1. Newest first.
 
 **v0.12 (prepared 2026-10-10; not yet released: v0.11.0 is the latest release):** `Runtime.refusalOf(cause)`, which finds a `Refusal` in the rejection `Runtime.run` gives (the `FiberFailure` that wraps the `Cause`) so a caller does not unwrap it by hand; `Selector.combine(...).changes` now emits on the first commit of either input (it waited for both before); `Mesh.update`, MESH 0.10's incremental render through the adapter; a shutdown policy: termination now interrupts the work started with `run` and `runFork` after an optional `shutdown.grace`, before releasing resources; and the `@valancex/mesh-runtime` peer range becomes `^0.10.0`. See the [release notes](./docs/releases/v0.12.md).
 
