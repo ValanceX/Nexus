@@ -1,13 +1,26 @@
 import type { EventBusShape } from "../event/index.js";
 
-import { Effect, Fiber, Layer, Runtime as EffectRuntime, Scope } from "effect";
+import { Duration, Effect, Fiber, Layer, Runtime as EffectRuntime, Scope } from "effect";
 
-import { admitting, isolated, makeLifecycle, recordOf, refusal, register, terminateLifecycle, type NexusRuntime } from "./internal.js";
+import { admitting, isolated, makeLifecycle, recordOf, refusal, register, terminateLifecycle, tracked, type NexusRuntime } from "./internal.js";
 import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
 export { isRefusal, Refusal, refusalOf } from "./internal.js";
 export type { RefusalCode } from "./internal.js";
+
+/**
+ * How a runtime ends. `grace` is how long termination waits for the effects started with `run` and `runFork` to finish on their own, after new work is
+ * refused, before it interrupts what is left and waits for each to exit. The default, `0`, interrupts at once: an effect never outlives the resources it uses.
+ * `Infinity` waits for every effect, however long it takes.
+ */
+export interface ShutdownOptions {
+  readonly grace?: Duration.DurationInput;
+}
+
+export interface RuntimeOptions {
+  readonly shutdown?: ShutdownOptions;
+}
 
 export type RuntimeInitError = {
   readonly _tag: "LayerBuildFailed";
@@ -23,9 +36,9 @@ export type RuntimeInitError = {
  * The runtime is owned by the caller's Scope, and ends when it closes: new work
  * is refused, the bus closes, then every resource is released (runtime.md).
  */
-export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.Do.pipe(
+export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>, options?: RuntimeOptions): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.Do.pipe(
   Effect.bind("bus", () => makeBus),
-  Effect.bind("lifecycle", ({ bus }) => makeLifecycle(bus)),
+  Effect.bind("lifecycle", ({ bus }) => makeLifecycle(bus, Duration.decode(options?.shutdown?.grace ?? 0))),
   // Tied to the *caller's* scope, so an interrupted/failed caller still
   // terminates the runtime rather than leaking every layer it already built.
   Effect.tap(({ lifecycle }) => Effect.addFinalizer(() => terminateLifecycle(lifecycle))),
@@ -45,20 +58,22 @@ export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.E
 // New work is admitted only until termination is requested, the same boundary
 // `admit` uses. A handle NEXUS didn't make, or one whose termination has been
 // requested, is refused as a defect, and the effect never starts (Q1).
-const runtimeFor = <R>(nexusRuntime: NexusRuntime<R>): EffectRuntime.Runtime<R> | Error => {
+const runtimeFor = <R>(nexusRuntime: NexusRuntime<R>): { readonly runtime: EffectRuntime.Runtime<R>; readonly track: <A, E>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R> } | Error => {
   const record = recordOf(nexusRuntime);
 
   if (record === undefined) {
     return refusal("not-a-runtime");
   }
 
-  return admitting(record.lifecycle) ? record.runtime as EffectRuntime.Runtime<R> : refusal("terminating");
+  return admitting(record.lifecycle)
+    ? { runtime: record.runtime as EffectRuntime.Runtime<R>, track: (effect) => tracked(record.lifecycle, effect) }
+    : refusal("terminating");
 };
 
 export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A> => {
-  const runtime = runtimeFor(nexusRuntime);
+  const admitted = runtimeFor(nexusRuntime);
 
-  return runtime instanceof Error ? Effect.runPromise(Effect.die(runtime)) : EffectRuntime.runPromise(runtime)(effect);
+  return admitted instanceof Error ? Effect.runPromise(Effect.die(admitted)) : EffectRuntime.runPromise(admitted.runtime)(admitted.track(effect));
 };
 
 /**
@@ -72,13 +87,13 @@ export const run = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effec
  * and waits for it to finish.
  */
 export const runFork = <R, A, E>(nexusRuntime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E> => {
-  const runtime = runtimeFor(nexusRuntime);
+  const admitted = runtimeFor(nexusRuntime);
 
-  if (runtime instanceof Error) {
-    return Effect.runFork(Effect.die(runtime));
+  if (admitted instanceof Error) {
+    return Effect.runFork(Effect.die(admitted));
   }
 
-  const execution = EffectRuntime.runFork(runtime)(effect);
+  const execution = EffectRuntime.runFork(admitted.runtime)(admitted.track(effect));
 
   return Effect.runFork(Fiber.await(execution).pipe(
     Effect.onInterrupt(() => Fiber.interrupt(execution)),

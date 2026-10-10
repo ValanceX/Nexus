@@ -44,6 +44,7 @@ type Platform = Layer.Layer<EnvironmentShape, unknown, never>;
 
 interface StartOptions {
   readonly platform?: Platform;
+  readonly shutdown?: ShutdownOptions;   // { grace?: Duration.DurationInput }, v0.12
 }
 
 interface Application<R> {
@@ -73,8 +74,12 @@ scoped layer that builds the map). Application code can't tell which (see
 `Unavailable`, exactly as in v0.5 with no `environment`.
 
 `StartOptions` is the shape of the application-host boundary, not a
-configuration bag. It holds exactly the one justified start concern,
-`platform`, and any further field needs its own architectural decision.
+configuration bag. It holds exactly the two justified start concerns,
+`platform` and (since v0.12) `shutdown`, and any further field needs its own
+architectural decision. `shutdown.grace` is how long ending the application
+waits for the work started with `Runtime.run` and `Runtime.runFork` before it
+interrupts what is left (default `0`: interrupt at once); `Application.shutdown(running, { grace })`
+replaces it for that call. See [runtime.md](./runtime.md), "Settling the work".
 `RunningApplication.environment` is the environment the platform built.
 `RunningApplication` is frozen and exposes nothing else: its `runtime` is an
 opaque handle (see [runtime.md](./runtime.md)), and its lifecycle state is
@@ -91,7 +96,7 @@ point for one.
 namespace Application {
   function define<R>(definition: ApplicationDefinition<R>): Application<R>;
   function start<R>(app: Application<R>, options?: StartOptions): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope>;
-  function shutdown<R>(running: RunningApplication<R>): Effect.Effect<void>;
+  function shutdown<R>(running: RunningApplication<R>, options?: Runtime.ShutdownOptions): Effect.Effect<void>;
   function status<R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus>;
   function createState<R, A>(running: RunningApplication<R>, schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError>;
 }
