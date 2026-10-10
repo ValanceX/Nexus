@@ -1,8 +1,8 @@
 import type { StateHandle, StateInitError } from "../state/index.js";
 import type { EventBusShape } from "../event/index.js";
 
-import { admit, recordOf, refusal, scopeOf, setHooks, terminate } from "../runtime/internal.js";
-import { Context, Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
+import { admit, recordOf, refusal, setHooks, terminate, windingScopeOf } from "../runtime/internal.js";
+import { Context, Duration, Effect, Exit, Layer, Ref, Schema, Scope } from "effect";
 
 import * as Capability from "../capability/index.js";
 import * as Runtime from "../runtime/index.js";
@@ -56,6 +56,8 @@ export type Platform = Layer.Layer<Capability.EnvironmentShape, unknown, never>;
  */
 export interface StartOptions {
   readonly platform?: Platform;
+  /** How the application ends when its start scope closes, or `shutdown` is called without options: see `Runtime.ShutdownOptions`. */
+  readonly shutdown?: Runtime.ShutdownOptions;
 }
 
 export interface RunningApplication<R> {
@@ -95,7 +97,7 @@ export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Ef
   // `Failed` before the error escapes — callers observing status after a failed
   // `start` must not see a stale `Initializing`.
   Effect.bind("runtime", ({ platform, statusRef }): Effect.Effect<Runtime.NexusRuntime<R | Capability.EnvironmentShape | EventBusShape>, ApplicationInitError, Scope.Scope> =>
-    Effect.exit(Runtime.make(Layer.provideMerge(app.definition.runtime, platform))).pipe(Effect.andThen((exit) => {
+    Effect.exit(Runtime.make(Layer.provideMerge(app.definition.runtime, platform), options?.shutdown === undefined ? undefined : { shutdown: options.shutdown })).pipe(Effect.andThen((exit) => {
       if (Exit.isFailure(exit)) {
         const error: ApplicationInitError = { _tag: "ServiceGraphFailed", cause: exit.cause };
 
@@ -135,10 +137,12 @@ export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Ef
 );
 
 // Route 1. Idempotent, and never fails: every call returns once the status is `Stopped`.
-export const shutdown = <R>(running: RunningApplication<R>): Effect.Effect<void> => {
+export const shutdown = <R>(running: RunningApplication<R>, options?: Runtime.ShutdownOptions): Effect.Effect<void> => {
   const record = apps.get(running);
 
-  return record === undefined ? Effect.die(refusal("not-an-application")) : terminate(record.runtime);
+  return record === undefined
+    ? Effect.die(refusal("not-an-application"))
+    : terminate(record.runtime, options?.grace === undefined ? undefined : Duration.decode(options.grace));
 };
 
 export const status = <R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus> => running.status;
@@ -153,7 +157,7 @@ export const status = <R>(running: RunningApplication<R>): Effect.Effect<Applica
  * channel is exactly StateInitError; there is no lifecycle error type.
  */
 export const createState = <R, A>(running: RunningApplication<R>, schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError> => {
-  const scope = scopeOf(running.runtime);
+  const scope = windingScopeOf(running.runtime);
 
   return scope === undefined || !apps.has(running)
     ? Effect.die(refusal("not-an-application"))

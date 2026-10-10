@@ -16,7 +16,7 @@ Rules below for what that means concretely.
   arbitrary mutation.
 - Expose observation so `Selector` (and eventually MESH) can react to
   changes without polling.
-- Validate shape via Schema at creation and, optionally, at every update.
+- Validate shape via Schema at creation (`create`) and on `set`. `update` trusts its function's result and does not re-validate it.
 
 ## Data Model
 
@@ -106,7 +106,7 @@ every `State.update` call.
 - `get`/`update`/`set` are the entire mutation surface; there is no way to
   mutate `A` in place.
 - `changes` must emit the *new* value only after `update`/`set` has fully
-  committed (schema-valid, observers see a consistent value), never an
+  committed (for `set`, schema-valid; observers see a consistent value), never an
   intermediate one.
 - MESH never reads or writes `State`. The MESH adapter renders a
   `Selector`'s value as a snapshot, and state changes only through a

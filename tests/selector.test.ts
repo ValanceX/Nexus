@@ -44,4 +44,23 @@ describe("Selector", () => {
 
     expect(result).toBe("1:full");
   });
+
+  it("combine.changes emits for the first commit of either input, with the other's current value, and not for the present", async () => {
+    const Two = Schema.Struct({ n: Schema.Number });
+    const emitted = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const left = yield* State.create(Two, { n: 1 });
+      const right = yield* State.create(Two, { n: 10 });
+      const sum = Selector.combine(Selector.define(left, (s) => s.n), Selector.define(right, (s) => s.n), (a, b) => a + b);
+      const fiber = yield* Effect.fork(Stream.runCollect(Stream.take(sum.changes, 2)));
+
+      yield* Effect.sleep(20);
+      yield* State.set(left, { n: 2 });   // the first commit on one side: 2 + 10
+      yield* Effect.sleep(20);
+      yield* State.set(right, { n: 20 }); // then the other: 2 + 20
+
+      return Array.from(yield* Fiber.join(fiber));
+    })));
+
+    expect(emitted).toEqual([12, 22]);
+  });
 });

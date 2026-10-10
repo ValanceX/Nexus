@@ -41,8 +41,8 @@ namespace Selector {
 ```
 
 `define` is synchronous and total — `project` is a plain `(A) => B`
-function, not `(A) => Effect.Effect<B>`, which is what makes "side-effect
-free" enforceable at the type level rather than just documented. `combine`
+function, not `(A) => Effect.Effect<B>`, which stops `project` from using Effect (the type prevents Effect use, but `project` is trusted
+to be pure: a plain function can still do I/O). `combine`
 covers the common case of deriving from more than one `State`/`Selector`
 without reaching for a general n-ary combinator before one is needed
 (§2.1's YAGNI stance).
@@ -60,7 +60,7 @@ A selector's `changes` completes when its underlying `State`'s does.
 them (see [state.md](./state.md)). It projects on every commit like `changes` and doesn't deduplicate. For
 `combine`, each input's current value is atomic with that input's own subscription, so the combined stream always
 ends at the latest of both.
-`combine`'s completes as soon as either side's does.
+`combine`'s streams complete when both inputs have completed. `combine.changes` emits on every later commit of either input, combined with the other's latest value (the present is not emitted; `values` starts from it).
 
 ## Errors
 

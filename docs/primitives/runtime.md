@@ -49,6 +49,10 @@ namespace Runtime {
   function make<R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope>;
   function run<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A>;
   function runFork<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E>;
+  class Refusal extends Error { readonly code: RefusalCode }
+  function isRefusal(value: unknown): value is Refusal;
+  function refusalOf(value: unknown): Refusal | undefined;
+  type RefusalCode = "terminating" | "not-a-runtime" | "not-an-application";
 }
 ```
 
@@ -90,7 +94,9 @@ NEXUS exposes no way to reach the internal fiber.
 
 There is no `shutdown`. A runtime ends when its owner ends it: the caller's
 `Scope`, for a standalone runtime; the application's lifecycle, for an
-application runtime.
+application runtime. `Runtime.make(layer, { shutdown: { grace } })` says how long
+termination waits for the work started with `run` and `runFork` before it
+interrupts what is left (see Rules, "Settling the work").
 
 **Effect's default services.** `Clock`, `Console`, `Random`,
 `ConfigProvider` and `Tracer` are Effect's own default services, and NEXUS
@@ -173,7 +179,11 @@ installed copies of the package. Match on `code`, never on the message. (Thrown 
 stays a defect and never a typed failure: using a handle after termination
 began is misuse, and an `E` channel on every `run` for it would make each
 caller handle what it cannot fix. A command that races a shutdown reads the
-code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug.
+code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug. `run`'s `Promise` rejects with a
+`FiberFailure`, not with the `Refusal`, so `isRefusal(rejection)` is false there.
+`Runtime.refusalOf(value)` finds the refusal in any of the three places it can be: the
+`Refusal` itself, a `Cause` (take it from an `Exit`), or `run`'s rejection; it returns
+`undefined` for a bug or for anything else.
 
 ## Rules
 
@@ -185,19 +195,20 @@ code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug.
   for work already admitted (such as an application-owned `State` being
   created) to finish; begin (for an application, it enters `Stopping`);
   close the runtime's event bus, so no event is delivered after this point
-  and every subscription ends normally; then close the runtime's `Scope`,
-  which releases every `Resource` (§11) acquired anywhere in that runtime,
-  including by commands that already completed. A termination that has
+  and every subscription ends normally, and end the streams of
+  application-owned `State`; **settle the work started with `run` and
+  `runFork`** (below); then close the runtime's `Scope`,
+  which releases every `Resource` (§11) acquired while the runtime's layers
+  (including the platform) were built. A `Resource` acquired inside a
+  command is released when that command's own `Scope` closes
+  (`Effect.scoped`), not at termination. A termination that has
   begun always completes, even when a release fails: every waiting caller
   completes normally, and only the caller that performed the termination
   re-raises the release's original failure, as a defect.
-- Effects already running when termination begins are not interrupted by
-  it; only new work is refused. Termination does **not wait** for them
-  either: it closes the runtime's `Scope` while they run, so a `Resource`
-  they use can be released under them. Work started with `runFork` that must
-  finish first should be awaited (`Fiber.await`) before the runtime is
-  terminated. Only work admitted by NEXUS itself, such as an
-  application-owned `State` being created, is waited for.
+- **Concurrent calls.** Calls to `run` and `runFork` run independently and unordered; the runtime serializes nothing. `Application.shutdown` is an Effect, asynchronous.
+- **"Admitted".** In this page "admitted" means work termination waits for (NEXUS's own, such as an application-owned `State` being created). The capability model's "admitted unit" (an effect run through `Runtime.run`) is a different thing and is not waited for.
+- **Settling the work (v0.12).** The effects started with `run` and `runFork` are the runtime's work, tracked from the moment they start until they exit, however they exit. After the bus closes, termination waits up to the **grace** for them to finish on their own, then interrupts what is left and waits for each to exit, so an effect has run its own finalizers, and released what it acquired, before the runtime's resources are released. The grace is `shutdown.grace` of `Runtime.make` or `Application.start`, or the one given to a call of `Application.shutdown`; it is a `Duration`, and defaults to `0`. A grace of `0` interrupts at once, after one turn of the event loop in which a subscription that ended with the bus ends its consumer; `Duration.infinity` waits for every effect, however long it takes. New work is refused throughout. The effect asking for the termination (a command may end its own application) is neither waited for nor interrupted, and a fiber an effect forked is the effect's to end. An interrupted `run` rejects with Effect's interruption (`Cause.isInterruptedOnly` is true, `Runtime.refusalOf` finds nothing), and an interrupted `runFork` fiber exits interrupted. Work that never finishes and cannot be interrupted (an uninterruptible effect that waits forever) holds termination, as it holds any `Scope`.
+- **Streams that end with the runtime.** The `changes` and `values` of application-owned `State`, and so of a `Selector` over it, end when termination winds the runtime down (after the bus closes, before the work is settled), not when the last resource is released, so a consumer started with `run` ends normally instead of being interrupted to make room for a release that waits for it. A `State` created in a scope of the caller's own ends with that scope, and a consumer of it that was started with `run` is settled like any other work.
 - `Runtime` must never expose the Effect `Runtime`, the service `Context`
   or its `Scope` — no ambient lookup outside `Service`/`Capability`
   resolution. See §5's "must not become a global service locator."

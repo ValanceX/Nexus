@@ -20,6 +20,6 @@ Every page follows the same layout: **Responsibility**, **Data Model**, **API**,
 
 ## Status
 
-These are the committed API shapes for the first vertical slice (§22), and they're implemented in `src/`. v0.2 connects them to MESH through the host adapter in `src/mesh/` (ARCHITECTURE §15), which is not a primitive. v0.3 closes the application lifecycle, makes the runtime handle opaque, and reconciles every page with the exported declarations (ARCHITECTURE §26, decision 9). v0.4 adds [`Semantic`](../semantic.md), pre-execution semantic analysis of declared operations. It is not a primitive, and no page here changes.
+Current: v0.12.0. These are the committed API shapes, and they're implemented in `src/`. The host adapter in `src/mesh/` connects them to MESH (ARCHITECTURE §15) and is not a primitive; [`Semantic`](../semantic.md) is pre-execution analysis of declared operations, also not a primitive. What each public surface promises (stable, provisional, internal) is in [API stability](../stability.md).
 
 **Contract parity.** Each page's **Data Model**, **API**, **Errors** and **Rules** sections are normative: every type, signature, error variant and field they name matches the package's exported declarations exactly. **Examples** are illustrative, but use only APIs that exist. If a page and `src/` ever disagree, that's a bug in one or the other, not the docs being aspirational, and it's fixed by a recorded decision that changes one of them, never by leaving both.

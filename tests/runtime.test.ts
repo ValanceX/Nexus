@@ -278,8 +278,9 @@ describe("Runtime", () => {
         Effect.bind("consumerExit", ({ consumer }) => Fiber.await(consumer).pipe(Effect.timeout(Duration.seconds(1))))
       ));
 
+      // The consumer was still handling event 1 when termination began: it is interrupted (the default is not to wait), never handed 2 to 5, and has exited before the release.
       expect(log).toEqual(["delivered 0", "delivered 1", "released"]);
-      expect(Exit.isSuccess(result.consumerExit)).toBe(true);
+      expect(Exit.isInterrupted(result.consumerExit)).toBe(true);
     });
 
     it("a second termination waits for the first to finish releasing", async () => {
@@ -318,27 +319,25 @@ describe("Runtime", () => {
   });
 });
 
-describe("Runtime termination and work started with runFork", () => {
-  it("does not wait for a running effect: the effect carries on after termination completes", async () => {
+describe("Runtime termination and work started with run and runFork", () => {
+  it("interrupts a running effect before anything it uses is released (shutdown.test.ts has the policy in full)", async () => {
     const log: Array<string> = [];
 
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-      const runtime = yield* Runtime.make(ClockLive);
+      const runtime = yield* Runtime.make(Layer.scopedDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); }))));
       const gate = yield* Deferred.make<void>();
 
       Runtime.runFork(runtime, Effect.gen(function* () {
         log.push("started");
-        yield* Deferred.await(gate);
+        yield* Deferred.await(gate).pipe(Effect.onInterrupt(() => Effect.sync(() => { log.push("interrupted"); })));
         log.push("finished");
       }));
       yield* Effect.sleep(10);
       yield* terminate(runtime);
       log.push("terminated");
-      yield* Deferred.succeed(gate, undefined);
-      yield* Effect.sleep(10);
     })));
 
-    expect(log).toEqual(["started", "terminated", "finished"]);
+    expect(log).toEqual(["started", "interrupted", "released", "terminated"]);
   });
 });
 
@@ -360,5 +359,28 @@ describe("Runtime refusals", () => {
     expect(reasons).toEqual(["not-a-runtime", "terminating"]);
     expect(Runtime.isRefusal(new Error("NEXUS: the runtime has begun terminating"))).toBe(false);
     expect(Runtime.isRefusal(new Runtime.Refusal("terminating"))).toBe(true);
+  });
+});
+
+describe("Runtime.refusalOf", () => {
+  it("finds the refusal in run's rejection, in a Cause and in the refusal itself, and nothing in a bug", async () => {
+    const rejection = await Effect.runPromise(Effect.gen(function* () {
+      const runtime = yield* Runtime.make(ClockLive);
+
+      yield* terminate(runtime);
+
+      return yield* Effect.promise(() => Runtime.run(runtime, Effect.void).then(() => undefined, (error: unknown) => error));
+    }).pipe(Effect.scoped));
+
+    expect(Runtime.isRefusal(rejection)).toBe(false);
+    expect(Runtime.refusalOf(rejection)?.code).toBe("terminating");
+    expect(Runtime.refusalOf(Cause.die(new Runtime.Refusal("not-a-runtime")))?.code).toBe("not-a-runtime");
+    expect(Runtime.refusalOf(new Runtime.Refusal("terminating"))?.code).toBe("terminating");
+
+    const bug = await Effect.runPromise(Effect.promise(() => Effect.runPromise(Effect.die(new Error("a bug"))).then(() => undefined, (error: unknown) => error)));
+
+    expect(Runtime.refusalOf(bug)).toBeUndefined();
+    expect(Runtime.refusalOf("text")).toBeUndefined();
+    expect(Runtime.refusalOf(Cause.fail("typed"))).toBeUndefined();
   });
 });

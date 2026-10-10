@@ -11,16 +11,16 @@
  * - M3: an intent reaches behavior only through an explicit `commands` entry.
  * - M4: only `@valancex/mesh-runtime` is used; never the MESH compiler.
  */
-import type { CommandIntent, IntentArgument, Render, RuntimeDiagnosticsDocument } from "@valancex/mesh-runtime";
+import type { CommandIntent, IntentArgument, Render, RenderPatches, RuntimeDiagnosticsDocument } from "@valancex/mesh-runtime";
 import type { Command, CommandValidationError } from "../command/index.js";
 import type { SelectorHandle } from "../selector/index.js";
 
-import { dispatch as meshDispatch, render as meshRender } from "@valancex/mesh-runtime";
+import { dispatch as meshDispatch, render as meshRender, update as meshUpdate } from "@valancex/mesh-runtime";
 import { Effect, Stream } from "effect";
 
 import * as NexusCommand from "../command/index.js";
 
-export type { CommandIntent, IntentArgument, Render, RuntimeDiagnosticsDocument };
+export type { CommandIntent, IntentArgument, Render, RenderPatches, RuntimeDiagnosticsDocument };
 
 export interface Program {
   readonly root: string;
@@ -73,6 +73,23 @@ const renderSnapshot = (program: Program, snapshot: Record<string, unknown>): Ef
     ? Effect.succeed(result.render)
     : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics }))
   );
+
+/** The new render of an update, and the `render-patch-v1` operations that turn the previous render's tree into its tree. */
+export interface Updated {
+  readonly render: Render;
+  readonly patches: RenderPatches;
+}
+
+/**
+ * Updates `previous` to a new `snapshot` of the same program: MESH reuses everything the snapshot leaves unchanged, and returns the new render and the patches a renderer applies
+ * in place. Like `render`, it is the runtime's operation and nothing more: it keeps no render (M2), and a rejection from the runtime is a defect. `previous` is untouched, and
+ * still dispatches, when MESH refuses the snapshot. `previous` must be a render of the same program, which only the caller knows.
+ */
+export const update = (previous: Render, snapshot: Record<string, unknown>): Effect.Effect<Updated, MeshDiagnostics> =>
+  Effect.promise(() => meshUpdate(previous, snapshot)).pipe(Effect.flatMap((result) => result.diagnostics === undefined
+    ? Effect.succeed<Updated>({ render: result.render, patches: result.patches })
+    : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics })
+  ));
 
 type HostOptions<E, R> = {
   readonly program: Program;
