@@ -1,0 +1,4 @@
+# Ever text file is LF in every checkout, Windows included: tests read docs, fixtures and
+# templates and compare their text (MESH hashes a template's text into its node keys), and
+# `core.autocrlf=true` would otherwise hand them CRLF
+* text=auto eol=lf
