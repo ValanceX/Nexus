@@ -35,17 +35,16 @@ describe("the MESH runtime boundary", () => {
     expect(locked).toEqual([`@valancex/mesh-runtime@${installed}`]);
   });
 
-  it("a host passes through MESH 0.7's keyed repeat: the same item has the same key across reorder, insert and removal", async () => {
+  it("a host passes through MESH's keyed repeat (the `{#each}` block): the same item has the same key across reorder, insert and removal", async () => {
     const model = JSON.stringify({
       version: 1, types: {},
       components: {
         page: { props: {}, events: {}, commands: {}, scope: {} },
         row: { props: {}, events: {}, commands: {}, scope: {} },
-        "mesh-each": { props: { items: { type: { kind: "list", element: { kind: "any" } }, required: true }, as: { type: { kind: "string" }, required: true }, key: { type: { kind: "any" }, required: true } }, events: {}, commands: {}, scope: {} },
         list: { props: {}, events: {}, commands: {}, scope: { ids: { kind: "list", element: { kind: "record", fields: { id: { type: { kind: "string" }, required: true } } } } } },
       },
     });
-    const source = `<page><mesh-each items={ids} as="item" key={item.id}><row>{item.id}</row></mesh-each></page>`;
+    const source = `<page>{#each ids as item (item.id)}<row>{item.id}</row>{/each}</page>`;
     const compiled = await compile({ source, path: "list.mprx", model: { manifest: model, path: "components.json", component: "list" } });
 
     if (compiled.template === undefined) {
