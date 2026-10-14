@@ -77,7 +77,7 @@ Install from npm:
 $ pnpm add @valancex/nexus
 ```
 
-An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.10.0`.
+An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.10.0 || ^0.11.0 || ^0.12.0`.
 
 To work on NEXUS itself, from a clone:
 
@@ -91,6 +91,8 @@ $ pnpm build
 ## Status
 
 Current version: 0.12.1. Newest first.
+
+**v0.12.3:** the `@valancex/mesh-runtime` peer range accepts MESH 0.11 and 0.12 (`^0.10.0 || ^0.11.0 || ^0.12.0`), so an application on either has exactly one MESH runtime. No API or behavior change. See the [release notes](./docs/releases/v0.12.3.md).
 
 **v0.12 (released 2026-10-10):** `Runtime.refusalOf(cause)`, which finds a `Refusal` in the rejection `Runtime.run` gives (the `FiberFailure` that wraps the `Cause`) so a caller does not unwrap it by hand; `Selector.combine(...).changes` now emits on the first commit of either input (it waited for both before); `Mesh.update`, MESH 0.10's incremental render through the adapter; a shutdown policy: termination now interrupts the work started with `run` and `runFork` after an optional `shutdown.grace`, before releasing resources; and the `@valancex/mesh-runtime` peer range becomes `^0.10.0`. See the [release notes](./docs/releases/v0.12.md).
 
