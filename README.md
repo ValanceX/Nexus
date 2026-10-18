@@ -77,7 +77,7 @@ Install from npm:
 $ pnpm add @valancex/nexus
 ```
 
-An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.10.0 || ^0.11.0 || ^0.12.0`.
+An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.12.0` (the same as `@valancex/common` and `@valancex/valance`, so a plain install resolves one MESH runtime, not two: decision W20).
 
 To work on NEXUS itself, from a clone:
 
