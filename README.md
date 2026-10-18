@@ -90,7 +90,9 @@ $ pnpm build
 
 ## Status
 
-Current version: 0.12.1. Newest first.
+Current version: 0.12.3; 0.13.0 is prepared. Newest first.
+
+**v0.13.0 (prepared 2026-10-18):** the `@valancex/mesh-runtime` peer range is `^0.14.0`, the one range the VALANCE packages share (decision W20), so an application has exactly one MESH runtime. It is narrower than 0.12.3's, which is why this is a minor release. No API or behavior change; the 513 tests pass against MESH 0.14. See the [release notes](./docs/releases/v0.13.md).
 
 **v0.12.3:** the `@valancex/mesh-runtime` peer range accepts MESH 0.11 and 0.12 (`^0.10.0 || ^0.11.0 || ^0.12.0`), so an application on either has exactly one MESH runtime. No API or behavior change. See the [release notes](./docs/releases/v0.12.3.md).
 
