@@ -91,7 +91,7 @@ describe.skipIf(!supported)("units through the adapter", () => {
     const host = Mesh.host({
       program,
       scope: { value: Effect.succeed({ who: "w" }), changes: Stream.empty, values: Stream.empty },
-      commands: { "disclosure/toggle": (_args, intent) => Effect.sync(() => void seen.push(intent.instance)) },
+      commands: { "disclosure/toggle": (_args, intent) => Effect.sync(() => void seen.push(intent?.instance)) },
     });
 
     await Effect.runPromise(host.dispatch(render, handler));

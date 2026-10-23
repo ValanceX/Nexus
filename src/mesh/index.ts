@@ -43,9 +43,9 @@ export interface Dispatched {
 /**
  * Translates a command intent's arguments into a NEXUS command's input, then invokes it. The intent itself is the second argument, for
  * a binding that needs more than the arguments: the occurrence of a component's unit it is for (`intent.instance`) and the fields the
- * caller owned (`intent.controlled`). A binding that does not need it takes one parameter, as before.
+ * caller owned (`intent.controlled`). It is absent when the command is run by name (`invoke`), not from an event. A binding that does not need it takes one parameter, as before.
  */
-export type Binding<E, R> = (args: ReadonlyArray<IntentArgument>, intent: CommandIntent) => Effect.Effect<unknown, E, R>;
+export type Binding<E, R> = (args: ReadonlyArray<IntentArgument>, intent?: CommandIntent) => Effect.Effect<unknown, E, R>;
 
 export interface Host<E, R> {
   /** Renders the scope selector's current value. */
