@@ -12,16 +12,34 @@
  * - M3: an intent reaches behavior only through an explicit `commands` entry.
  * - M4: only `@valancex/mesh-runtime` is used; never the MESH compiler.
  */
-import type { CommandIntent, IntentArgument, Render, RenderPatches, RuntimeDiagnosticsDocument, UnitOccurrence, UnitStates } from "@valancex/mesh-runtime";
+import type { CommandIntent as RuntimeIntent, IntentArgument, Render, RenderPatches, RuntimeDiagnosticsDocument } from "@valancex/mesh-runtime";
 import type { Command, CommandValidationError } from "../command/index.js";
 import type { SelectorHandle } from "../selector/index.js";
 
-import { dispatch as meshDispatch, raise as meshRaise, render as meshRender, update as meshUpdate } from "@valancex/mesh-runtime";
+import * as MeshRuntime from "@valancex/mesh-runtime";
+import { dispatch as meshDispatch, render as meshRender, update as meshUpdate } from "@valancex/mesh-runtime";
 import { Effect, Stream } from "effect";
 
 import * as NexusCommand from "../command/index.js";
 
-export type { CommandIntent, IntentArgument, Render, RenderPatches, RuntimeDiagnosticsDocument, UnitOccurrence, UnitStates };
+export type { IntentArgument, Render, RenderPatches, RuntimeDiagnosticsDocument };
+
+/**
+ * A command intent. From MESH 0.15, a command of a component's unit names the occurrence it is for (`instance`) and the fields the caller owned (`controlled`). Written here and not taken from the
+ * runtime's types, so that this adapter builds and runs against MESH 0.14, which has neither.
+ */
+export type CommandIntent = RuntimeIntent & { readonly instance?: string; readonly controlled?: ReadonlyArray<string> };
+
+/** One occurrence of a component with a unit in a render (MESH 0.15's `Render.instances`). */
+export interface UnitOccurrence {
+  readonly instance: string;
+  readonly component: string;
+  readonly state: Readonly<Record<string, unknown>>;
+  readonly controlled?: ReadonlyArray<string>;
+}
+
+/** The state the host holds for the unit occurrences, by the occurrence's key. */
+export type UnitStates = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 
 export interface Program {
   readonly root: string;
@@ -74,7 +92,7 @@ export const bind = <I, O, E, R>(command: Command<I, O, E, R>, toInput: (args: R
 // A rejection from the runtime is a programming, package or runtime defect, so
 // it's Effect.promise (a defect), never a typed failure (spec §6.4).
 const renderSnapshot = (program: Program, snapshot: Record<string, unknown>, units?: UnitStates): Effect.Effect<Render, MeshDiagnostics> =>
-  Effect.promise(() => meshRender({ program: { root: program.root, templates: program.templates }, model: program.model, snapshot, ...(units === undefined ? {} : { units }) })).pipe(Effect.flatMap((result) => result.diagnostics === undefined
+  Effect.promise(() => meshRender({ program: { root: program.root, templates: program.templates }, model: program.model, snapshot, ...(units === undefined ? {} : { units }) } as never)).pipe(Effect.flatMap((result) => result.diagnostics === undefined
     ? Effect.succeed(result.render)
     : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics }))
   );
@@ -97,7 +115,7 @@ export interface Updated {
  * still dispatches, when MESH refuses the snapshot. `previous` must be a render of the same program, which only the caller knows.
  */
 export const update = (previous: Render, snapshot: Record<string, unknown>, units?: UnitStates): Effect.Effect<Updated, MeshDiagnostics> =>
-  Effect.promise(() => (units === undefined ? meshUpdate(previous, snapshot) : meshUpdate(previous, snapshot, units))).pipe(Effect.flatMap((result) => result.diagnostics === undefined
+  Effect.promise(() => (units === undefined ? meshUpdate(previous, snapshot) : (meshUpdate as (p: Render, s: Record<string, unknown>, u: UnitStates) => ReturnType<typeof meshUpdate>)(previous, snapshot, units))).pipe(Effect.flatMap((result) => result.diagnostics === undefined
     ? Effect.succeed<Updated>({ render: result.render, patches: result.patches })
     : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics })
   ));
@@ -107,7 +125,15 @@ export const update = (previous: Render, snapshot: Record<string, unknown>, unit
  * The runtime's operation and nothing more: it renders nothing and changes nothing, and what the host does with the intent is the host's.
  */
 export const raise = (render: Render, instance: string, event: string, payload?: unknown): Effect.Effect<CommandIntent | undefined, MeshDiagnostics> =>
-  Effect.promise(() => meshRaise(render, instance, event, payload)).pipe(Effect.flatMap((result) => result.diagnostics === undefined
+  Effect.promise(() => {
+    const meshRaise = (MeshRuntime as unknown as { readonly raise?: (r: Render, i: string, e: string, p?: unknown) => Promise<{ readonly intent?: CommandIntent; readonly diagnostics?: RuntimeDiagnosticsDocument }> }).raise;
+
+    if (meshRaise === undefined) {
+      throw new Error("NEXUS: raising an event of a unit needs @valancex/mesh-runtime 0.15");
+    }
+
+    return meshRaise(render, instance, event, payload);
+  }).pipe(Effect.flatMap((result) => result.diagnostics === undefined
     ? Effect.succeed(result.intent)
     : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics })
   ));

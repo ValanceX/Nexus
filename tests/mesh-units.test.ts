@@ -11,6 +11,8 @@ const { Mesh } = Nexus;
 // The units need a runtime that has them (`@valancex/mesh-runtime` 0.15); an older one has no `raise`.
 const supported = typeof (MeshRuntime as { readonly raise?: unknown }).raise === "function";
 
+const instances = (render: Nexus.Mesh.Render) => (render as unknown as { readonly instances: ReadonlyArray<Nexus.Mesh.UnitOccurrence> }).instances;
+
 const model = JSON.stringify({
   version: 1,
   types: {},
@@ -68,7 +70,7 @@ describe.skipIf(!supported)("units through the adapter", () => {
   it("renders and updates with the state the host holds, lists the occurrences, and keeps nothing", async () => {
     const program: Nexus.Mesh.Program = { root: "page", templates: [await templateOf("page"), await templateOf("disclosure"), await templateOf("tabs")], model };
     const plain = await Effect.runPromise(Mesh.render(program, { who: "w" }));
-    const [disclosure] = plain.instances;
+    const [disclosure] = instances(plain);
 
     expect(texts(plain)).toEqual(["w", "tabs"]);
     expect(disclosure?.component).toBe("disclosure");
@@ -95,13 +97,13 @@ describe.skipIf(!supported)("units through the adapter", () => {
     });
 
     await Effect.runPromise(host.dispatch(render, handler));
-    expect(seen).toEqual([render.instances[0]!.instance]);
+    expect(seen).toEqual([instances(render)[0]!.instance]);
   });
 
   it("reads the host's unit states each time it renders, and a host without them renders with the defaults", async () => {
     const program: Nexus.Mesh.Program = { root: "page", templates: [await templateOf("page"), await templateOf("disclosure"), await templateOf("tabs")], model };
     const first = await Effect.runPromise(Mesh.render(program, { who: "w" }));
-    const key = first.instances[0]!.instance;
+    const key = instances(first)[0]!.instance;
     const scope = { value: Effect.succeed({ who: "w" }), changes: Stream.empty, values: Stream.empty };
     const withUnits = await Effect.runPromise(Mesh.host({ program, scope, commands: {}, units: Effect.succeed({ [key]: { open: true } }) }).render);
     const without = await Effect.runPromise(Mesh.host({ program, scope, commands: {} }).render);
@@ -113,7 +115,7 @@ describe.skipIf(!supported)("units through the adapter", () => {
   it("raises an event of an occurrence to the handler its caller bound, or to none", async () => {
     const program: Nexus.Mesh.Program = { root: "page", templates: [await templateOf("page"), await templateOf("disclosure"), await templateOf("tabs")], model };
     const render = await Effect.runPromise(Mesh.render(program, { who: "w" }));
-    const tabs = render.instances.find((each) => each.component === "tabs")!;
+    const tabs = instances(render).find((each) => each.component === "tabs")!;
     const intent = await Effect.runPromise(Mesh.raise(render, tabs.instance, "change", 3));
 
     expect(intent?.command.name).toBe("chose");
