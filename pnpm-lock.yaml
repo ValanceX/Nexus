@@ -16,11 +16,11 @@ importers:
         specifier: ^26.6.3
         version: 26.6.3
       '@valancex/mesh-compiler':
-        specifier: ^0.15.0
-        version: 0.15.0
+        specifier: ^0.16.0
+        version: 0.16.0
       '@valancex/mesh-runtime':
-        specifier: ^0.15.0
-        version: 0.15.0
+        specifier: ^0.16.0
+        version: 0.16.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -311,12 +311,12 @@ packages:
   '@types/node@26.6.3':
     resolution: {integrity: sha512-dsqMQQoeTLqu9wynDD00q573mNzso3IdQOAfHRJqLCcmCFPoGo9A1bDpUcv/9tnKpErQWv9uKeGfl37EIS02Yg==}
 
-  '@valancex/mesh-compiler@0.15.0':
-    resolution: {integrity: sha512-abJtHvMzl/SwOTq0MblBrpOkIiatP5BV2cW9tg1STjD8ODFlcb77ABFhLc43Av400Z3WhNyPCkdiNztjZQiFNg==}
+  '@valancex/mesh-compiler@0.16.0':
+    resolution: {integrity: sha512-/SSV0nJlaYTxtrokkUyl2wUXDanj2mopmb1A6nAQgpaIQI1Ix1YNMTlUALzexL0/CneoC0I1GDxwNSIBPD4clQ==}
     engines: {node: '>=22'}
 
-  '@valancex/mesh-runtime@0.15.0':
-    resolution: {integrity: sha512-97KdYBY14AYjCFrvF82vlW5aL5deEQtdXWHhgdQgqvOjsmikkqCOlOUu1hZmR/0MNZhUY645YzkPwDqQguf5oA==}
+  '@valancex/mesh-runtime@0.16.0':
+    resolution: {integrity: sha512-2PTmLwulkkXht0GWvUv8Gm/AZdh8pO3mc1vDLKosciG5oWkMzQVt4iA9xauK/3/O2cVsNR0/HWNYbeEPk/vrVw==}
     engines: {node: '>=22'}
 
   '@vitest/expect@2.1.9':
@@ -704,9 +704,9 @@ snapshots:
     dependencies:
       undici-types: 8.9.0
 
-  '@valancex/mesh-compiler@0.15.0': {}
+  '@valancex/mesh-compiler@0.16.0': {}
 
-  '@valancex/mesh-runtime@0.15.0': {}
+  '@valancex/mesh-runtime@0.16.0': {}
 
   '@vitest/expect@2.1.9':
     dependencies:

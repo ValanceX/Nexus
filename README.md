@@ -90,9 +90,11 @@ $ pnpm build
 
 ## Status
 
-Current version: 0.12.3; 0.13.0 and 0.14.0 are prepared. Newest first.
+Current version: 0.14.0; 0.15.0 is prepared. Newest first.
 
-**v0.14.0 (prepared 2026-10-23):** the MESH adapter gains the pass-through for a component's *unit* (state for one occurrence): `units` on `Mesh.render`, `Mesh.update` and `Mesh.host`, `Mesh.raise`, and the intent as a binding's second argument. Additive; the peer range is `^0.14.0 || ^0.15.0`. See the [release notes](./docs/releases/v0.14.md).
+**v0.15.0 (prepared 2026-10-24):** the `@valancex/mesh-runtime` peer range admits MESH 0.16 (`^0.14.0 || ^0.15.0 || ^0.16.0`); no API or behavior change, so the newest published set installs together. See the [release notes](./docs/releases/v0.15.md).
+
+**v0.14.0 (published 2026-10-23):** the MESH adapter gains the pass-through for a component's *unit* (state for one occurrence): `units` on `Mesh.render`, `Mesh.update` and `Mesh.host`, `Mesh.raise`, and the intent as a binding's second argument. Additive; the peer range is `^0.14.0 || ^0.15.0`. See the [release notes](./docs/releases/v0.14.md).
 
 **v0.13.0 (prepared 2026-10-18):** the `@valancex/mesh-runtime` peer range is `^0.14.0`, the one range the VALANCE packages share (decision W20), so an application has exactly one MESH runtime. It is narrower than 0.12.3's, which is why this is a minor release. No API or behavior change; the 513 tests pass against MESH 0.14. See the [release notes](./docs/releases/v0.13.md).
 
