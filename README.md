@@ -90,7 +90,9 @@ $ pnpm build
 
 ## Status
 
-Current version: 0.14.0; 0.15.0 is prepared. Newest first.
+Current version: 0.14.0; 0.16.0 is prepared. Newest first.
+
+**v0.16.0 (prepared 2026-10-24):** the `@valancex/mesh-runtime` peer range admits MESH 0.17 (`^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0`); no API or behavior change. See the [release notes](./docs/releases/v0.16.md).
 
 **v0.15.0 (prepared 2026-10-24):** the `@valancex/mesh-runtime` peer range admits MESH 0.16 (`^0.14.0 || ^0.15.0 || ^0.16.0`); no API or behavior change, so the newest published set installs together. See the [release notes](./docs/releases/v0.15.md).
 
