@@ -92,6 +92,6 @@ describe("Command with a transforming schema", () => {
 
     expect(error._tag).toBe("CommandValidationError");
     expect(error.issues).toHaveLength(1);
-    expect(error.cause._tag).toBe("ParseError");
+    expect(error.cause?._tag).toBe("ParseError");
   });
 });
