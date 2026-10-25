@@ -52,7 +52,7 @@ namespace Runtime {
   class Refusal extends Error { readonly code: RefusalCode }
   function isRefusal(value: unknown): value is Refusal;
   function refusalOf(value: unknown): Refusal | undefined;
-  type RefusalCode = "terminating" | "not-a-runtime" | "not-an-application";
+  type RefusalCode = "terminating" | "not-a-runtime" | "not-an-application" | "duplicate-event-tag";
 }
 ```
 
@@ -174,7 +174,7 @@ NEXUS didn't make is refused the same way.
 The defect is a `Runtime.Refusal`, an `Error` whose `code` is stable:
 `"terminating"` (termination has been requested), `"not-a-runtime"` (a handle
 NEXUS didn't make) or `"not-an-application"` (the same, for an application
-handle). `Runtime.isRefusal(defect)` recognizes one, including across two
+handle); `"duplicate-event-tag"` (two distinct `EventDef`s share a tag in one runtime). `Runtime.isRefusal(defect)` recognizes one, including across two
 installed copies of the package. Match on `code`, never on the message. (Thrown and defect errors carry `code`; typed failures in the `E` channel carry `_tag`.) It
 stays a defect and never a typed failure: using a handle after termination
 began is misuse, and an `E` channel on every `run` for it would make each

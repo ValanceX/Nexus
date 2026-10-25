@@ -20,6 +20,8 @@ export const define = <Tag extends string, Payload, Encoded = Payload>(tag: Tag,
 // this type is exported so that it can be named in a Layer's requirements
 // (`Layer.Layer<R, E, EventBusShape>`) and in NexusRuntime<R | EventBusShape>.
 export interface EventBusShape {
+  /** Registers the def's tag with this bus; dies with a `duplicate-event-tag` Refusal if another def already holds it. */
+  readonly claim: (event: { readonly _tag: string }) => Effect.Effect<void>;
   readonly publish: (envelope: Envelope) => Effect.Effect<void>;
   readonly subscribe: Effect.Effect<Queue.Dequeue<Envelope>, never, Scope.Scope>;
 }
@@ -35,7 +37,7 @@ export const EventBusLive: Layer.Layer<EventBusShape, never, never> = Layer.scop
 );
 
 export const publish = <Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, payload: Payload): Effect.Effect<void, never, EventBusShape> => Effect.flatMap(EventBus, (bus) =>
-  bus.publish({ _tag: event._tag, payload })
+  Effect.andThen(bus.claim(event), bus.publish({ _tag: event._tag, payload }))
 );
 
 // `validate: true` checks each payload against the schema's decoded (type) side:
@@ -49,6 +51,7 @@ export function subscribe<Tag extends string, Payload, Encoded = Payload>(event:
 
   return Stream.unwrapScoped(Effect.Do.pipe(
     Effect.andThen(EventBus),
+    Effect.tap((bus) => bus.claim(event)),
     Effect.andThen((bus) => bus.subscribe),
     // One event per pull (D4): an event is taken from the queue only when the
     // subscriber asks for the next one, so events still buffered when the bus

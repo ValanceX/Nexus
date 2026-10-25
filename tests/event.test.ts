@@ -1,6 +1,7 @@
 import { Chunk, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Queue, Ref, Schedule, Schema, Scope, Stream } from "effect";
 import { describe, it, expect, expectTypeOf } from "vitest";
 
+import { refusalOf } from "../src/runtime/internal.js";
 import * as EventModule from "../src/event/index.js";
 
 const UserSelected = EventModule.define("UserSelected", Schema.Struct({ userId: Schema.String }));
@@ -170,5 +171,33 @@ describe("Event with a transforming schema and validated subscribe", () => {
     const out = await Effect.runPromise(collect(Stream.take(EventModule.subscribe(Tick, { validate: true }), 1), [{ n: "x" }]));
 
     expect(out._tag === "Left" && out.left._tag).toBe("ParseError");
+  });
+});
+
+describe("Event tag identity", () => {
+  const A = EventModule.define("Dup", Schema.Struct({ a: Schema.String }));
+  const B = EventModule.define("Dup", Schema.Struct({ b: Schema.Number }));
+  const run = <X, E>(e: Effect.Effect<X, E, EventModule.EventBusShape>) => Effect.runPromiseExit(e.pipe(Effect.provide(EventModule.EventBusLive)));
+
+  it("dies with a duplicate-event-tag refusal when a second def uses a registered tag", async () => {
+    const exit = await run(EventModule.publish(A, { a: "x" }).pipe(Effect.andThen(EventModule.publish(B, { b: 1 }))));
+
+    expect(Exit.isFailure(exit) && refusalOf(exit.cause)?.code).toBe("duplicate-event-tag");
+  });
+
+  it("refuses at subscribe too", async () => {
+    const exit = await run(EventModule.publish(A, { a: "x" }).pipe(Effect.andThen(Stream.runDrain(EventModule.subscribe(B)))));
+
+    expect(Exit.isFailure(exit) && refusalOf(exit.cause)?.code).toBe("duplicate-event-tag");
+  });
+
+  it("allows one def used repeatedly, and distinct tags", async () => {
+    const exit = await run(EventModule.publish(A, { a: "x" }).pipe(Effect.andThen(EventModule.publish(A, { a: "y" })), Effect.andThen(EventModule.publish(UserSelected, { userId: "u" }))));
+
+    expect(Exit.isSuccess(exit)).toBe(true);
+  });
+
+  it("registers per runtime: a fresh bus accepts the other def", async () => {
+    expect(Exit.isSuccess(await run(EventModule.publish(B, { b: 1 })))).toBe(true);
   });
 });

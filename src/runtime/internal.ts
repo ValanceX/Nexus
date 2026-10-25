@@ -84,7 +84,9 @@ export type RefusalCode =
   /** The handle is not a runtime NEXUS made. */
   | "not-a-runtime"
   /** The handle is not an application NEXUS started. */
-  | "not-an-application";
+  | "not-an-application"
+  /** Two distinct `EventDef`s use one tag in the same runtime. */
+  | "duplicate-event-tag";
 
 const REFUSAL: unique symbol = Symbol.for("@valancex/nexus/Refusal") as never;
 
@@ -92,6 +94,7 @@ const REFUSALS: Record<RefusalCode, string> = {
   terminating: "the runtime has begun terminating",
   "not-a-runtime": "not a runtime NEXUS made",
   "not-an-application": "not an application NEXUS started",
+  "duplicate-event-tag": "two distinct EventDefs use the same tag in one runtime",
 };
 
 /**

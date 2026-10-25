@@ -3,6 +3,8 @@ import type { EventBusShape } from "./index.js";
 
 import { Context, Effect, PubSub, Queue, Scope } from "effect";
 
+import { refusal } from "../runtime/internal.js";
+
 export interface Envelope {
   readonly _tag: string;
   readonly payload: unknown;
@@ -27,8 +29,15 @@ export const makeBus: Effect.Effect<Bus> = Effect.Do.pipe(
   // before the bus closes (and then shut down by it) or refused after.
   Effect.bind("lock", () => Effect.makeSemaphore(1)),
   Effect.let("state", () => ({ closed: false, live: new Set<Queue.Dequeue<Envelope>>() })),
-  Effect.map(({ pubsub, lock, state }): Bus => ({
+  // Per bus (so per runtime): the def that first used each tag.
+  Effect.let("claimed", () => new Map<string, object>()),
+  Effect.map(({ pubsub, lock, state, claimed }): Bus => ({
     shape: {
+      claim: (event) => Effect.suspend(() => {
+        const first = claimed.get(event._tag) ?? (claimed.set(event._tag, event), event);
+
+        return first === event ? Effect.void : Effect.die(refusal("duplicate-event-tag"));
+      }),
       publish: (envelope: Envelope) => PubSub.publish(pubsub, envelope).pipe(Effect.asVoid),
       subscribe: lock.withPermits(1)(Effect.suspend((): Effect.Effect<Queue.Dequeue<Envelope>, never, Scope.Scope> => state.closed
         ? Queue.unbounded<Envelope>().pipe(Effect.tap(Queue.shutdown))
