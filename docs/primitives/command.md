@@ -21,9 +21,9 @@ calls into NEXUS (§9's clarified diagram).
 ## Data Model
 
 ```ts
-interface Command<Input, Output, Err, R> {
+interface Command<Input, Output, Err, R, Encoded = Input> {
   readonly name: string;
-  readonly input: Schema.Schema<Input>;
+  readonly input: Schema.Schema<Input, Encoded>;
   readonly handler: (input: Input) => Effect.Effect<Output, Err, R>;
 }
 ```
@@ -38,10 +38,15 @@ and MESH intents are matched by their `component/name` in the binding table.
 
 ```ts
 namespace Command {
-  function define<Input, Output, Err, R>(name: string,input: Schema.Schema<Input>, handler: (input: Input) => Effect.Effect<Output, Err, R>): Command<Input, Output, Err, R>;
-  function invoke<Input, Output, Err, R>(command: Command<Input, Output, Err, R>, rawInput: unknown): Effect.Effect<Output, Err | CommandValidationError, R>;
+  function define<Input, Output, Err, R, Encoded = Input>(name: string, input: Schema.Schema<Input, Encoded>, handler: (input: Input) => Effect.Effect<Output, Err, R>): Command<Input, Output, Err, R, Encoded>;
+  function invoke<Input, Output, Err, R, Encoded = Input>(command: Command<Input, Output, Err, R, Encoded>, rawInput: unknown): Effect.Effect<Output, Err | CommandValidationError, R>;
 }
 ```
+
+The input schema may transform (`Schema.Schema<Input, Encoded>`, for example
+`Schema.NumberFromString`): `invoke` takes the raw `Encoded` shape and the handler
+receives the decoded `Input`. `Encoded` defaults to `Input`, so `Command<I, O, E, R>`
+still names a non-transforming command.
 
 `invoke` — not `handler` directly — is what the MESH host adapter's bindings
 and tests call. It takes `unknown` deliberately: the whole point of a command
@@ -59,6 +64,7 @@ type CommandValidationError = {
   readonly _tag: "CommandValidationError";
   readonly command: string;
   readonly issues: ReadonlyArray<string>;
+  readonly cause: ParseResult.ParseError;
 };
 ```
 
@@ -66,7 +72,9 @@ type CommandValidationError = {
 own typed failures are never conflated with "the input didn't match the
 schema." A caller (the MESH adapter, a test) can always tell input rejection
 apart from a domain failure by matching on `_tag`. `issues` are
-human-readable messages describing why the input failed its schema.
+human-readable messages describing why the input failed its schema; `cause` is
+the structured `ParseError` they were flattened from, for callers that need the
+failing paths.
 
 ## Rules
 

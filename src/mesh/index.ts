@@ -86,7 +86,7 @@ export interface Host<E, R> {
  * in `toInput` is a broken binding, so it's a defect, never a
  * `CommandValidationError` (spec §6.3).
  */
-export const bind = <I, O, E, R>(command: Command<I, O, E, R>, toInput: (args: ReadonlyArray<IntentArgument>) => unknown): Binding<E | CommandValidationError, R> =>
+export const bind = <I, O, E, R, X>(command: Command<I, O, E, R, X>, toInput: (args: ReadonlyArray<IntentArgument>) => unknown): Binding<E | CommandValidationError, R> =>
   (args) => Effect.sync(() => toInput(args)).pipe(Effect.flatMap((input) => NexusCommand.invoke(command, input)));
 
 // A rejection from the runtime is a programming, package or runtime defect, so

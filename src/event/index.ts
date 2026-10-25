@@ -1,14 +1,17 @@
 import type { Envelope } from "./internal.js";
 
+import type { ParseResult } from "effect";
 import { Effect, Layer, Queue, Schema, Scope, Stream } from "effect";
 import { EventBus, makeBus } from "./internal.js";
 
-export interface EventDef<Tag extends string, Payload> {
+// `Encoded` defaults to `Payload`, so `EventDef<Tag, P>` still means a
+// non-transforming schema. The bus carries decoded `Payload` values.
+export interface EventDef<Tag extends string, Payload, Encoded = Payload> {
   readonly _tag: Tag;
-  readonly schema: Schema.Schema<Payload>;
+  readonly schema: Schema.Schema<Payload, Encoded>;
 }
 
-export const define = <Tag extends string, Payload>(tag: Tag, schema: Schema.Schema<Payload>): EventDef<Tag, Payload> => ({
+export const define = <Tag extends string, Payload, Encoded = Payload>(tag: Tag, schema: Schema.Schema<Payload, Encoded>): EventDef<Tag, Payload, Encoded> => ({
   _tag: tag, schema
 });
 
@@ -31,18 +34,29 @@ export const EventBusLive: Layer.Layer<EventBusShape, never, never> = Layer.scop
   )
 );
 
-export const publish = <Tag extends string, Payload>(event: EventDef<Tag, Payload>, payload: Payload): Effect.Effect<void, never, EventBusShape> => Effect.flatMap(EventBus, (bus) =>
+export const publish = <Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, payload: Payload): Effect.Effect<void, never, EventBusShape> => Effect.flatMap(EventBus, (bus) =>
   bus.publish({ _tag: event._tag, payload })
 );
 
-export const subscribe = <Tag extends string, Payload>(event: EventDef<Tag, Payload>): Stream.Stream<Payload, never, EventBusShape> => Stream.unwrapScoped(Effect.Do.pipe(
-  Effect.andThen(EventBus),
-  Effect.andThen((bus) => bus.subscribe),
-  // One event per pull (D4): an event is taken from the queue only when the
-  // subscriber asks for the next one, so events still buffered when the bus
-  // closes stay in the queue and are discarded with it, never handed over later.
-  Effect.map((dequeue) => Stream.fromQueue(dequeue, { maxChunkSize: 1 }).pipe(
-    Stream.filter((envelope): envelope is Envelope & { readonly payload: Payload } => envelope._tag === event._tag),
-    Stream.map((envelope) => envelope.payload as Payload)
-  ))
-));
+// `validate: true` checks each payload against the schema's decoded (type) side:
+// the bus carries decoded values, so a transforming schema is not decoded a
+// second time. A payload that fails ends the stream with the ParseError.
+export function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: true }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
+export function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options?: { readonly validate?: false }): Stream.Stream<Payload, never, EventBusShape>;
+export function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options?: { readonly validate?: boolean }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape> {
+  const check = Schema.decodeUnknown(Schema.typeSchema(event.schema));
+
+  return Stream.unwrapScoped(Effect.Do.pipe(
+    Effect.andThen(EventBus),
+    Effect.andThen((bus) => bus.subscribe),
+    // One event per pull (D4): an event is taken from the queue only when the
+    // subscriber asks for the next one, so events still buffered when the bus
+    // closes stay in the queue and are discarded with it, never handed over later.
+    Effect.map((dequeue) => Stream.fromQueue(dequeue, { maxChunkSize: 1 }).pipe(
+      Stream.filter((envelope) => envelope._tag === event._tag),
+      options?.validate === true
+        ? Stream.mapEffect((envelope) => check(envelope.payload))
+        : Stream.map((envelope) => envelope.payload as Payload)
+    ))
+  ));
+}

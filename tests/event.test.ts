@@ -141,3 +141,34 @@ describe("Event", () => {
     });
   });
 });
+
+describe("Event with a transforming schema and validated subscribe", () => {
+  const Tick = EventModule.define("Tick", Schema.Struct({ n: Schema.NumberFromString }));
+
+  const collect = <E>(stream: Stream.Stream<{ readonly n: number }, E, EventModule.EventBusShape>, publish: ReadonlyArray<unknown>) => Effect.scoped(Effect.Do.pipe(
+    Effect.andThen(Effect.fork(Stream.runCollect(stream).pipe(Effect.either))),
+    Effect.andThen((fiber) => Effect.Do.pipe(
+      Effect.andThen(Effect.sleep("1 millis")),
+      Effect.andThen(Effect.forEach(publish, (p) => EventModule.publish(Tick, p as { n: number }))),
+      Effect.andThen(Fiber.join(fiber))
+    ))
+  )).pipe(Effect.provide(EventModule.EventBusLive));
+
+  it("publishes and delivers the decoded payload", async () => {
+    const out = await Effect.runPromise(collect(Stream.take(EventModule.subscribe(Tick, { validate: true }), 1), [{ n: 7 }]));
+
+    expect(out._tag === "Right" && Array.from(out.right)).toEqual([{ n: 7 }]);
+  });
+
+  it("without validate, delivers a bad payload as given", async () => {
+    const out = await Effect.runPromise(collect(Stream.take(EventModule.subscribe(Tick), 1), [{ n: "x" }]));
+
+    expect(out._tag === "Right" && Array.from(out.right)).toEqual([{ n: "x" }]);
+  });
+
+  it("with validate, a bad payload fails the stream with the parse error", async () => {
+    const out = await Effect.runPromise(collect(Stream.take(EventModule.subscribe(Tick, { validate: true }), 1), [{ n: "x" }]));
+
+    expect(out._tag === "Left" && out.left._tag).toBe("ParseError");
+  });
+});

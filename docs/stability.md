@@ -19,6 +19,7 @@ What each public surface of NEXUS promises. The tiers have one meaning each. (ME
 | `@valancex/nexus/package.json` is exported, so tools can read the installed version (since 0.12.1) | Stable |
 | `"sideEffects": false`: importing the package does nothing, so a bundler drops what is not used (since 0.12.2) | Stable |
 | `Mesh` (the MESH host adapter, which needs the peer `@valancex/mesh-runtime`: a required peer, loaded by the root entry, so install it even if you never call `Mesh`), and `Mesh.update` (since 0.12.0) | Stable |
+| `Command.define` / `Event.define` accepting a transforming schema (`Schema.Schema<A, I>`, defaulted type parameter), `CommandValidationError.cause`, and `Event.subscribe(def, { validate: true })` (since 0.17.0) | Stable |
 | `Semantic` (`build`, `analyze` and its types) | Provisional |
 | `Event.EventBusShape`, `Event.EventBusLive` | Internal: plumbing. A layer may name the bus as a requirement (`Layer.Layer<R, E, EventBusShape>`), and that use is supported, but the shape itself may change in any release |
 | Anything under `dist/` that the package's `exports` doesn't list | Internal |
