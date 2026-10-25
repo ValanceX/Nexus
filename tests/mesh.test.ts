@@ -532,3 +532,12 @@ describe("Mesh.update", () => {
     expect(previous.tree).toEqual((await Effect.runPromise(host.render)).tree);
   });
 });
+
+describe("Mesh.bind with a transforming command", () => {
+  it("decodes the encoded input the binding returns", async () => {
+    const cmd = Nexus.Command.define("count", Schema.Struct({ n: Schema.NumberFromString }), ({ n }) => Effect.succeed(n + 1));
+    const binding = Nexus.Mesh.bind(cmd, () => ({ n: "41" }));
+
+    expect(await Effect.runPromise(binding([]))).toBe(42);
+  });
+});

@@ -26,3 +26,13 @@ it("keeps the narrow Command/EventDef references compiling and distinct from tra
 
   void plain; void ev; void narrow;
 });
+
+it("keeps explicit 4-argument Mesh.bind and a boolean validate flag compiling", () => {
+  const cmd = Nexus.Command.define("b", Schema.Struct({ n: Schema.Number }), () => Effect.void);
+  const bound = Nexus.Mesh.bind<{ readonly n: number }, void, never, never>(cmd, () => ({ n: 1 }));
+  const ev = Nexus.Event.define("B", Schema.Struct({ n: Schema.Number }));
+  const flag: boolean = Math.random() > 2;
+  const stream = Nexus.Event.subscribe(ev, { validate: flag });
+
+  void bound; void stream;
+});

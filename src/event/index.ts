@@ -43,6 +43,7 @@ export const publish = <Tag extends string, Payload, Encoded = Payload>(event: E
 // second time. A payload that fails ends the stream with the ParseError.
 export function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: true }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
 export function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options?: { readonly validate?: false }): Stream.Stream<Payload, never, EventBusShape>;
+export function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: boolean }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
 export function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options?: { readonly validate?: boolean }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape> {
   const check = Schema.decodeUnknown(Schema.typeSchema(event.schema));
 

@@ -57,6 +57,7 @@ namespace Event {
   function publish<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, payload: Payload): Effect.Effect<void, never, EventBusShape>;
   function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options?: { readonly validate?: false }): Stream.Stream<Payload, never, EventBusShape>;
   function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: true }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
+  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: boolean }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
 }
 ```
 
@@ -90,7 +91,7 @@ that itself), not to `publish`.
 
 - Events are typed and immutable. **`publish` is type-directed:** it accepts
   a `Payload` typed by its `EventDef`, and performs no runtime decode or
-  validation. Runtime validation isn't part of the Event contract. A payload
+  validation. Runtime validation isn't part of the Event contract unless the subscriber opts in with `{ validate: true }`, which delivers the decoded copy (excess keys dropped). A payload
   that gets past the type system through an untyped escape hatch (a cast,
   untyped JavaScript) is the publisher's responsibility, and is delivered as
   given.
