@@ -1,5 +1,32 @@
 # NEXUS
 
+## Your first app
+
+State, one command, and a runtime to run it. No services, layers or resources yet.
+
+```ts
+import { Effect, Layer, Schema } from "effect";
+import { Command, Runtime, State } from "@valancex/nexus";
+
+const Counter = Schema.Struct({ count: Schema.Number });
+
+const program = Effect.Do.pipe(
+  Effect.bind("counter", () => State.create(Counter, { count: 0 })),
+  Effect.bind("runtime", () => Runtime.make(Layer.empty)),
+  Effect.bind("increment", ({ counter }) => Effect.succeed(
+    Command.define("counter.increment", Schema.Struct({ by: Schema.Number }), ({ by }) =>
+      State.update(counter, (s) => Effect.succeed({ count: s.count + by })))
+  )),
+  Effect.tap(({ runtime, increment }) => Effect.promise(() => Runtime.run(runtime, Command.invoke(increment, { by: 2 })))),
+  Effect.andThen(({ counter }) => State.get(counter))
+);
+
+// Prints { count: 2 }
+Effect.runPromise(Effect.scoped(program)).then(console.log);
+```
+
+`Layer.empty` says "no services yet"; a later release makes it the default. The rest of this page is the pitch and the fuller picture.
+
 **Your application logic, free of any UI framework.**
 
 NEXUS is the application core of [Valance](https://github.com/ValanceX). It holds everything your app *does*: state, commands, services, derived data, events, and access to device capabilities. It never renders a single pixel.
@@ -15,7 +42,7 @@ MPRX describes intent  ──▶  NEXUS resolves behavior  ──▶  PORT reali
 - **Logic you can test without a browser.** Commands, state, and selectors are plain typed values, so you can exercise them directly in unit tests.
 - **No device checks in feature code.** Haptics, camera, storage, network, and AI are typed *capabilities*. The platform the app is started on supplies them once at startup, and the app handles a missing one explicitly. No more `if (device.hasX)`, and NEXUS itself names no browser, server or device.
 - **Typed from edge to edge.** Command inputs and state are validated with Effect Schema where data enters, and events are typed by their schema. Expected failures are typed errors; misuse and use after shutdown die with a defect carrying a stable `code`.
-- **Clean startup and shutdown.** Long-lived resources (sockets, devices, workers) acquired in a layer or the platform are released at shutdown, even when something fails halfway; one acquired in a command is released when that command's scope closes. Shutdown ends every state and event stream the app owns, and nothing can stop the app behind its lifecycle's back. It does not interrupt or wait for effects started with `Runtime.run`/`runFork`; it waits only for work NEXUS itself admitted.
+- **Clean startup and shutdown.** Long-lived resources (sockets, devices, workers) acquired in a layer or the platform are released at shutdown, even when something fails halfway; one acquired in a command is released when that command's scope closes. Shutdown ends every state and event stream the app owns, and nothing can stop the app behind its lifecycle's back. Effects started with `Runtime.run`/`runFork` get an optional `shutdown.grace` to finish, then are interrupted (and their finalizers run) before resources are released.
 - **Built on [Effect](https://effect.website).** NEXUS adds application-level concepts on top of Effect instead of reinventing dependency injection, scopes, or concurrency.
 
 ## A taste
@@ -45,7 +72,7 @@ For a complete runnable version, see [`examples/basic-app`](./examples/basic-app
 
 ## The building blocks
 
-NEXUS has nine primitives, each with one job:
+NEXUS has nine primitives, each with one job (the package also exports two non-primitive namespaces: `Mesh`, the MESH host adapter, and `Semantic`, the analysis model):
 
 | Primitive | In plain terms |
 |---|---|
@@ -77,7 +104,7 @@ Install from npm:
 $ pnpm add @valancex/nexus
 ```
 
-An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.12.0` (the same as `@valancex/common` and `@valancex/valance`, so a plain install resolves one MESH runtime, not two: decision W20).
+An application that renders MESH programs through `Mesh.host` also installs the MESH runtime it uses (`pnpm add @valancex/mesh-runtime`): it is a peer dependency, so NEXUS renders with the application's one runtime. Peer range: `^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0` (the same as `@valancex/common` and `@valancex/valance`, so a plain install resolves one MESH runtime, not two: decision W20).
 
 To work on NEXUS itself, from a clone:
 
@@ -90,7 +117,7 @@ $ pnpm build
 
 ## Status
 
-Current version: 0.14.0; 0.16.0 is prepared. Newest first.
+Current version: 0.16.0. Newest first.
 
 **v0.16.0 (prepared 2026-10-24):** the `@valancex/mesh-runtime` peer range admits MESH 0.17 (`^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0`); no API or behavior change. See the [release notes](./docs/releases/v0.16.md).
 
