@@ -36,3 +36,9 @@ it("keeps explicit 4-argument Mesh.bind and a boolean validate flag compiling", 
 
   void bound; void stream;
 });
+
+it("lets a hand-built CommandValidationError omit cause", () => {
+  const error: Nexus.Command.CommandValidationError = { _tag: "CommandValidationError", command: "x", issues: [] };
+
+  void error;
+});

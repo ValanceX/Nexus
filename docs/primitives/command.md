@@ -64,7 +64,7 @@ type CommandValidationError = {
   readonly _tag: "CommandValidationError";
   readonly command: string;
   readonly issues: ReadonlyArray<string>;
-  readonly cause: ParseResult.ParseError;
+  readonly cause?: ParseResult.ParseError;
 };
 ```
 
@@ -72,7 +72,7 @@ type CommandValidationError = {
 own typed failures are never conflated with "the input didn't match the
 schema." A caller (the MESH adapter, a test) can always tell input rejection
 apart from a domain failure by matching on `_tag`. `issues` are
-human-readable messages describing why the input failed its schema; `cause` is
+human-readable messages describing why the input failed its schema; `cause` (optional on the type, always set by `invoke`) is
 the structured `ParseError` they were flattened from, for callers that need the
 failing paths.
 

@@ -14,7 +14,7 @@ export type CommandValidationError = {
   readonly command: string;
   readonly issues: ReadonlyArray<string>;
   // The structured parse error that `issues` was flattened from.
-  readonly cause: ParseResult.ParseError;
+  readonly cause?: ParseResult.ParseError;
 };
 
 export const define = <Input, Output, Err, R, Encoded = Input>(name: string, input: Schema.Schema<Input, Encoded>, handler: (input: Input) => Effect.Effect<Output, Err, R>): Command<Input, Output, Err, R, Encoded> => ({
