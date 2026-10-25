@@ -1513,7 +1513,6 @@ decision" rule:
     `code`, a typed failure in the `E` channel carries `_tag` (v0.11). Termination
     waits up to the shutdown grace for effects started with `Runtime.run` or
     `runFork`, then interrupts what is left (v0.12), and waits for work NEXUS
-    itself admitted. Public
-    surfaces have tiers (stable, unreleased, provisional, internal) in
-    [`stability.md`](./stability.md); `Semantic` is Provisional and the event-bus
+    itself admitted. Public surfaces have tiers (stable, unreleased,
+    provisional, internal) in [`stability.md`](./stability.md); `Semantic` is Provisional and the event-bus
     plumbing Internal. A draining or interactive shutdown is not designed.
