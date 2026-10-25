@@ -2,6 +2,8 @@
 
 This is the design reference for NEXUS: what each primitive is for, how the pieces fit together, and the rules that keep NEXUS independent of any UI. It's the authoritative spec for this repo. For how NEXUS fits alongside [MESH](https://github.com/ValanceX/Mesh) and [PORT](https://github.com/ValanceX/Port), start at the [ValanceX organization page](https://github.com/ValanceX).
 
+**Glossary:** words that mean different things across the Valance repos (`unit`, `scope`, `Host`, `_tag`/`code`) are defined in the shared [Glossary](https://github.com/ValanceX/Valance/blob/main/docs/understand/glossary.md).
+
 ## Start here
 
 **The one-sentence version:** NEXUS is everything your application *does*, meaning its state, actions, dependencies, and device access, packaged so that it runs with no UI at all.
