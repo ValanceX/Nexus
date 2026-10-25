@@ -28,7 +28,7 @@ export type RuntimeInitError = {
 };
 
 /**
- * Builds a runtime from `layer`, with its own event bus as an ambient layer: the
+ * Builds a runtime from `layer` (default: `Layer.empty`, an application with no services yet), with its own event bus as an ambient layer: the
  * bus is *provide-merged* into `layer`, so it satisfies an `EventBusShape`
  * requirement `layer` declares, and stays in the final context for
  * `Event.publish`/`Event.subscribe` run through `run`/`runFork`.
@@ -36,7 +36,8 @@ export type RuntimeInitError = {
  * The runtime is owned by the caller's Scope, and ends when it closes: new work
  * is refused, the bus closes, then every resource is released (runtime.md).
  */
-export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>, options?: RuntimeOptions): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.Do.pipe(
+// Layer is invariant in its output, so the default needs a cast; it is sound only because the layer is omitted exactly when R is `never`.
+export const make = <R = never>(layer: Layer.Layer<R, unknown, EventBusShape> = Layer.empty as unknown as Layer.Layer<R, unknown, EventBusShape>, options?: RuntimeOptions): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.Do.pipe(
   Effect.bind("bus", () => makeBus),
   Effect.bind("lifecycle", ({ bus }) => makeLifecycle(bus, Duration.decode(options?.shutdown?.grace ?? 0))),
   // Tied to the *caller's* scope, so an interrupted/failed caller still

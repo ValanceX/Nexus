@@ -5,14 +5,14 @@
 State, one command, and a runtime to run it. No services, layers or resources yet.
 
 ```ts
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { Command, Runtime, State } from "@valancex/nexus";
 
 const Counter = Schema.Struct({ count: Schema.Number });
 
 const program = Effect.Do.pipe(
   Effect.bind("counter", () => State.create(Counter, { count: 0 })),
-  Effect.bind("runtime", () => Runtime.make(Layer.empty)),
+  Effect.bind("runtime", () => Runtime.make()),
   Effect.bind("increment", ({ counter }) => Effect.succeed(
     Command.define("counter.increment", Schema.Struct({ by: Schema.Number }), ({ by }) =>
       State.update(counter, (s) => Effect.succeed({ count: s.count + by })))
@@ -25,7 +25,7 @@ const program = Effect.Do.pipe(
 Effect.runPromise(Effect.scoped(program)).then(console.log);
 ```
 
-`Layer.empty` says "no services yet"; a later release makes it the default. The rest of this page is the pitch and the fuller picture.
+`Runtime.make()` with no layer means "no services yet". The rest of this page is the pitch and the fuller picture.
 
 **Your application logic, free of any UI framework.**
 
@@ -68,7 +68,7 @@ const selectUser = Command.define(
 const selectedUser = Selector.define(users, (s) => s.selectedUser);
 ```
 
-For a complete runnable version, see [`examples/basic-app`](./examples/basic-app/index.ts).
+For the smallest runnable app, see [`examples/hello`](./examples/hello/index.ts); for a complete one, [`examples/basic-app`](./examples/basic-app/index.ts).
 
 ## The building blocks
 

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
 // The README's "first app" runs here. Everything between the markers must appear verbatim in README.md, so the snippet cannot drift from code that compiles.
@@ -11,7 +11,7 @@ const Counter = Schema.Struct({ count: Schema.Number });
 
 const program = Effect.Do.pipe(
   Effect.bind("counter", () => State.create(Counter, { count: 0 })),
-  Effect.bind("runtime", () => Runtime.make(Layer.empty)),
+  Effect.bind("runtime", () => Runtime.make()),
   Effect.bind("increment", ({ counter }) => Effect.succeed(
     Command.define("counter.increment", Schema.Struct({ by: Schema.Number }), ({ by }) =>
       State.update(counter, (s) => Effect.succeed({ count: s.count + by })))

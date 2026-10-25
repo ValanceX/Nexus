@@ -1510,9 +1510,10 @@ decision" rule:
     `not-a-runtime`, `not-an-application`); it stays a defect and never a typed
     failure, because an `E` channel on every `run` would make each caller handle
     what it cannot fix. The rule for error identity: a thrown or dying error carries
-    `code`, a typed failure in the `E` channel carries `_tag` (v0.11). Termination does
-    not wait for effects started with `Runtime.run` or `runFork`; it waits only for
-    work NEXUS itself admitted, and closes the scope under the rest. Public
+    `code`, a typed failure in the `E` channel carries `_tag` (v0.11). Termination
+    waits up to the shutdown grace for effects started with `Runtime.run` or
+    `runFork`, then interrupts what is left (v0.12), and waits for work NEXUS
+    itself admitted. Public
     surfaces have tiers (stable, unreleased, provisional, internal) in
     [`stability.md`](./stability.md); `Semantic` is Provisional and the event-bus
     plumbing Internal. A draining or interactive shutdown is not designed.
