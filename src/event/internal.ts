@@ -29,7 +29,8 @@ export const makeBus: Effect.Effect<Bus> = Effect.Do.pipe(
   // before the bus closes (and then shut down by it) or refused after.
   Effect.bind("lock", () => Effect.makeSemaphore(1)),
   Effect.let("state", () => ({ closed: false, live: new Set<Queue.Dequeue<Envelope>>() })),
-  // Per bus (so per runtime): the def that first used each tag.
+  // Per bus (so per runtime): tag -> the def that first used it. It holds the def
+  // strongly for the bus lifetime and is dropped with the runtime.
   Effect.let("claimed", () => new Map<string, object>()),
   Effect.map(({ pubsub, lock, state, claimed }): Bus => ({
     shape: {
