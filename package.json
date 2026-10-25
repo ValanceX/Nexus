@@ -46,10 +46,10 @@
     "@valancex/mesh-runtime": "^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
-    "@valancex/mesh-compiler": "^0.16.0",
-    "@valancex/mesh-runtime": "^0.16.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "@types/node": "^26.6.5",
+    "@valancex/mesh-compiler": "^0.17.0",
+    "@valancex/mesh-runtime": "^0.17.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }

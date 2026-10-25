@@ -1,6 +1,6 @@
 # pnpm 11: our own freshly published versions are exempt from the minimum release age (they are exactly the ones named), and esbuild's build script is declared (vitest's bundler; it is not needed to run the tests).
 minimumReleaseAgeExclude:
-  - "@valancex/mesh-runtime@0.16.0"
-  - "@valancex/mesh-compiler@0.16.0"
+  - "@valancex/mesh-runtime@0.16.0 || 0.17.0"
+  - "@valancex/mesh-compiler@0.16.0 || 0.17.0"
 allowBuilds:
   esbuild: false
