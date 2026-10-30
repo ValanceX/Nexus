@@ -4,3 +4,6 @@ minimumReleaseAgeExclude:
   - "@valancex/mesh-compiler@0.16.0 || 0.17.0"
 allowBuilds:
   esbuild: false
+overrides:
+  "@valancex/mesh-runtime": file:./local-packs/valancex-mesh-runtime-0.18.0.tgz
+  "@valancex/mesh-compiler": file:./local-packs/valancex-mesh-compiler-0.18.0.tgz
