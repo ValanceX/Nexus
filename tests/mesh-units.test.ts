@@ -12,7 +12,7 @@ const { Mesh } = Nexus;
 const supported = typeof (MeshRuntime as { readonly raise?: unknown }).raise === "function";
 
 // MESH 0.18 lists them as `occurrences` (refinements C-4).
-const occurrences = (render: Nexus.Mesh.Render): ReadonlyArray<Nexus.Mesh.UnitOccurrence> => render.occurrences;
+const occurrences = (render: Nexus.Mesh.Render) => render.occurrences;
 
 const model = JSON.stringify({
   version: 1,

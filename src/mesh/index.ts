@@ -42,8 +42,8 @@ export type CommandIntent = RuntimeIntent & {
 
 /** One occurrence of a component with a unit in a render (MESH 0.18's `Render.occurrences`; `Render.instances` in MESH 0.15 to 0.17). */
 export interface UnitOccurrence {
-  /** The occurrence's key (MESH 0.18). */
-  readonly occurrence: string;
+  /** The occurrence's key. Present from MESH 0.18; MESH 0.15 to 0.17 give only `instance`, so read `occurrence ?? instance` to support both. */
+  readonly occurrence?: string;
   /**
    * The old name of `occurrence`: the only one MESH 0.15 to 0.17 give, and a deprecated alias in MESH 0.18 (not enumerable, removed after it).
    * @deprecated Read `occurrence` (MESH 0.18, refinements C-4).
