@@ -4,13 +4,21 @@ Every release of NEXUS, newest first, in the [Keep a Changelog](https://keepacha
 
 Each entry links to the version's full release notes: what changed, how to upgrade, and what was verified.
 
-## [Unreleased]
+## [0.18.0] - 2026-10-31
+
+NEXUS moves to Effect 4. North-star tier: none (no NEXUS API is added; every change follows Effect 4's types). No scorecard audit moves.
 
 ### Changed (breaking)
 
 - Requires Effect 4: `effect` is now a peer dependency (`^4.1.0`), so an application and NEXUS share one Effect. Node `>=22.19`.
 - Public types that named Effect 3 types now name their Effect 4 counterparts: `Runtime.runFork` returns `Fiber.Fiber<A, E>` (was `Fiber.RuntimeFiber`); `Service<Shape>` and `Capability.Environment` are `Context.Service<Shape, Shape>` (was `Context.Tag`); schemas are `Schema.Codec<A, I>` (was `Schema.Schema<A, I>`); `CommandValidationError.cause` and a validated `Event.subscribe` fail with `Schema.SchemaError` (was `ParseResult.ParseError`); `EventBusShape.subscribe` yields a `PubSub.Subscription` (was `Queue.Dequeue`); `ShutdownOptions.grace` is a `Duration.Input` (was `Duration.DurationInput`).
 - `Runtime.run`'s Promise rejects with the squashed `Cause` (Effect 4's `runPromise`): a refusal rejects with the `Refusal` itself, so `Runtime.isRefusal(rejection)` now holds. `Runtime.refusalOf` still finds it, in a `Cause` or the refusal itself.
+
+### Changed
+
+- `Runtime.refusalOf` no longer unwraps a `FiberFailure` (Effect 4 has none): a rejection from `Runtime.run` is the refusal itself.
+- Internal: the registry keeps a built `Context` instead of an Effect `Runtime`. `isolated` (the caller-isolation helper) is removed from `Runtime.make`'s layer build, where Effect 4 restores the fiber's Context after a build and has no `FiberRef`; it stays for the scope close at termination and in `settleWork`. The architecture explanation changed to match.
+- The event bus closes each subscription with its own scope, and `State` ends its streams by shutting down its ref's `PubSub`, so closing ends streams normally, as before.
 
 ## [0.17.0] - 2026-10-31
 

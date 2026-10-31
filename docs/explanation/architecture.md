@@ -1488,8 +1488,8 @@ decision" rule:
       - for closing the runtime's scope at termination (C30): a finalizer in
         a sequential scope runs in the terminating fiber and could write into
         it;
-      - for the scope close above, and in `settleWork`'s wait (kept
-        interruptible, so its timeout can end it).
+      - in `settleWork`'s wait (kept interruptible, so its timeout can end
+        it).
 
       `runFork`'s handle is an execution handle NEXUS controls, not the
       application's fiber (C32), and stays so because a v4 `Fiber` exposes

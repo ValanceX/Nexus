@@ -49,7 +49,7 @@ const makeFrom = <R>(layer: Layer.Layer<R, unknown, EventBusShape>, options?: Ru
   // Tied to the *caller's* scope, so an interrupted/failed caller still
   // terminates the runtime rather than leaking every layer it already built.
   Effect.tap(({ lifecycle }) => Effect.addFinalizer(() => terminateLifecycle(lifecycle))),
-  // The built Context, over the Context the application's fiber started with, is
+  // The built Context, over the Context the build started with, is
   // kept in the private registry, never on the handle (N3); every effect run
   // through the handle runs against it.
   //
