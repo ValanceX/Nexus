@@ -16,7 +16,7 @@ export const define = <Tag extends string, Payload, Encoded = Payload>(tag: Tag,
 });
 
 // The bus service shape. Event.publish/Event.subscribe (below) remain the
-// public, per-EventDef API surface documented in docs/primitives/event.md —
+// public, per-EventDef API surface documented in docs/reference/primitives/event.md —
 // this type is exported so that it can be named in a Layer's requirements
 // (`Layer.Layer<R, E, EventBusShape>`) and in NexusRuntime<R | EventBusShape>.
 export interface EventBusShape {

@@ -1,4 +1,4 @@
-// How a runtime ends the work started with `run` and `runFork` (docs/primitives/runtime.md, "Termination"): after new work is refused and the bus is closed, termination waits up to a
+// How a runtime ends the work started with `run` and `runFork` (docs/reference/primitives/runtime.md, "Termination"): after new work is refused and the bus is closed, termination waits up to a
 // grace for the work to finish on its own (never less than one turn of the event loop), then interrupts what is left and waits for it to exit, and only then releases resources.
 import { Cause, Duration, Effect, Exit, Fiber, Layer, Ref, Schema, Scope, Stream } from "effect";
 import { describe, expect, it } from "vitest";

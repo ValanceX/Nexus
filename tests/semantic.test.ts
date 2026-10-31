@@ -663,7 +663,7 @@ describe("Semantic: the reference page matches the module (N4)", () => {
 
   it("names exactly the module's exports, and every exported interface field", () => {
     const source = read("../src/semantic/index.ts");
-    const page = read("../docs/semantic.md");
+    const page = read("../docs/reference/semantic.md");
     const normative = page.slice(page.indexOf("## Data Model"), page.indexOf("## Rejection"));
     const blocks = Array.from(normative.matchAll(/```ts\n([\s\S]*?)```/g), (m) => m[1] ?? "").join("\n");
     const namesIn = (text: string, pattern: RegExp) => new Set(Array.from(text.matchAll(pattern), (m) => m[1]));
