@@ -6,6 +6,12 @@ Each entry links to the version's full release notes: what changed, how to upgra
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- Requires Effect 4: `effect` is now a peer dependency (`^4.1.0`), so an application and NEXUS share one Effect. Node `>=22.19`.
+- Public types that named Effect 3 types now name their Effect 4 counterparts: `Runtime.runFork` returns `Fiber.Fiber<A, E>` (was `Fiber.RuntimeFiber`); `Service<Shape>` and `Capability.Environment` are `Context.Service<Shape, Shape>` (was `Context.Tag`); schemas are `Schema.Codec<A, I>` (was `Schema.Schema<A, I>`); `CommandValidationError.cause` and a validated `Event.subscribe` fail with `Schema.SchemaError` (was `ParseResult.ParseError`); `EventBusShape.subscribe` yields a `PubSub.Subscription` (was `Queue.Dequeue`); `ShutdownOptions.grace` is a `Duration.Input` (was `Duration.DurationInput`).
+- `Runtime.run`'s Promise rejects with the squashed `Cause` (Effect 4's `runPromise`): a refusal rejects with the `Refusal` itself, so `Runtime.isRefusal(rejection)` now holds. `Runtime.refusalOf` still finds it, in a `Cause` or the refusal itself.
+
 ## [0.17.0] - 2026-10-31
 
 See the [0.17.0 release notes](docs/reference/releases/v0.17.md#v0170).

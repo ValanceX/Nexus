@@ -1,5 +1,5 @@
 import { UserState, UserRepository, UserRepositoryLive, UserSelected, buildApp, released } from "../examples/basic-app/index.js";
-import { Chunk, Effect, Fiber, Option, Stream } from "effect";
+import { Effect, Fiber, Option, Stream } from "effect";
 import { describe, it, expect } from "vitest";
 
 import * as Command from "../src/command/index.js";
@@ -63,7 +63,7 @@ describe("NEXUS vertical slice (§22)", () => {
       const finalStatus = yield* Nexus.Application.status(running);
       log.push("application shuts down");
 
-      return { users, stateAfter, derived, events: Array.from(Chunk.toReadonlyArray(events)), finalStatus };
+      return { users, stateAfter, derived, events: events, finalStatus };
     });
 
     const result = await Effect.runPromise(Effect.scoped(program));
@@ -142,7 +142,7 @@ describe("NEXUS vertical slice (§22)", () => {
       const finalStatus = yield* Nexus.Application.status(running);
       log.push("application shuts down");
 
-      return { probe, users, stateAfter, derived, events: Array.from(Chunk.toReadonlyArray(events)), finalStatus };
+      return { probe, users, stateAfter, derived, events: events, finalStatus };
     });
 
     const result = await Effect.runPromise(Effect.scoped(program));

@@ -8,11 +8,11 @@ export type User = Schema.Schema.Type<typeof User>;
 export const UserState = Schema.Struct({
   users: Schema.Array(User),
   // NOTE: Schema.OptionFromNullOr's encoded side is `string | null | undefined`,
-  // not an already-constructed Option instance, so Schema.decodeUnknown would
-  // reject Option.none()/Option.some(userId) as invalid input. OptionFromSelf's
+  // not an already-constructed Option instance, so Schema.decodeUnknownEffect would
+  // reject Option.none()/Option.some(userId) as invalid input. Schema.Option's
   // encoded AND decoded sides are both Option<A>, so it accepts Option values
   // directly while still performing real validation.
-  selectedUser: Schema.OptionFromSelf(UserId),
+  selectedUser: Schema.Option(UserId),
 });
 
 export interface UserRepositoryShape {
@@ -23,7 +23,7 @@ export const UserRepository = Nexus.Service.define<UserRepositoryShape>("UserRep
 
 export const released = { value: false };
 
-export const UserRepositoryLive = Layer.scoped(
+export const UserRepositoryLive = Layer.effect(
   UserRepository,
   Nexus.Resource.acquire({
     acquire: Effect.sync((): UserRepositoryShape => ({

@@ -4,7 +4,7 @@ import type { RenderNode, RenderTree } from "@valancex/mesh-runtime";
 import type { StateHandle } from "../src/state/index.js";
 
 import { compile } from "@valancex/mesh-compiler";
-import { Cause, Chunk, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Schedule, Schema, Scope, Stream } from "effect";
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Result, Schedule, Schema, Scope, Stream } from "effect";
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -54,7 +54,7 @@ const Team = Schema.Struct({
   first: User,
   second: User,
   compact: Schema.Boolean,
-  selectedUserId: Schema.OptionFromSelf(Schema.String),
+  selectedUserId: Schema.Option(Schema.String),
 });
 type Team = Schema.Schema.Type<typeof Team>;
 
@@ -148,7 +148,7 @@ const firstCardName = (tree: RenderTree): unknown => nodesOf(tree).filter((node)
 const press = { x: 1, y: 2 };
 
 // The typed failure an exit carries, if it has one.
-const failureOf = <A, E>(exit: Exit.Exit<A, E>): Option.Option<E> => Exit.isFailure(exit) ? Cause.failureOption(exit.cause) : Option.none();
+const failureOf = <A, E>(exit: Exit.Exit<A, E>): Option.Option<E> => Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : Option.none();
 
 // The diagnostic codes of a MeshDiagnostics failure.
 const codesOf = (error: Option.Option<unknown>): ReadonlyArray<string> => Option.match(error, {
@@ -184,7 +184,7 @@ describe("MESH adapter (spec §8)", () => {
       Effect.map(({ dispatched, state, published }) => {
         expect(dispatched.intent).toEqual(readJson("expected/select-first.intent.json"));
         expect(state.selectedUserId).toEqual(Option.some("u1"));
-        expect(Chunk.toReadonlyArray(published)).toEqual([{ userId: "u1" }]);
+        expect(published).toEqual([{ userId: "u1" }]);
         expect(calls.select).toBe(1);
       })
     );
@@ -249,8 +249,8 @@ describe("MESH adapter (spec §8)", () => {
       Effect.map(({ dispatched, renders }) => {
         expect(dispatched.intent.command).toEqual({ component: "users", name: "refresh" });
         expect(dispatched.intent.arguments).toEqual([]);
-        expect(Chunk.size(renders)).toBe(1);
-        expect(Chunk.toReadonlyArray(renders).map((render) => firstCardName(render.tree))).toEqual(["Ada King"]);
+        expect(renders.length).toBe(1);
+        expect(renders.map((render) => firstCardName(render.tree))).toEqual(["Ada King"]);
       })
     );
   }));
@@ -276,7 +276,7 @@ describe("MESH adapter (spec §8)", () => {
 
     return Stream.runCollect(Stream.take(host.values, 2)).pipe(Effect.map((renders) => {
       // The first render is of the value current at subscription; the commit that raced it follows.
-      expect(Chunk.toReadonlyArray(renders).map((render) => firstCardName(render.tree))).toEqual(["Ada Lovelace", "Ada King"]);
+      expect(renders.map((render) => firstCardName(render.tree))).toEqual(["Ada Lovelace", "Ada King"]);
     }));
   }));
 
@@ -350,8 +350,8 @@ describe("MESH adapter (spec §8)", () => {
         Effect.andThen((render) => Effect.exit(inApp(running, host.dispatch(render, clickOf(render.tree, "avatar", 0), press)))),
         Effect.map((exit) => {
           expect(Exit.isFailure(exit)).toBe(true);
-          expect(Exit.isFailure(exit) && Cause.isDie(exit.cause)).toBe(true);
-          expect(Exit.isFailure(exit) ? Cause.dieOption(exit.cause) : Option.none()).toEqual(Option.some(broken));
+          expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true);
+          expect(Exit.isFailure(exit) ? Result.getSuccess(Cause.findDefect(exit.cause)) : Option.none()).toEqual(Option.some(broken));
           expect(failureOf(exit)).toEqual(Option.none());
           expect(calls.select).toBe(0);
         })
@@ -370,7 +370,7 @@ describe("MESH adapter (spec §8)", () => {
         }),
         Effect.map((exit) => {
           expect(failureOf(exit)).toEqual(Option.none());
-          expect(Exit.isFailure(exit) ? Option.getOrUndefined(Cause.dieOption(exit.cause)) : undefined).toBeInstanceOf(TypeError);
+          expect(Exit.isFailure(exit) ? Option.getOrUndefined(Result.getSuccess(Cause.findDefect(exit.cause))) : undefined).toBeInstanceOf(TypeError);
         })
       );
     }));
@@ -422,14 +422,14 @@ describe("MESH adapter (spec §8)", () => {
       Effect.tap(() => Effect.sleep("20 millis")),
       // 4. Nothing for the failed commit, no re-emitted step 1 render, nothing for step 3.
       Effect.bind("seenAtEnd", ({ seen }) => Ref.get(seen)),
-      Effect.bind("afterStep3", ({ consumer }) => Fiber.poll(consumer)),
+      Effect.bind("afterStep3", ({ consumer }) => Effect.sync(() => Option.fromUndefinedOr(consumer.pollUnsafe()))),
       // 5. The host kept nothing: a fresh render of the current state succeeds.
       Effect.bind("fresh", () => host.render),
       Effect.map(({ step1, failed, seenAtEnd, afterStep3, fresh }) => {
         expect(step1.map((render) => firstCardName(render.tree))).toEqual(["Ada King"]);
 
         expect(Exit.isFailure(failed)).toBe(true);
-        expect(Exit.isFailure(failed) && Cause.isDie(failed.cause)).toBe(false);
+        expect(Exit.isFailure(failed) && Cause.hasDies(failed.cause)).toBe(false);
         expect(codesOf(failureOf(failed))).toContain("runtime-unknown-field");
 
         expect(seenAtEnd).toHaveLength(1);
@@ -496,7 +496,7 @@ describe("MESH adapter (spec §8)", () => {
           expect(probe).toEqual({ ok: true });
           expect(dispatched.intent).toEqual(readJson("expected/select-first.intent.json"));
           expect(state.selectedUserId).toEqual(Option.some("u1"));
-          expect(Chunk.toReadonlyArray(published)).toEqual([{ userId: "u1" }]);
+          expect(published).toEqual([{ userId: "u1" }]);
           expect(calls.select).toBe(1);
         })
       );
@@ -528,7 +528,7 @@ describe("Mesh.update", () => {
     const previous = await Effect.runPromise(host.render);
     const exit = await Effect.runPromiseExit(Mesh.update(previous, { title: 1 } as unknown as Record<string, unknown>));
 
-    expect(Exit.isFailure(exit) && Cause.failureOption(exit.cause).pipe(Option.map((failure) => failure._tag))).toEqual(Option.some("MeshDiagnostics"));
+    expect(Exit.isFailure(exit) && Cause.findErrorOption(exit.cause).pipe(Option.map((failure) => failure._tag))).toEqual(Option.some("MeshDiagnostics"));
     expect(previous.tree).toEqual((await Effect.runPromise(host.render)).tree);
   });
 });

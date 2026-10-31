@@ -12,7 +12,7 @@ describe("Command", () => {
     let handlerRan = false;
 
     const cmd = Command.define("users.select", SelectInput, () => Effect.Do.pipe(
-      Effect.tap(() => void (handlerRan = true)),
+      Effect.tap(() => Effect.sync(() => { handlerRan = true; })),
       Effect.andThen(() => Effect.succeed("ran" as const))
     ));
 
@@ -39,7 +39,7 @@ describe("Command", () => {
   });
 
   it("updates state through the command handler", async () => {
-    const UserState = Schema.Struct({ selectedUser: Schema.OptionFromSelf(Schema.String) });
+    const UserState = Schema.Struct({ selectedUser: Schema.Option(Schema.String) });
 
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
       Effect.bind('users', () => State.create(UserState, { selectedUser: Option.none() })),
@@ -92,6 +92,6 @@ describe("Command with a transforming schema", () => {
 
     expect(error._tag).toBe("CommandValidationError");
     expect(error.issues).toHaveLength(1);
-    expect(error.cause?._tag).toBe("ParseError");
+    expect(error.cause?._tag).toBe("SchemaError");
   });
 });

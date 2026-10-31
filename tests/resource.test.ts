@@ -10,14 +10,14 @@ describe("Resource", () => {
     await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
       Effect.andThen(Resource.acquire({
         acquire: Effect.Do.pipe(
-          Effect.tap(() => events.push("acquire")),
+          Effect.tap(() => Effect.sync(() => events.push("acquire"))),
           Effect.map(() => ({ id: 1 }))
         ),
         release: () => Effect.sync(() => {
           events.push("release");
         }),
       })),
-      Effect.tap((handle) => events.push(`use:${handle.id}`))
+      Effect.tap((handle) => Effect.sync(() => events.push(`use:${handle.id}`)))
     )));
 
     expect(events).toEqual(["acquire", "use:1", "release"]);
@@ -29,7 +29,7 @@ describe("Resource", () => {
     const exit = await Effect.runPromiseExit(Effect.scoped(Effect.Do.pipe(
       Effect.andThen(Resource.acquire({
         acquire: Effect.Do.pipe(
-          Effect.tap(() => events.push('acquire')),
+          Effect.tap(() => Effect.sync(() => events.push('acquire'))),
           Effect.map(() => ({}))
         ),
         release: () => Effect.sync(() => {
@@ -49,14 +49,14 @@ describe("Resource", () => {
     await Effect.runPromise(Effect.Do.pipe(
       Effect.map(() => Effect.scoped(Resource.acquire({
         acquire: Effect.Do.pipe(
-          Effect.tap(() => events.push("acquire")),
+          Effect.tap(() => Effect.sync(() => events.push("acquire"))),
           Effect.map(() => ({}))
         ),
         release: () => Effect.sync(() => {
           events.push("release");
         }),
       }))),
-      Effect.andThen(Effect.fork),
+      Effect.andThen((effect) => Effect.forkChild(effect)),
       Effect.andThen((fiber) => Effect.Do.pipe(
         Effect.andThen(Effect.sleep("10 millis")),
         Effect.andThen(Fiber.interrupt(fiber)),

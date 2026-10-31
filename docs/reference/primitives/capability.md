@@ -71,7 +71,7 @@ two ways:
   the implementations, owns their lifetime, and may share them between
   applications. NEXUS never releases them.
 - **Application-scoped resources:** a scoped layer that builds the map, for
-  example `Layer.scoped(Capability.Environment, Effect.acquireRelease(…))`.
+  example `Layer.effect(Capability.Environment, Effect.acquireRelease(…))`.
   The platform Layer is provided to the application-owned runtime scope, so
   these are acquired before, and released after, every application
   resource. Each `start` acquires its own.
@@ -222,7 +222,7 @@ interface EnvironmentShape {
   readonly resolutions: ReadonlyMap<string, CapabilityResolution<unknown>>;
 }
 
-const Environment: Context.Tag<EnvironmentShape, EnvironmentShape>;
+const Environment: Context.Service<EnvironmentShape, EnvironmentShape>;
 function EnvironmentLive(resolutions: ReadonlyMap<string, CapabilityResolution<unknown>>): Layer.Layer<EnvironmentShape>;
 ```
 

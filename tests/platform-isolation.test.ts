@@ -2,28 +2,27 @@
 // I44–I49, C29–C31). The regressions derive from the P1 finding of the integration audit
 // (docs/explanation/design-records/2026-09-28-valance-integration-audit.md §16) and the outline's E1–E3.
 //
-// The boundary: FiberRefs flow caller → application (inherited, with the precedence
-// caller < platform < application layer inside the application), never application or
-// platform → caller. "The caller" is the fiber that starts the application and the
+// The boundary: Context references (Clock, log level, …) flow caller → application
+// (inherited, with the precedence caller < platform < application layer inside the
+// application), never application or platform → caller. "The caller" is the fiber that starts the application and the
 // fiber that terminates it.
 //
 // Every observation compares identities (is this the platform's value?), never wall
 // clock readings.
-import { Cause, Clock, Config, ConfigProvider, Context, Deferred, Effect, Either, Exit, Fiber, FiberRef, Layer, LogLevel, Option, Random, Scope } from "effect";
-import * as DefaultServices from "effect/DefaultServices";
+import { Cause, Clock, Config, ConfigProvider, Context, Deferred, Effect, Exit, Fiber, Layer, Option, Random, References, Result, Scope } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as Nexus from "../src/index.js";
 
-import { referencePlatform } from "./platform/reference.js";
+import { fixedClock, referencePlatform } from "./platform/reference.js";
 
 // ---------------------------------------------------------------------------
-// FiberRef kinds (M1). Each sets a value through an Effect Layer, and reads
-// whether the current fiber sees that value. Clock is not special: three default
-// services share the `currentServices` FiberRef, and the minimum log level is a
-// FiberRef of its own.
+// Reference kinds (M1; in v3, FiberRef kinds). Each sets a value through an Effect
+// Layer, and reads whether the current fiber sees that value. Clock is not special:
+// Clock, Random, the ConfigProvider and the minimum log level are all Context
+// references with a default.
 
-const fixed = (n: number): Clock.Clock => ({ ...Clock.make(), currentTimeMillis: Effect.succeed(n), unsafeCurrentTimeMillis: () => n });
+const fixed = fixedClock;
 const is42 = Effect.map(Clock.currentTimeMillis, (t) => t === 42);
 
 interface Kind {
@@ -34,21 +33,21 @@ interface Kind {
 }
 
 const kinds: ReadonlyArray<Kind> = [
-  { name: "Clock (Layer.setClock)", set: Layer.setClock(fixed(42)), sees: is42 },
+  { name: "Clock (Clock.Clock)", set: Layer.succeed(Clock.Clock, fixed(42)), sees: is42 },
   {
-    name: "Random (Layer.setRandom)",
-    set: Layer.setRandom({ ...Random.make("platform"), nextInt: Effect.succeed(777777) } as Random.Random),
-    sees: Effect.map(Effect.randomWith((random) => random.nextInt), (n) => n === 777777),
+    name: "Random (Random.Random)",
+    set: Layer.succeed(Random.Random, { nextIntUnsafe: () => 777777, nextDoubleUnsafe: () => 0.5 }),
+    sees: Effect.map(Random.nextInt, (n) => n === 777777),
   },
   {
-    name: "ConfigProvider (Layer.setConfigProvider)",
-    set: Layer.setConfigProvider(ConfigProvider.fromMap(new Map([["NEXUS_ISOLATION_PROBE", "platform"]]))),
-    sees: Effect.map(Effect.orElseSucceed(Config.string("NEXUS_ISOLATION_PROBE"), () => "unset"), (value) => value === "platform"),
+    name: "ConfigProvider (ConfigProvider.layer)",
+    set: ConfigProvider.layer(ConfigProvider.fromUnknown({ NEXUS_ISOLATION_PROBE: "platform" })),
+    sees: Effect.map(Effect.orElseSucceed(Config.String("NEXUS_ISOLATION_PROBE"), () => "unset"), (value) => value === "platform"),
   },
   {
-    name: "minimum log level (Layer.locallyScoped)",
-    set: Layer.locallyScoped(FiberRef.currentMinimumLogLevel, LogLevel.Error),
-    sees: Effect.map(FiberRef.get(FiberRef.currentMinimumLogLevel), (level) => level._tag === "Error"),
+    name: "minimum log level (References.MinimumLogLevel)",
+    set: Layer.succeed(References.MinimumLogLevel, "Error"),
+    sees: Effect.map(References.MinimumLogLevel, (level) => level === "Error"),
   },
 ];
 
@@ -67,7 +66,11 @@ const define = (runtime: Layer.Layer<never, unknown, Nexus.Application.Applicati
 const inApp = <A>(running: Nexus.Application.RunningApplication<never>, effect: Effect.Effect<A>): Effect.Effect<A> =>
   Effect.promise(() => Nexus.Runtime.run(running.runtime, effect));
 
-const stop = (route: Route, running: Nexus.Application.RunningApplication<never>, scope: Scope.CloseableScope): Effect.Effect<void> =>
+// What a FiberRef write was in v3: a change to the Context of the fiber that runs it, which every later step of that fiber sees.
+const writeIntoFiber = <S>(reference: Context.Reference<S>, value: S): Effect.Effect<void> =>
+  Effect.withFiber((fiber) => Effect.sync(() => { fiber.setContext(Context.add(fiber.context, reference, value)); }));
+
+const stop = (route: Route, running: Nexus.Application.RunningApplication<never>, scope: Scope.Closeable): Effect.Effect<void> =>
   route === "Application.shutdown" ? Nexus.Application.shutdown(running) : Scope.close(scope, Exit.void);
 
 // A layer composed the way a platform (or an application layer) author would.
@@ -90,7 +93,7 @@ describe("Platform isolation: the matrix (I44, I46, I47)", () => {
     const observed = await Effect.runPromise(Effect.gen(function* () {
       const before = yield* kind.sees;
       const scope = yield* Scope.make();
-      const running = yield* Nexus.Application.start(define(runtime), { platform }).pipe(Scope.extend(scope));
+      const running = yield* Nexus.Application.start(define(runtime), { platform }).pipe(Scope.provide(scope));
       const inside = yield* inApp(running, kind.sees);
       const during = yield* kind.sees;
       yield* stop(route, running, scope);
@@ -106,23 +109,23 @@ describe("Platform isolation: the matrix (I44, I46, I47)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// A FiberRef written by a release that isn't protected by Effect.addFinalizer's
-// patching: a finalizer added to the scope directly. It runs in whichever fiber
-// closes the application's scope (outline E3: build-only isolation leaks it).
+// A reference written into the running fiber by a release: a finalizer added to the
+// scope directly. It runs in whichever fiber closes the application's scope (outline
+// E3: build-only isolation leaks it).
 
 describe("Platform isolation: termination (I46, C30)", () => {
   const rawFinalizerPlatform = (): Nexus.Application.Platform => Layer.merge(
     empty(),
-    Layer.scopedDiscard(Effect.flatMap(Effect.scope, (scope) => Scope.addFinalizer(scope, FiberRef.set(FiberRef.currentMinimumLogLevel, LogLevel.Error))))
+    Layer.effectDiscard(Effect.flatMap(Effect.scope, (scope) => Scope.addFinalizer(scope, writeIntoFiber(References.MinimumLogLevel, "Error"))))
   );
 
   it.each(["Application.shutdown", "closing the start scope"] as const)("a raw scope finalizer writes nothing into the fiber that stops the application (%s)", async (route) => {
     const level = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* Nexus.Application.start(define(), { platform: rawFinalizerPlatform() }).pipe(Scope.extend(scope));
+      const running = yield* Nexus.Application.start(define(), { platform: rawFinalizerPlatform() }).pipe(Scope.provide(scope));
       yield* stop(route, running, scope);
 
-      return (yield* FiberRef.get(FiberRef.currentMinimumLogLevel))._tag;
+      return yield* References.MinimumLogLevel;
     }));
 
     expect(level).toBe("Info");
@@ -135,9 +138,9 @@ describe("Platform isolation: termination (I46, C30)", () => {
 
 describe("Platform isolation: precedence and other applications (I45, I47)", () => {
   it("platform over caller, application layer over platform, the caller reaches a new application, and the caller is unchanged", async () => {
-    const observed = await Effect.runPromise(Effect.withClock(Effect.scoped(Effect.gen(function* () {
-      const platformOnly = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.setClock(fixed(2))) });
-      const layered = yield* Nexus.Application.start(define(Layer.setClock(fixed(3))), { platform: Layer.merge(empty(), Layer.setClock(fixed(2))) });
+    const observed = await Effect.runPromise(Effect.provideService(Effect.scoped(Effect.gen(function* () {
+      const platformOnly = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.succeed(Clock.Clock, fixed(2))) });
+      const layered = yield* Nexus.Application.start(define(Layer.succeed(Clock.Clock, fixed(3))), { platform: Layer.merge(empty(), Layer.succeed(Clock.Clock, fixed(2))) });
       // Sequential, with both earlier applications still running.
       const plain = yield* Nexus.Application.start(define());
 
@@ -147,7 +150,7 @@ describe("Platform isolation: precedence and other applications (I45, I47)", () 
         callerReachesNewApplication: yield* inApp(plain, Clock.currentTimeMillis),
         caller: yield* Clock.currentTimeMillis,
       };
-    })), fixed(1)));
+    })), Clock.Clock, fixed(1)));
 
     expect(observed).toEqual({ platformOverCaller: 2, layerOverPlatform: 3, callerReachesNewApplication: 1, caller: 1 });
   });
@@ -156,8 +159,8 @@ describe("Platform isolation: precedence and other applications (I45, I47)", () 
     const observed = await Effect.runPromise(Effect.gen(function* () {
       const during = yield* Effect.scoped(Effect.gen(function* () {
         const [a, b] = yield* Effect.all([
-          Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.setClock(fixed(10))) }),
-          Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.setClock(fixed(20))) }),
+          Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.succeed(Clock.Clock, fixed(10))) }),
+          Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.succeed(Clock.Clock, fixed(20))) }),
         ], { concurrency: 2 });
 
         return { a: yield* inApp(a, Clock.currentTimeMillis), b: yield* inApp(b, Clock.currentTimeMillis), caller: yield* Clock.currentTimeMillis };
@@ -188,14 +191,14 @@ describe("Platform isolation: precedence and other applications (I45, I47)", () 
 describe("Platform isolation: failed and interrupted starts (I44, I46, I49, C31)", () => {
   const trackedPlatform = (composition: Composition, log: Array<string>): Nexus.Application.Platform => compositions[composition](
     empty(),
-    Layer.merge(Layer.setClock(fixed(42)), Layer.scopedDiscard(Effect.acquireRelease(Effect.sync(() => { log.push("platform acquire"); }), () => Effect.sync(() => { log.push("platform release"); }))))
+    Layer.merge(Layer.succeed(Clock.Clock, fixed(42)), Layer.effectDiscard(Effect.acquireRelease(Effect.sync(() => { log.push("platform acquire"); }), () => Effect.sync(() => { log.push("platform release"); }))))
   );
 
   it.each(["merge", "provideMerge"] as const)("a failed start (%s): ServiceGraphFailed, the platform released, and the caller unchanged", async (composition) => {
     const log: Array<string> = [];
 
     const observed = await Effect.runPromise(Effect.gen(function* () {
-      const exit = yield* Effect.exit(Effect.scoped(Nexus.Application.start(define(Layer.fail("boom")), { platform: trackedPlatform(composition, log) })));
+      const exit = yield* Effect.exit(Effect.scoped(Nexus.Application.start(define(Layer.effectDiscard(Effect.fail("boom"))), { platform: trackedPlatform(composition, log) })));
 
       return { failed: Exit.isFailure(exit) && Exit.match(exit, { onFailure: (cause) => JSON.stringify(cause).includes("ServiceGraphFailed"), onSuccess: () => false }), caller: yield* is42 };
     }));
@@ -209,13 +212,14 @@ describe("Platform isolation: failed and interrupted starts (I44, I46, I49, C31)
 
     const observed = await Effect.runPromise(Effect.gen(function* () {
       const building = yield* Deferred.make<void>();
-      const blocked = Layer.scopedDiscard(Effect.zipRight(Deferred.succeed(building, undefined), Effect.never));
-      const fiber = yield* Effect.fork(Effect.scoped(Nexus.Application.start(define(blocked), { platform: trackedPlatform(composition, log) })));
+      const blocked = Layer.effectDiscard(Effect.andThen(Deferred.succeed(building, undefined), Effect.never));
+      const fiber = yield* Effect.forkChild(Effect.scoped(Nexus.Application.start(define(blocked), { platform: trackedPlatform(composition, log) })));
       yield* Deferred.await(building);
-      const exit = yield* Fiber.interrupt(fiber);
+      yield* Fiber.interrupt(fiber);
+      const exit = yield* Fiber.await(fiber);
       const releasedBeforeInterruptReturned = [...log];
 
-      return { interrupted: Exit.isInterrupted(exit), releasedBeforeInterruptReturned, caller: yield* is42 };
+      return { interrupted: Exit.hasInterrupts(exit), releasedBeforeInterruptReturned, caller: yield* is42 };
     }));
 
     expect(observed).toEqual({ interrupted: true, releasedBeforeInterruptReturned: ["platform acquire", "platform release"], caller: false });
@@ -234,23 +238,24 @@ describe("Platform isolation: failed and interrupted starts (I44, I46, I49, C31)
       const acquiring = yield* Deferred.make<void>();
       const proceed = yield* Deferred.make<void>();
       const app = Layer.provideMerge(
-        Layer.scopedDiscard(Effect.acquireRelease(
-          Effect.zipRight(Deferred.succeed(acquiring, undefined), Effect.zipRight(Deferred.await(proceed), Effect.sync(() => { log.push("second acquire"); }))),
+        Layer.effectDiscard(Effect.acquireRelease(
+          Effect.andThen(Deferred.succeed(acquiring, undefined), Effect.andThen(Deferred.await(proceed), Effect.sync(() => { log.push("second acquire"); }))),
           () => Effect.sync(() => { log.push("second release"); })
         )),
-        Layer.scopedDiscard(Effect.acquireRelease(Effect.sync(() => { log.push("first acquire"); }), () => Effect.sync(() => { log.push("first release"); })))
+        Layer.effectDiscard(Effect.acquireRelease(Effect.sync(() => { log.push("first acquire"); }), () => Effect.sync(() => { log.push("first release"); })))
       );
-      const fiber = yield* Effect.fork(Effect.scoped(Nexus.Application.start(define(app), { platform: trackedPlatform(composition, log) })).pipe(
+      const fiber = yield* Effect.forkChild(Effect.scoped(Nexus.Application.start(define(app), { platform: trackedPlatform(composition, log) })).pipe(
         Effect.onExit(() => Effect.sync(() => { log.push("start exited"); }))
       ));
       yield* Deferred.await(acquiring);
-      const interrupting = yield* Effect.fork(Fiber.interrupt(fiber));
+      const interrupting = yield* Effect.forkChild(Fiber.interrupt(fiber));
       // Let the interruption reach the starting fiber while the acquisition still waits.
       yield* Effect.sleep("20 millis");
       yield* Deferred.succeed(proceed, undefined);
-      const exit = yield* Fiber.join(interrupting);
+      yield* Fiber.join(interrupting);
+      const exit = yield* Fiber.await(fiber);
 
-      return { interrupted: Exit.isInterrupted(exit), caller: yield* is42 };
+      return { interrupted: Exit.hasInterrupts(exit), caller: yield* is42 };
     }));
 
     expect(observed).toEqual({ interrupted: true, caller: false });
@@ -266,16 +271,16 @@ describe("Platform isolation: failed and interrupted starts (I44, I46, I49, C31)
 describe("Platform isolation: finalizers (I48)", () => {
   it.each(["Application.shutdown", "closing the start scope"] as const)("each release sees what its acquisition saw, in the unchanged order (%s)", async (route) => {
     const log: Array<string> = [];
-    const tracked = (name: string) => Layer.scopedDiscard(Effect.acquireRelease(
+    const tracked = (name: string) => Layer.effectDiscard(Effect.acquireRelease(
       Effect.flatMap(is42, (seen) => Effect.sync(() => { log.push(`${name} acquire ${seen}`); })),
       () => Effect.flatMap(is42, (seen) => Effect.sync(() => { log.push(`${name} release ${seen}`); }))
     ));
     // Clock first, then the ordered resource (provideMerge), next to a sibling of the Clock (merge).
-    const platform = Layer.merge(empty(), Layer.merge(Layer.provideMerge(tracked("ordered platform"), Layer.setClock(fixed(42))), tracked("sibling platform")));
+    const platform = Layer.merge(empty(), Layer.merge(Layer.provideMerge(tracked("ordered platform"), Layer.succeed(Clock.Clock, fixed(42))), tracked("sibling platform")));
 
     await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* Nexus.Application.start(define(tracked("application")), { platform }).pipe(Scope.extend(scope));
+      const running = yield* Nexus.Application.start(define(tracked("application")), { platform }).pipe(Scope.provide(scope));
       yield* stop(route, running, scope);
     }));
 
@@ -292,7 +297,7 @@ describe("Platform isolation: finalizers (I48)", () => {
 // The caller's own changes are the caller's (I44).
 
 describe("Platform isolation: the caller's own changes (I44)", () => {
-  const setCallerClock = (n: number) => FiberRef.update(DefaultServices.currentServices, (services) => Context.add(services, Clock.Clock, fixed(n)));
+  const setCallerClock = (n: number) => writeIntoFiber(Clock.Clock, fixed(n));
 
   const cases = (["merge", "provideMerge"] as const).flatMap((composition) =>
     (["Application.shutdown", "closing the start scope"] as const).map((route) => ({ composition, route })));
@@ -300,7 +305,7 @@ describe("Platform isolation: the caller's own changes (I44)", () => {
   it.each(cases)("a Clock the caller sets while the application runs is kept after it stops ($composition, $route)", async ({ composition, route }) => {
     const observed = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* Nexus.Application.start(define(), { platform: compositions[composition](empty(), Layer.setClock(fixed(42))) }).pipe(Scope.extend(scope));
+      const running = yield* Nexus.Application.start(define(), { platform: compositions[composition](empty(), Layer.succeed(Clock.Clock, fixed(42))) }).pipe(Scope.provide(scope));
       yield* setCallerClock(9);
       const inside = yield* inApp(running, Clock.currentTimeMillis);
       yield* stop(route, running, scope);
@@ -319,7 +324,7 @@ describe("Platform isolation: the caller's own changes (I44)", () => {
 describe("Platform isolation: runSync and a standalone runtime (I49, M12)", () => {
   it("Application.start and shutdown run under Effect.runSync", () => {
     const status = Effect.runSync(Effect.scoped(Effect.gen(function* () {
-      const running = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.setClock(fixed(42))) });
+      const running = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), Layer.succeed(Clock.Clock, fixed(42))) });
       yield* Nexus.Application.shutdown(running);
 
       return yield* Nexus.Application.status(running);
@@ -329,16 +334,16 @@ describe("Platform isolation: runSync and a standalone runtime (I49, M12)", () =
   });
 
   it("Runtime.make runs under Effect.runSync", () => {
-    expect(() => Effect.runSync(Effect.scoped(Nexus.Runtime.make(Layer.merge(Layer.empty, Layer.setClock(fixed(42))))))).not.toThrow();
+    expect(() => Effect.runSync(Effect.scoped(Nexus.Runtime.make(Layer.merge(Layer.empty, Layer.succeed(Clock.Clock, fixed(42))))))).not.toThrow();
   });
 
-  it.each(["merge", "provideMerge"] as const)("a standalone Runtime.make with a FiberRef layer (%s): only its runtime sees it", async (composition) => {
-    const clock = Layer.setClock(fixed(42));
+  it.each(["merge", "provideMerge"] as const)("a standalone Runtime.make with a reference layer (%s): only its runtime sees it", async (composition) => {
+    const clock = Layer.succeed(Clock.Clock, fixed(42));
     const layer = composition === "merge" ? Layer.merge(Layer.empty, clock) : Layer.provideMerge(Layer.empty, clock);
 
     const observed = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const runtime = yield* Nexus.Runtime.make(layer).pipe(Scope.extend(scope));
+      const runtime = yield* Nexus.Runtime.make(layer).pipe(Scope.provide(scope));
       const inside = yield* Effect.promise(() => Nexus.Runtime.run(runtime, is42));
       const during = yield* is42;
       yield* Scope.close(scope, Exit.void);
@@ -354,29 +359,33 @@ describe("Platform isolation: runSync and a standalone runtime (I49, M12)", () =
 // J1a: the execution handle Runtime.runFork returns (outline §14, C32; the J1
 // memo, docs/explanation/design-records/2026-09-28-j1-application-fiber-boundary.md).
 //
-// Application and platform FiberRefs flow down into the application's execution,
-// never up through the handle NEXUS returns. So await, join, Effect.fromFiber and
-// inheritAll on it import nothing into the caller, and interrupting it reaches the
+// Application and platform references flow down into the application's execution,
+// never up through the handle NEXUS returns. So await, join, and adopting the
+// handle's own Context (a v4 fiber exposes it publicly; in v3, inheritAll took its
+// FiberRefs) import nothing into the caller, and interrupting it reaches the
 // application's execution. The handle's physical identity (id(), status) is not a
 // contract: these tests never compare it with anything.
 
 describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C32)", () => {
   // The platform (or application layer) sets Clock 42 and the minimum log level Error; the
   // caller runs on Clock 7 and log level Debug, both different from the platform's and from Effect's defaults.
-  const applicationSettings = (): Layer.Layer<never> => Layer.merge(Layer.setClock(fixed(42)), Layer.locallyScoped(FiberRef.currentMinimumLogLevel, LogLevel.Error));
-  const callerView = Effect.all({ clock: Clock.currentTimeMillis, logLevel: Effect.map(FiberRef.get(FiberRef.currentMinimumLogLevel), (level) => level._tag) });
+  const applicationSettings = (): Layer.Layer<never> => Layer.merge(Layer.succeed(Clock.Clock, fixed(42)), Layer.succeed(References.MinimumLogLevel, "Error"));
+  const callerView = Effect.all({ clock: Clock.currentTimeMillis, logLevel: References.MinimumLogLevel });
   const callerOwn = { clock: 7, logLevel: "Debug" };
   const applicationOwn = { clock: 42, logLevel: "Error" };
 
   // As the caller: Clock 7 and log level Debug for the whole body.
   const asCaller = <A, E>(body: Effect.Effect<A, E>): Promise<A> =>
-    Effect.runPromise(Effect.withClock(Effect.zipRight(FiberRef.set(FiberRef.currentMinimumLogLevel, LogLevel.Debug), body), fixed(7)));
+    Effect.runPromise(body.pipe(Effect.provideService(References.MinimumLogLevel, "Debug"), Effect.provideService(Clock.Clock, fixed(7))));
 
-  const operations: ReadonlyArray<{ readonly name: string; readonly use: (fiber: Fiber.RuntimeFiber<unknown, unknown>) => Effect.Effect<unknown, unknown> }> = [
+  const operations: ReadonlyArray<{ readonly name: string; readonly use: (fiber: Fiber.Fiber<unknown, unknown>) => Effect.Effect<unknown, unknown> }> = [
     { name: "Fiber.await", use: (fiber) => Fiber.await(fiber) },
     { name: "Fiber.join", use: (fiber) => Fiber.join(fiber) },
-    { name: "Effect.fromFiber", use: (fiber) => Effect.fromFiber(fiber) },
-    { name: "Fiber.inheritAll", use: (fiber) => Effect.zipRight(Fiber.await(fiber), Fiber.inheritAll(fiber)) },
+    // A v4 fiber drops its Context when it finishes, so the handle's is adopted while the effect still runs.
+    {
+      name: "adopting the handle's Context",
+      use: (fiber) => Effect.andThen(Effect.withFiber((caller) => Effect.sync(() => { caller.setContext(Context.merge(caller.context, fiber.context)); })), Fiber.await(fiber)),
+    },
   ];
 
   const cases = operations.flatMap((operation) => (["merge", "provideMerge"] as const).flatMap((composition) =>
@@ -390,9 +399,10 @@ describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C3
 
     const observed = await asCaller(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* Nexus.Application.start(define(runtime), { platform }).pipe(Scope.extend(scope));
+      const running = yield* Nexus.Application.start(define(runtime), { platform }).pipe(Scope.provide(scope));
       const inside = yield* inApp(running, callerView);
-      yield* Effect.exit(operation.use(Nexus.Runtime.runFork(running.runtime, callerView)));
+      // Yields first, so the execution is still running when the operation reaches the handle.
+      yield* Effect.exit(operation.use(Nexus.Runtime.runFork(running.runtime, Effect.andThen(Effect.yieldNow, callerView))));
       const afterOperation = yield* callerView;
       yield* stop(route, running, scope);
       const afterStop = yield* callerView;
@@ -414,14 +424,14 @@ describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C3
       return result;
     })));
 
-  it("join returns the application's own result, computed with the application's FiberRefs", async () => {
+  it("join returns the application's own result, computed with the application's references", async () => {
     const observed = await withApplication((running) => Effect.all({
       joined: Fiber.join(Nexus.Runtime.runFork(running.runtime, callerView)),
-      fromFiber: Effect.fromFiber(Nexus.Runtime.runFork(running.runtime, Effect.succeed({ answer: 1 }))),
+      joinedValue: Fiber.join(Nexus.Runtime.runFork(running.runtime, Effect.succeed({ answer: 1 }))),
       awaited: Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.succeed("value"))),
     }));
 
-    expect(observed).toEqual({ joined: applicationOwn, fromFiber: { answer: 1 }, awaited: Exit.succeed("value") });
+    expect(observed).toEqual({ joined: applicationOwn, joinedValue: { answer: 1 }, awaited: Exit.succeed("value") });
   });
 
   it("a typed failure reaches await and join unchanged, and so does a defect", async () => {
@@ -430,14 +440,14 @@ describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C3
 
     const observed = await withApplication((running) => Effect.all({
       awaited: Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.fail(new Refused("no")))),
-      joined: Effect.either(Fiber.join(Nexus.Runtime.runFork(running.runtime, Effect.fail(new Refused("no"))))),
+      joined: Effect.result(Fiber.join(Nexus.Runtime.runFork(running.runtime, Effect.fail(new Refused("no"))))),
       defect: Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.die(boom))),
     }));
 
     expect(observed.awaited).toEqual(Exit.fail(new Refused("no")));
-    expect(Exit.isFailure(observed.awaited) && Option.getOrUndefined(Cause.failureOption(observed.awaited.cause))).toBeInstanceOf(Refused);
-    expect(observed.joined).toEqual(Either.left(new Refused("no")));
-    expect(Exit.isFailure(observed.defect) && Option.getOrUndefined(Cause.dieOption(observed.defect.cause))).toBe(boom);
+    expect(Exit.isFailure(observed.awaited) && Option.getOrUndefined(Cause.findErrorOption(observed.awaited.cause))).toBeInstanceOf(Refused);
+    expect(observed.joined).toEqual(Result.fail(new Refused("no")));
+    expect(Exit.isFailure(observed.defect) && Option.getOrUndefined(Result.getSuccess(Cause.findDefect(observed.defect.cause)))).toBe(boom);
   });
 
   it("interrupting the handle interrupts the application's execution: its finalizer runs before interrupt returns", async () => {
@@ -445,13 +455,14 @@ describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C3
 
     const observed = await withApplication((running) => Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
-      const handle = Nexus.Runtime.runFork(running.runtime, Effect.zipRight(Deferred.succeed(started, undefined), Effect.never).pipe(
+      const handle = Nexus.Runtime.runFork(running.runtime, Effect.andThen(Deferred.succeed(started, undefined), Effect.never).pipe(
         Effect.onInterrupt(() => Effect.flatMap(Clock.currentTimeMillis, (t) => Effect.sync(() => { log.push(`finalizer, clock ${t}`); })))
       ));
       yield* Deferred.await(started);
-      const exit = yield* Fiber.interrupt(handle);
+      yield* Fiber.interrupt(handle);
+      const exit = yield* Fiber.await(handle);
 
-      return { interrupted: Exit.isInterrupted(exit), logAtReturn: [...log], caller: yield* callerView };
+      return { interrupted: Exit.hasInterrupts(exit), logAtReturn: [...log], caller: yield* callerView };
     }));
 
     // The finalizer is application execution: it sees the application's Clock.
@@ -462,36 +473,35 @@ describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C3
     let completed = false;
 
     const observed = await withApplication((running) => Effect.gen(function* () {
-      // A timer, not Effect.sleep: the application's Clock here is a stub without sleep.
-      const handle = Nexus.Runtime.runFork(running.runtime, Effect.zipRight(Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 30))), Effect.sync(() => { completed = true; })));
-      const exit = yield* Fiber.interrupt(handle);
+      // A timer, not Effect.sleep: the application's Clock here is a stub.
+      const handle = Nexus.Runtime.runFork(running.runtime, Effect.andThen(Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 30))), Effect.sync(() => { completed = true; })));
+      yield* Fiber.interrupt(handle);
+      const exit = yield* Fiber.await(handle);
       // Longer than the effect would have taken.
       yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 80)));
 
-      return { interrupted: Exit.isInterrupted(exit) };
+      return { interrupted: Exit.hasInterrupts(exit) };
     }));
 
     expect(observed).toEqual({ interrupted: true });
     expect(completed).toBe(false);
   });
 
-  it("poll and status observe completion", async () => {
+  // v4 has no fiber status; poll is what observes completion.
+  it("poll observes completion", async () => {
     const observed = await withApplication((running) => Effect.gen(function* () {
       const gate = yield* Deferred.make<void>();
       const handle = Nexus.Runtime.runFork(running.runtime, Effect.as(Deferred.await(gate), "done"));
-      const pollWhileRunning = yield* Fiber.poll(handle);
-      const statusWhileRunning = (yield* Fiber.status(handle))._tag;
+      const pollWhileRunning = yield* Effect.sync(() => Option.fromUndefinedOr(handle.pollUnsafe()));
       yield* Deferred.succeed(gate, undefined);
       const exit = yield* Fiber.await(handle);
 
-      return { pollWhileRunning, statusWhileRunning, exit, pollAfter: yield* Fiber.poll(handle), statusAfter: (yield* Fiber.status(handle))._tag };
+      return { pollWhileRunning, exit, pollAfter: yield* Effect.sync(() => Option.fromUndefinedOr(handle.pollUnsafe())) };
     }));
 
     expect(observed.pollWhileRunning).toEqual(Option.none());
-    expect(observed.statusWhileRunning).not.toBe("Done");
     expect(observed.exit).toEqual(Exit.succeed("done"));
     expect(observed.pollAfter).toEqual(Option.some(Exit.succeed("done")));
-    expect(observed.statusAfter).toBe("Done");
   });
 
   it.each(["Application.shutdown", "closing the start scope"] as const)("after the application stops (%s), runFork is refused as before: a defect, the effect never runs, and nothing reaches the caller", async (route) => {
@@ -499,14 +509,14 @@ describe("Platform isolation: the Runtime.runFork handle (J1a, I44, I46, I47, C3
 
     const observed = await asCaller(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), applicationSettings()) }).pipe(Scope.extend(scope));
+      const running = yield* Nexus.Application.start(define(), { platform: Layer.merge(empty(), applicationSettings()) }).pipe(Scope.provide(scope));
       yield* stop(route, running, scope);
       const awaited = yield* Fiber.await(Nexus.Runtime.runFork(running.runtime, Effect.sync(() => { ran = true; })));
       const joined = yield* Effect.exit(Fiber.join(Nexus.Runtime.runFork(running.runtime, Effect.sync(() => { ran = true; }))));
 
       return {
-        awaitedDefect: Exit.isFailure(awaited) && String(Option.getOrUndefined(Cause.dieOption(awaited.cause))),
-        joinedDefect: Exit.isFailure(joined) && String(Option.getOrUndefined(Cause.dieOption(joined.cause))),
+        awaitedDefect: Exit.isFailure(awaited) && String(Option.getOrUndefined(Result.getSuccess(Cause.findDefect(awaited.cause)))),
+        joinedDefect: Exit.isFailure(joined) && String(Option.getOrUndefined(Result.getSuccess(Cause.findDefect(joined.cause)))),
         caller: yield* callerView,
       };
     }));

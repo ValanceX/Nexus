@@ -80,7 +80,7 @@ describe("Conformance (test tooling, v0.7 C21)", () => {
 
   it("checks what a scoped platform supplies on this start, and releases it", async () => {
     const log: Array<string> = [];
-    const scoped: Nexus.Application.Platform = Layer.scoped(Nexus.Capability.Environment, Effect.acquireRelease(
+    const scoped: Nexus.Application.Platform = Layer.effect(Nexus.Capability.Environment, Effect.acquireRelease(
       Effect.sync(() => (log.push("acquire"), { resolutions: new Map([[Storage.id, available("s")]]) })),
       () => Effect.sync(() => void log.push("release"))
     ));

@@ -54,7 +54,7 @@ second, bespoke subscription mechanism.
 
 ```ts
 namespace State {
-  function create<A>(schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError, Scope.Scope>;
+  function create<A>(schema: Schema.Codec<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError, Scope.Scope>;
   function update<A, E = never>(state: StateHandle<A>, f: (current: A) => Effect.Effect<A, E>): Effect.Effect<A, E>;
   function set<A>(state: StateHandle<A>, next: A): Effect.Effect<A, StateValidationError>;
   function get<A>(state: StateHandle<A>): Effect.Effect<A>;
@@ -120,7 +120,7 @@ every `State.update` call.
 ```ts
 const UserState = Schema.Struct({
   users: Schema.Array(User),
-  selectedUser: Schema.OptionFromSelf(UserId),
+  selectedUser: Schema.Option(UserId),
   loading: Schema.Boolean,
 });
 

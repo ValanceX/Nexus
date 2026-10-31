@@ -46,7 +46,7 @@ type Platform = Layer.Layer<EnvironmentShape, unknown, never>;
 
 interface StartOptions {
   readonly platform?: Platform;
-  readonly shutdown?: ShutdownOptions;   // { grace?: Duration.DurationInput }, v0.12
+  readonly shutdown?: ShutdownOptions;   // { grace?: Duration.Input }, v0.12
 }
 
 interface Application<R> {
@@ -100,7 +100,7 @@ namespace Application {
   function start<R>(app: Application<R>, options?: StartOptions): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope>;
   function shutdown<R>(running: RunningApplication<R>, options?: Runtime.ShutdownOptions): Effect.Effect<void>;
   function status<R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus>;
-  function createState<R, A>(running: RunningApplication<R>, schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError>;
+  function createState<R, A>(running: RunningApplication<R>, schema: Schema.Codec<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError>;
 }
 ```
 
@@ -199,13 +199,13 @@ through its `runtime` (see [runtime.md](runtime.md)).
 - **Effect's default services** (`Clock`, `Console`, `Random`,
   `ConfigProvider`, `Tracer`) are Effect's, not NEXUS's: NEXUS names none of
   them. A platform is the intended place to set them, with Effect's own
-  layers (`Layer.setClock`, …). Precedence is Effect's: the fiber that calls
+  layers (`Layer.succeed(Clock.Clock, …)`, …). Precedence is Effect's: the fiber that calls
   `start`, then the platform, then the `runtime` layer, the later one
   winning (see [runtime.md](runtime.md)).
-- **Caller isolation** (v0.9, I44–I47). FiberRefs flow from the caller into
-  the application, never back. The platform's and the `runtime` layer's
-  FiberRef settings apply only inside the application. This covers default
-  services, log levels, and any `Layer.locallyScoped`.
+- **Caller isolation** (v0.9, I44–I47). Context references flow from the
+  caller into the application, never back. The platform's and the `runtime`
+  layer's reference settings apply only inside the application. This covers
+  default services, log levels, and any `Layer.succeed(reference, …)`.
 
   The caller never observes them across a boundary NEXUS creates:
   - `start`, including a failed or interrupted start;

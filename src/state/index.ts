@@ -1,4 +1,4 @@
-import { Deferred, Effect, Schema, Scope, Stream, SubscriptionRef } from "effect";
+import { Effect, PubSub, Schema, Scope, Stream, SubscriptionRef } from "effect";
 
 export interface StateHandle<A> {
   readonly get: Effect.Effect<A>;
@@ -25,26 +25,26 @@ export type StateValidationError = {
   readonly issues: ReadonlyArray<string>;
 };
 
-export const create = <A>(schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError, Scope.Scope> => Effect.Do.pipe(
-  Effect.andThen(Schema.decodeUnknown(schema)(initial)),
+export const create = <A>(schema: Schema.Codec<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError, Scope.Scope> => Effect.Do.pipe(
+  Effect.andThen(Schema.decodeUnknownEffect(schema)(initial)),
   Effect.mapError((error): StateInitError => ({
     _tag: "InitialValueInvalid",
     issues: [String(error)],
   })),
-  Effect.andThen(SubscriptionRef.make),
+  Effect.andThen((value) => SubscriptionRef.make(value)),
   Effect.bindTo("ref"),
-  // Completed by the owning scope's finalizer, which ends every `changes`
-  // subscriber normally: state does not outlive the scope that owns it.
-  Effect.bind("closed", () => Deferred.make<void>()),
-  Effect.tap(({ closed }) => Effect.addFinalizer(() => Deferred.succeed(closed, undefined))),
-  Effect.map(({ ref, closed }) => ({
+  // The owning scope's finalizer shuts down the PubSub the ref publishes commits through: a subscriber's pull is then interrupted, which its stream reads as
+  // the end, so every `changes` and `values` subscriber ends normally and state does not outlive the scope that owns it. Commits still update the value.
+  // (Stream.interruptWhen would run the subscription in a fiber of its own, so it would no longer subscribe in the same step that reads the current value.)
+  Effect.tap(({ ref }) => Effect.addFinalizer(() => PubSub.shutdown(ref.pubsub))),
+  Effect.map(({ ref }) => ({
     get: SubscriptionRef.get(ref),
     // Atomic read-modify-write: SubscriptionRef.updateAndGetEffect runs the
     // transition under the ref's semaphore, so two concurrent fibers cannot both
     // read the same `current` and lose one another's update.
     update: <E = never>(f: (current: A) => Effect.Effect<A, E>): Effect.Effect<A, E> => SubscriptionRef.updateAndGetEffect(ref, f),
     set: (next: A): Effect.Effect<A, StateValidationError> => Effect.Do.pipe(
-      Effect.andThen(Schema.decodeUnknown(schema)(next)),
+      Effect.andThen(Schema.decodeUnknownEffect(schema)(next)),
       Effect.mapError((error): StateValidationError => ({
         _tag: "StateValidationFailed",
         issues: [String(error)],
@@ -53,10 +53,10 @@ export const create = <A>(schema: Schema.Schema<A>, initial: A): Effect.Effect<S
     ),
     // Dropped because SubscriptionRef.changes replays the current value on
     // subscribe, and `changes` is specified as future commits only.
-    changes: Stream.drop(ref.changes, 1).pipe(Stream.interruptWhenDeferred(closed)),
-    // SubscriptionRef.changes reads the current value and subscribes to later commits under one lock; `changes`
-    // above throws that first element away, `values` keeps it. A subscription made after the scope closed is empty.
-    values: Stream.unwrap(Effect.map(Deferred.isDone(closed), (done) => done ? Stream.empty : ref.changes.pipe(Stream.interruptWhenDeferred(closed)))),
+    changes: Stream.drop(SubscriptionRef.changes(ref), 1),
+    // SubscriptionRef.changes subscribes to a PubSub that replays the last commit, in one synchronous step, so the current value and later commits arrive
+    // with nothing between them; `changes` above throws that first element away, `values` keeps it. A subscription made after the scope closed is empty.
+    values: SubscriptionRef.changes(ref),
   }))
 );
 

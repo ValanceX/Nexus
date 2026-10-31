@@ -1,4 +1,4 @@
-import { Effect, Either, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 import { describe, expect, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
@@ -135,12 +135,12 @@ describe("Capability model: a requirement means necessity, not use (v0.7 D46, C2
       const running = yield* Application.start(Application.define({ name: "necessity", runtime: Layer.empty }), { platform: Capability.EnvironmentLive(new Map()) });
       return yield* Effect.promise(() => Promise.all([
         Runtime.run(running.runtime, readOrDefault),
-        Runtime.run(running.runtime, Effect.either(readOrFail)),
+        Runtime.run(running.runtime, Effect.result(readOrFail)),
       ]));
     })));
 
     expect(result[0]).toBe("default");
-    expect(Either.isLeft(result[1]) && result[1].left._tag).toBe("CapabilityUnavailableError");
+    expect(Result.isFailure(result[1]) && result[1].failure._tag).toBe("CapabilityUnavailableError");
   });
 });
 
@@ -213,7 +213,7 @@ describe("Capability model: a claim is not a fact, and analysis is not enforceme
       const status = yield* Application.status(running);
       const [resolved, required] = yield* Effect.promise(() => Promise.all([
         Runtime.run(running.runtime, Capability.resolve(Storage)),
-        Runtime.run(running.runtime, Effect.either(Capability.require(Storage))),
+        Runtime.run(running.runtime, Effect.result(Capability.require(Storage))),
       ]));
       const after = Semantic.analyze({ declarations: [declaration], profile, require: ["target-compatibility"] });
       return { classification: before._tag === "Analyzed" ? before.operations[0]?.classification : undefined, status, resolved, required, before, after };
@@ -226,7 +226,7 @@ describe("Capability model: a claim is not a fact, and analysis is not enforceme
     expect(observed.status).toEqual({ _tag: "Running" });
     expect(observed.resolved).toEqual({ _tag: "Available", implementation });
     expect(observed.resolved._tag === "Available" && observed.resolved.implementation).toBe(implementation);
-    expect(Either.isRight(observed.required) && observed.required.right.read("k")).toBe("stored:k");
+    expect(Result.isSuccess(observed.required) && observed.required.success.read("k")).toBe("stored:k");
   });
 
   it("Semantic says supported, the Layer provides Unavailable: the application starts and resolves Unavailable", async () => {
@@ -235,7 +235,7 @@ describe("Capability model: a claim is not a fact, and analysis is not enforceme
     expect(observed.classification).toBe("supported");
     expect(observed.status).toEqual({ _tag: "Running" });
     expect(observed.resolved).toEqual({ _tag: "Unavailable", reason: "the Layer supplies none" });
-    expect(observed.required).toEqual(Either.left({ _tag: "CapabilityUnavailableError", id: "acme.storage", reason: "the Layer supplies none" }));
+    expect(observed.required).toEqual(Result.fail({ _tag: "CapabilityUnavailableError", id: "acme.storage", reason: "the Layer supplies none" }));
   });
 
   for (const verdict of ["supported", "incompatible", "opaque"] as const) {
@@ -246,7 +246,7 @@ describe("Capability model: a claim is not a fact, and analysis is not enforceme
         expect(observed.classification).toBe(verdict);
         expect(observed.status).toEqual({ _tag: "Running" });
         expect(observed.resolved).toEqual(layers[supplied].get(Storage.id));
-        expect(Either.isRight(observed.required)).toBe(supplied === "Available");
+        expect(Result.isSuccess(observed.required)).toBe(supplied === "Available");
         expect(observed.after).toStrictEqual(observed.before);
       });
     }

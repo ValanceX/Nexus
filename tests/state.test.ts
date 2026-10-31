@@ -41,7 +41,7 @@ describe("State", () => {
   it("emits exactly one change per commit, in order", async () => {
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
       Effect.bind("counter", () => State.create(Counter, { count: 0 })),
-      Effect.bind("fiber", ({ counter }) => Effect.fork(Stream.runCollect(Stream.take(counter.changes, 2)))),
+      Effect.bind("fiber", ({ counter }) => Effect.forkChild(Stream.runCollect(Stream.take(counter.changes, 2)))),
       Effect.tap(() => Effect.sleep("1 millis")),
       Effect.tap(({ counter }) => State.update(counter, (s) => Effect.succeed({ count: s.count + 1 }))),
       Effect.tap(({ counter }) => State.update(counter, (s) => Effect.succeed({ count: s.count + 1 }))),
@@ -49,6 +49,22 @@ describe("State", () => {
     )));
 
     expect(Array.from(result)).toEqual([{ count: 1 }, { count: 2 }]);
+  });
+
+  // v4's Equal.equals compares plain objects by structure; nothing on the commit path may use it to drop a commit equal to the one before.
+  it("emits a commit whose value is structurally equal to the previous one", async () => {
+    const Pair = Schema.Struct({ a: Schema.Number });
+
+    const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
+      Effect.bind("pair", () => State.create(Pair, { a: 0 })),
+      Effect.bind("fiber", ({ pair }) => Effect.forkChild(Stream.runCollect(Stream.take(pair.changes, 2)))),
+      Effect.tap(() => Effect.sleep("1 millis")),
+      Effect.tap(({ pair }) => State.set(pair, { a: 1 })),
+      Effect.tap(({ pair }) => State.set(pair, { a: 1 })),
+      Effect.andThen(({ fiber }) => Fiber.join(fiber).pipe(Effect.timeout(Duration.seconds(1))))
+    )));
+
+    expect(Array.from(result)).toEqual([{ a: 1 }, { a: 1 }]);
   });
 
   it("applies concurrent updates atomically — no lost writes", async () => {
@@ -81,13 +97,13 @@ describe("State", () => {
   it("keeps changes open while its scope is alive, and completes it when the scope closes", async () => {
     const result = await Effect.runPromise(Effect.Do.pipe(
       Effect.bind("scope", () => Scope.make()),
-      Effect.bind("counter", ({ scope }) => Scope.extend(State.create(Counter, { count: 0 }), scope)),
+      Effect.bind("counter", ({ scope }) => Scope.provide(State.create(Counter, { count: 0 }), scope)),
       // A daemon, so only the state's scope, not this fiber's parent, can end it.
-      Effect.bind("fiber", ({ counter }) => Effect.forkDaemon(Stream.runCollect(counter.changes))),
+      Effect.bind("fiber", ({ counter }) => Effect.forkDetach(Stream.runCollect(counter.changes))),
       Effect.tap(() => Effect.sleep("1 millis")),
       Effect.tap(({ counter }) => State.set(counter, { count: 1 })),
       Effect.tap(() => Effect.sleep("20 millis")),
-      Effect.bind("whileOpen", ({ fiber }) => Fiber.poll(fiber)),
+      Effect.bind("whileOpen", ({ fiber }) => Effect.sync(() => Option.fromUndefinedOr(fiber.pollUnsafe()))),
       Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
       Effect.bind("exit", ({ fiber }) => Fiber.await(fiber).pipe(Effect.timeout(Duration.seconds(1)))),
       Effect.map(({ whileOpen, exit }) => ({ whileOpen, exit }))

@@ -20,7 +20,7 @@ describe("Selector", () => {
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
       Effect.bind('cart', () => State.create(Cart, { items: [] })),
       Effect.let('canCheckout', ({ cart }) => Selector.define(cart, (s) => s.items.length > 0)),
-      Effect.bind('fiber', ({ canCheckout }) => Effect.fork(Stream.runCollect(Stream.take(canCheckout.changes, 1)))),
+      Effect.bind('fiber', ({ canCheckout }) => Effect.forkChild(Stream.runCollect(Stream.take(canCheckout.changes, 1)))),
       Effect.andThen(({ cart, fiber }) => Effect.Do.pipe(
         Effect.andThen(Effect.sleep("1 millis")),
         Effect.andThen(State.update(cart, (s) => Effect.succeed({ items: [...s.items, "sku-1"] }))),
@@ -51,7 +51,7 @@ describe("Selector", () => {
       const left = yield* State.create(Two, { n: 1 });
       const right = yield* State.create(Two, { n: 10 });
       const sum = Selector.combine(Selector.define(left, (s) => s.n), Selector.define(right, (s) => s.n), (a, b) => a + b);
-      const fiber = yield* Effect.fork(Stream.runCollect(Stream.take(sum.changes, 2)));
+      const fiber = yield* Effect.forkChild(Stream.runCollect(Stream.take(sum.changes, 2)));
 
       yield* Effect.sleep(20);
       yield* State.set(left, { n: 2 });   // the first commit on one side: 2 + 10

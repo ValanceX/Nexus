@@ -6,7 +6,7 @@ import * as Capability from "../src/capability/index.js";
 import * as Runtime from "../src/runtime/index.js";
 import * as Service from "../src/service/index.js";
 
-import { referencePlatform } from "./platform/reference.js";
+import { fixedClock, referencePlatform } from "./platform/reference.js";
 
 interface FlashlightShape { readonly on: () => string }
 
@@ -73,7 +73,7 @@ describe("Platform: the supply point (v0.6 D30, D42)", () => {
   });
 
   it("a platform may not have requirements (type, C16)", () => {
-    const needs = Layer.effect(Capability.Environment, Effect.map(Context.GenericTag<{ readonly x: 1 }>("X"), (): Capability.EnvironmentShape => ({ resolutions: new Map() })));
+    const needs = Layer.effect(Capability.Environment, Effect.map(Context.Service<{ readonly x: 1 }>("X"), (): Capability.EnvironmentShape => ({ resolutions: new Map() })));
     // @ts-expect-error: Application.Platform requires nothing (C16, T1)
     const platform: Application.Platform = needs;
 
@@ -91,7 +91,7 @@ describe("Platform: the supply point (v0.6 D30, D42)", () => {
 });
 
 // A scoped platform that logs its acquisition and release (C15).
-const logged = (log: Array<string>, implementation: unknown = {}, id = "probe.cap"): Application.Platform => Layer.scoped(Capability.Environment, Effect.acquireRelease(
+const logged = (log: Array<string>, implementation: unknown = {}, id = "probe.cap"): Application.Platform => Layer.effect(Capability.Environment, Effect.acquireRelease(
   Effect.sync((): Capability.EnvironmentShape => {
     log.push("platform acquire");
 
@@ -101,12 +101,12 @@ const logged = (log: Array<string>, implementation: unknown = {}, id = "probe.ca
 ));
 
 // An application-layer resource that logs; its release may throw (dies) after logging.
-const appResource = (log: Array<string>, releaseDies = false) => Layer.scopedDiscard(Effect.acquireRelease(
+const appResource = (log: Array<string>, releaseDies = false) => Layer.effectDiscard(Effect.acquireRelease(
   Effect.sync(() => { log.push("app acquire"); }),
   () => Effect.sync(() => { log.push("app release"); }).pipe(Effect.andThen(releaseDies ? Effect.die("release boom") : Effect.void))
 ));
 
-const failureOf = <A, E>(exit: Exit.Exit<A, E>): unknown => Exit.isFailure(exit) ? Option.getOrNull(Cause.failureOption(exit.cause)) : null;
+const failureOf = <A, E>(exit: Exit.Exit<A, E>): unknown => Exit.isFailure(exit) ? Option.getOrNull(Cause.findErrorOption(exit.cause)) : null;
 
 const order = ["platform acquire", "app acquire", "running", "app release", "platform release"];
 
@@ -138,7 +138,7 @@ describe("Platform: the lifetime invariant (v0.6 C15, I31)", () => {
 
     const status = await Effect.runPromise(Effect.Do.pipe(
       Effect.bind("scope", () => Scope.make()),
-      Effect.bind("running", ({ scope }) => Scope.extend(Application.start(app, { platform: logged(log) }), scope)),
+      Effect.bind("running", ({ scope }) => Scope.provide(Application.start(app, { platform: logged(log) }), scope)),
       Effect.tap(() => Effect.sync(() => { log.push("running"); })),
       Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
       Effect.tap(() => Effect.sync(() => { log.push("scope closed"); })),
@@ -152,7 +152,7 @@ describe("Platform: the lifetime invariant (v0.6 C15, I31)", () => {
   it("4. platform acquisition failure: ServiceGraphFailed, no handle, its acquisition released, the application layer never built", async () => {
     const log: Array<string> = [];
     const app = Application.define({ name: "platform-fails", runtime: appResource(log) });
-    const platform: Application.Platform = Layer.merge(logged(log), Layer.fail("platform boom"));
+    const platform: Application.Platform = Layer.merge(logged(log), Layer.effectDiscard(Effect.fail("platform boom")));
 
     const observed = await Effect.runPromise(Effect.scoped(Effect.exit(Application.start(app, { platform }).pipe(
       Effect.tap(() => Effect.sync(() => { log.push("running"); }))
@@ -169,7 +169,7 @@ describe("Platform: the lifetime invariant (v0.6 C15, I31)", () => {
 
   it("4a. application-layer failure after platform acquisition: app release then platform release, before start fails; no handle", async () => {
     const log: Array<string> = [];
-    const app = Application.define({ name: "app-fails", runtime: Layer.merge(appResource(log), Layer.fail("app boom")) });
+    const app = Application.define({ name: "app-fails", runtime: Layer.merge(appResource(log), Layer.effectDiscard(Effect.fail("app boom"))) });
 
     const observed = await Effect.runPromise(Effect.scoped(Effect.exit(Application.start(app, { platform: logged(log) }).pipe(
       Effect.tap(() => Effect.sync(() => { log.push("running"); }))
@@ -194,7 +194,7 @@ describe("Platform: the lifetime invariant (v0.6 C15, I31)", () => {
       Effect.bind("status", ({ running }) => Application.status(running))
     )));
 
-    expect(Exit.isFailure(observed.shutdown) && Cause.isDie(observed.shutdown.cause)).toBe(true);
+    expect(Exit.isFailure(observed.shutdown) && Cause.hasDies(observed.shutdown.cause)).toBe(true);
     expect(observed.status).toEqual({ _tag: "Stopped" });
     expect(log).toEqual(order);
   });
@@ -274,7 +274,7 @@ describe("Platform: the reference test platform (v0.6 D41)", () => {
   });
 
   it("10. supplies the given Clock", async () => {
-    const clock: Clock.Clock = { ...Clock.make(), currentTimeMillis: Effect.succeed(42), unsafeCurrentTimeMillis: () => 42 };
+    const clock = fixedClock(42);
 
     const now = await withApp(Application.start(app, { platform: referencePlatform({ clock }) }), (running) => Runtime.run(running.runtime, Clock.currentTimeMillis));
 

@@ -23,12 +23,12 @@ a global event bus.
 ```ts
 interface EventDef<Tag extends string, Payload> {
   readonly _tag: Tag;
-  readonly schema: Schema.Schema<Payload>;
+  readonly schema: Schema.Codec<Payload>;
 }
 
 interface EventBusShape {
   readonly publish: (envelope: Envelope) => Effect.Effect<void>;
-  readonly subscribe: Effect.Effect<Queue.Dequeue<Envelope>, never, Scope.Scope>;
+  readonly subscribe: Effect.Effect<PubSub.Subscription<Envelope>, never, Scope.Scope>;
 }
 
 const EventBusLive: Layer.Layer<EventBusShape>;
@@ -55,11 +55,11 @@ independent buses until a concrete need for that appears (§12, §2.1).
 
 ```ts
 namespace Event {
-  function define<Tag extends string, Payload, Encoded = Payload>(tag: Tag, schema: Schema.Schema<Payload, Encoded>): EventDef<Tag, Payload, Encoded>;
+  function define<Tag extends string, Payload, Encoded = Payload>(tag: Tag, schema: Schema.Codec<Payload, Encoded>): EventDef<Tag, Payload, Encoded>;
   function publish<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, payload: Payload): Effect.Effect<void, never, EventBusShape>;
   function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options?: { readonly validate?: false }): Stream.Stream<Payload, never, EventBusShape>;
-  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: true }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
-  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: boolean }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
+  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: true }): Stream.Stream<Payload, Schema.SchemaError, EventBusShape>;
+  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: boolean }): Stream.Stream<Payload, Schema.SchemaError, EventBusShape>;
 }
 ```
 
@@ -69,11 +69,11 @@ publishing an event reads the same way as any other NEXUS effect (`yield*
 Event.publish(...)`) instead of needing a bus reference threaded through
 every function signature.
 
-The schema may transform (`Schema.Schema<Payload, Encoded>`); `Encoded` defaults to
+The schema may transform (`Schema.Codec<Payload, Encoded>`); `Encoded` defaults to
 `Payload`. **The bus carries decoded `Payload` values:** `publish` takes the decoded
 payload and `subscribe` delivers it, so neither decodes. `subscribe(def, { validate: true })`
 checks each payload against the schema's decoded (type) side, so a transforming schema is
-never decoded twice; a payload that fails ends the stream with a `ParseError`. The default
+never decoded twice; a payload that fails ends the stream with a `SchemaError`. The default
 (`validate` omitted) is unchanged: payloads are delivered as given.
 
 ## Errors

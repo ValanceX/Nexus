@@ -1,6 +1,4 @@
-import type { Clock } from "effect";
-
-import { Layer } from "effect";
+import { Clock, Effect, Layer } from "effect";
 
 import * as Nexus from "../../src/index.js";
 
@@ -16,5 +14,20 @@ export const referencePlatform = (options: {
 } = {}): Nexus.Application.Platform => {
   const environment = Nexus.Capability.EnvironmentLive(options.resolutions ?? new Map());
 
-  return options.clock === undefined ? environment : Layer.merge(environment, Layer.setClock(options.clock));
+  return options.clock === undefined ? environment : Layer.merge(environment, Layer.succeed(Clock.Clock, options.clock));
+};
+
+/** A Clock whose time stands still at `n` milliseconds; the rest (nanoseconds, sleep) is the live Clock's. */
+export const fixedClock = (n: number): Clock.Clock => {
+  const live = Clock.Clock.defaultValue();
+
+  return {
+    currentTimeMillis: Effect.succeed(n),
+    currentTimeMillisUnsafe: () => n,
+    currentTimeNanos: live.currentTimeNanos,
+    currentTimeNanosUnsafe: () => live.currentTimeNanosUnsafe(),
+    monotonicTimeNanos: live.monotonicTimeNanos,
+    monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+    sleep: (duration) => live.sleep(duration),
+  };
 };

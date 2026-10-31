@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import * as Nexus from "../src/index.js";
 
-const fixed = (n: number): Clock.Clock => ({ ...Clock.make(), currentTimeMillis: Effect.succeed(n), unsafeCurrentTimeMillis: () => n });
+import { fixedClock } from "./platform/reference.js";
+
+const fixed = fixedClock;
 
 // Starts an application, reads Clock.currentTimeMillis through Runtime.run on its
 // runtime, and shuts it down.
@@ -20,29 +22,29 @@ describe("Default services: Effect's precedence, characterized (v0.6 D39)", () =
   it("the caller's Clock reaches the application runtime", async () => {
     const app = Nexus.Application.define({ name: "caller-clock", runtime: Layer.empty });
 
-    expect(await readClock(Effect.withClock(Nexus.Application.start(app), fixed(1)))).toBe(1);
+    expect(await readClock(Effect.provideService(Nexus.Application.start(app), Clock.Clock, fixed(1)))).toBe(1);
   });
 
   it("an application-layer Clock wins over the caller's", async () => {
-    const app = Nexus.Application.define({ name: "app-clock", runtime: Layer.setClock(fixed(3)) });
+    const app = Nexus.Application.define({ name: "app-clock", runtime: Layer.succeed(Clock.Clock, fixed(3)) });
 
-    expect(await readClock(Effect.withClock(Nexus.Application.start(app), fixed(1)))).toBe(3);
+    expect(await readClock(Effect.provideService(Nexus.Application.start(app), Clock.Clock, fixed(1)))).toBe(3);
   });
 });
 
 // D39: the platform sets default services, between the caller and the application layer.
 describe("Default services: the platform's place in Effect's precedence (v0.6 D39)", () => {
-  const platform: Nexus.Application.Platform = Layer.merge(Nexus.Capability.EnvironmentLive(new Map()), Layer.setClock(fixed(2)));
+  const platform: Nexus.Application.Platform = Layer.merge(Nexus.Capability.EnvironmentLive(new Map()), Layer.succeed(Clock.Clock, fixed(2)));
 
   it("7. a platform Clock wins over the caller's", async () => {
     const app = Nexus.Application.define({ name: "platform-clock", runtime: Layer.empty });
 
-    expect(await readClock(Effect.withClock(Nexus.Application.start(app, { platform }), fixed(1)))).toBe(2);
+    expect(await readClock(Effect.provideService(Nexus.Application.start(app, { platform }), Clock.Clock, fixed(1)))).toBe(2);
   });
 
   it("7. an application-layer Clock wins over the platform's", async () => {
-    const app = Nexus.Application.define({ name: "app-over-platform", runtime: Layer.setClock(fixed(3)) });
+    const app = Nexus.Application.define({ name: "app-over-platform", runtime: Layer.succeed(Clock.Clock, fixed(3)) });
 
-    expect(await readClock(Effect.withClock(Nexus.Application.start(app, { platform }), fixed(1)))).toBe(3);
+    expect(await readClock(Effect.provideService(Nexus.Application.start(app, { platform }), Clock.Clock, fixed(1)))).toBe(3);
   });
 });

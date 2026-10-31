@@ -264,7 +264,7 @@ describe("Semantic: independence from execution (DoD 3, 10, 11, 12; I11, I15, D1
         const running = yield* Application.start(Application.define({ name: "cap", runtime: Layer.empty }), { platform: Capability.EnvironmentLive(new Map([["filesystem", resolution]])) });
         if (analyze) Semantic.analyze({ declarations: [declaration], profile: { name: "p", provided: ["filesystem"], notProvided: [] } });
         const resolved = yield* Effect.promise(() => Runtime.run(running.runtime, Capability.resolve(Fs)));
-        const required = yield* Effect.promise(() => Runtime.run(running.runtime, Effect.either(Capability.require(Fs))));
+        const required = yield* Effect.promise(() => Runtime.run(running.runtime, Effect.result(Capability.require(Fs))));
         return { resolved: resolved._tag, required: required._tag };
       })));
 
@@ -279,7 +279,7 @@ describe("Semantic: independence from execution (DoD 3, 10, 11, 12; I11, I15, D1
 
       expect(classify({ name: "p", provided: ["filesystem"], notProvided: [] })).toBe("supported");
       expect(await resolutions(unavailable, true)).toEqual(await resolutions(unavailable, false));
-      expect(await resolutions(unavailable, true)).toEqual({ resolved: "Unavailable", required: "Left" });
+      expect(await resolutions(unavailable, true)).toEqual({ resolved: "Unavailable", required: "Failure" });
     });
 
     it("Available application capability, target doesn't provide it: incompatible", async () => {
@@ -287,7 +287,7 @@ describe("Semantic: independence from execution (DoD 3, 10, 11, 12; I11, I15, D1
 
       expect(classify({ name: "p", provided: [], notProvided: ["filesystem"] })).toBe("incompatible");
       expect(await resolutions(available, true)).toEqual(await resolutions(available, false));
-      expect(await resolutions(available, true)).toEqual({ resolved: "Available", required: "Right" });
+      expect(await resolutions(available, true)).toEqual({ resolved: "Available", required: "Success" });
     });
 
     it("control: swapping the profile's lists flips both verdicts", () => {
@@ -342,7 +342,7 @@ describe("Semantic: the lifecycle holds (DoD 15, I19)", () => {
       const releases = yield* Ref.make(0);
       const running = yield* Application.start(Application.define({
         name: "lifecycle",
-        runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1))),
+        runtime: Layer.effectDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1))),
       }));
       const [outcome] = yield* Effect.all([Effect.sync(() => Semantic.analyze(context())), Application.shutdown(running)], { concurrency: "unbounded" });
 
