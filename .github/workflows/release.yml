@@ -12,8 +12,8 @@ name: Release
 # - A pull request that changes this workflow or package.json runs the
 #   dry run.
 #
-# The release notes are docs/releases/vX.Y.Z.md when that file exists (a
-# patch release), and otherwise docs/releases/vX.Y.md.
+# The release notes are docs/reference/releases/vX.Y.Z.md when that file exists (a
+# patch release), and otherwise docs/reference/releases/vX.Y.md.
 #
 # Publishing needs the `NPM_ACCESS_TOKEN` secret: an npm granular access
 # token that can publish to the @valancex organisation. It expires; a
@@ -105,12 +105,12 @@ jobs:
             echo "::error::Publishing needs a tag: push ${tag}"
             exit 1
           fi
-          notes="docs/releases/v${version}.md"
+          notes="docs/reference/releases/v${version}.md"
           if [ ! -f "$notes" ]; then
-            notes="docs/releases/v$(echo "$version" | cut -d. -f1,2).md"
+            notes="docs/reference/releases/v$(echo "$version" | cut -d. -f1,2).md"
           fi
           if [ ! -f "$notes" ]; then
-            echo "::error::No release notes at docs/releases/v${version}.md or ${notes}"
+            echo "::error::No release notes at docs/reference/releases/v${version}.md or ${notes}"
             exit 1
           fi
           echo "NOTES=${notes}" >> "$GITHUB_ENV"

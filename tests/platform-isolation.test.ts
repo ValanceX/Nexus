@@ -1,6 +1,6 @@
-// v0.9 platform isolation (outline docs/superpowers/specs/2026-09-28-nexus-v0.9-outline.md,
+// v0.9 platform isolation (outline docs/explanation/specs/2026-09-28-nexus-v0.9-outline.md,
 // I44–I49, C29–C31). The regressions derive from the P1 finding of the integration audit
-// (docs/architecture/2026-09-28-valance-integration-audit.md §16) and the outline's E1–E3.
+// (docs/explanation/design-records/2026-09-28-valance-integration-audit.md §16) and the outline's E1–E3.
 //
 // The boundary: FiberRefs flow caller → application (inherited, with the precedence
 // caller < platform < application layer inside the application), never application or
@@ -352,7 +352,7 @@ describe("Platform isolation: runSync and a standalone runtime (I49, M12)", () =
 
 // ---------------------------------------------------------------------------
 // J1a: the execution handle Runtime.runFork returns (outline §14, C32; the J1
-// memo, docs/architecture/2026-09-28-j1-application-fiber-boundary.md).
+// memo, docs/explanation/design-records/2026-09-28-j1-application-fiber-boundary.md).
 //
 // Application and platform FiberRefs flow down into the application's execution,
 // never up through the handle NEXUS returns. So await, join, Effect.fromFiber and
