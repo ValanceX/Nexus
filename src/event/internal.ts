@@ -42,14 +42,16 @@ export const makeBus: Effect.Effect<Bus> = Effect.Do.pipe(
         return first === event ? Effect.void : Effect.die(refusal("duplicate-event-tag"));
       }),
       publish: (envelope: Envelope) => PubSub.publish(pubsub, envelope).pipe(Effect.asVoid),
-      subscribe: lock.withPermits(1)(Effect.Do.pipe(
+      // Uninterruptible from making the scope to registering its finalizer: interrupted in between, the scope would belong to no one and never close, and its
+      // subscription would buffer every publish for the runtime's lifetime. No step in it waits, so taking the lock is the only interruptible part.
+      subscribe: lock.withPermits(1)(Effect.uninterruptible(Effect.Do.pipe(
         Effect.bind("scope", () => Scope.make()),
         Effect.bind("subscription", ({ scope }) => Scope.provide(PubSub.subscribe(pubsub), scope)),
         // After the bus closed, the subscription is shut down before it is handed over, so it ends at once.
         Effect.tap(({ scope }) => state.closed ? Scope.close(scope, Exit.void) : Effect.sync(() => { state.live.add(scope); })),
         Effect.tap(({ scope }) => Effect.addFinalizer(() => Effect.sync(() => { state.live.delete(scope); }).pipe(Effect.andThen(Scope.close(scope, Exit.void))))),
         Effect.map(({ subscription }) => subscription)
-      )),
+      ))),
     },
     close: lock.withPermits(1)(Effect.suspend(() => {
       if (state.closed) {

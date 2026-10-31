@@ -25,11 +25,17 @@ import { fixedClock, referencePlatform } from "./platform/reference.js";
 const fixed = fixedClock;
 const is42 = Effect.map(Clock.currentTimeMillis, (t) => t === 42);
 
+// What a FiberRef write was in v3: a change to the Context of the fiber that runs it, which every later step of that fiber sees.
+const writeIntoFiber = <S>(reference: Context.Reference<S>, value: S): Effect.Effect<void> =>
+  Effect.withFiber((fiber) => Effect.sync(() => { fiber.setContext(Context.add(fiber.context, reference, value)); }));
+
 interface Kind {
   readonly name: string;
   readonly set: Layer.Layer<never>;
   /** Whether the reading fiber sees the value `set` installs. */
   readonly sees: Effect.Effect<boolean>;
+  /** Whether code in the application sees it (default true). */
+  readonly inside?: boolean;
 }
 
 const kinds: ReadonlyArray<Kind> = [
@@ -49,6 +55,14 @@ const kinds: ReadonlyArray<Kind> = [
     set: Layer.succeed(References.MinimumLogLevel, "Error"),
     sees: Effect.map(References.MinimumLogLevel, (level) => level === "Error"),
   },
+  // The v4 form of v3's Layer.locallyScoped: the build writes into the fiber that runs it, rather than adding to the Context it builds.
+  {
+    name: "a write into the building fiber (setContext)",
+    set: Layer.effectDiscard(Effect.suspend(() => writeIntoFiber(References.MinimumLogLevel, "Error"))),
+    sees: Effect.map(References.MinimumLogLevel, (level) => level === "Error"),
+    // A v4 layer is built in a fiber of its own and contributes only the Context it returns, so the write reaches not even the application.
+    inside: false,
+  },
 ];
 
 const compositions = {
@@ -65,10 +79,6 @@ const define = (runtime: Layer.Layer<never, unknown, Nexus.Application.Applicati
 
 const inApp = <A>(running: Nexus.Application.RunningApplication<never>, effect: Effect.Effect<A>): Effect.Effect<A> =>
   Effect.promise(() => Nexus.Runtime.run(running.runtime, effect));
-
-// What a FiberRef write was in v3: a change to the Context of the fiber that runs it, which every later step of that fiber sees.
-const writeIntoFiber = <S>(reference: Context.Reference<S>, value: S): Effect.Effect<void> =>
-  Effect.withFiber((fiber) => Effect.sync(() => { fiber.setContext(Context.add(fiber.context, reference, value)); }));
 
 const stop = (route: Route, running: Nexus.Application.RunningApplication<never>, scope: Scope.Closeable): Effect.Effect<void> =>
   route === "Application.shutdown" ? Nexus.Application.shutdown(running) : Scope.close(scope, Exit.void);
@@ -104,7 +114,7 @@ describe("Platform isolation: the matrix (I44, I46, I47)", () => {
       return { before, inside, during, after, later };
     }));
 
-    expect(observed).toEqual({ before: false, inside: true, during: false, after: false, later: false });
+    expect(observed).toEqual({ before: false, inside: kind.inside ?? true, during: false, after: false, later: false });
   });
 });
 
@@ -114,15 +124,21 @@ describe("Platform isolation: the matrix (I44, I46, I47)", () => {
 // E3: build-only isolation leaks it).
 
 describe("Platform isolation: termination (I46, C30)", () => {
-  const rawFinalizerPlatform = (): Nexus.Application.Platform => Layer.merge(
-    empty(),
-    Layer.effectDiscard(Effect.flatMap(Effect.scope, (scope) => Scope.addFinalizer(scope, writeIntoFiber(References.MinimumLogLevel, "Error"))))
-  );
+  const rawFinalizer = Layer.effectDiscard(Effect.flatMap(Effect.scope, (scope) => Scope.addFinalizer(scope, writeIntoFiber(References.MinimumLogLevel, "Error"))));
+  // `merge` builds into a parallel scope, whose finalizers each run in a fiber of their own; `provideMerge` and the application layer alone keep the
+  // finalizer in a sequential scope, where it runs in the fiber that closes it. Only those two can reach the stopping fiber without isolation.
+  const placements = {
+    "merged into the platform": { platform: Layer.merge(empty(), rawFinalizer), runtime: Layer.empty },
+    "provide-merged into the platform": { platform: Layer.provideMerge(empty(), rawFinalizer), runtime: Layer.empty },
+    "the application layer itself": { platform: empty(), runtime: rawFinalizer },
+  } as const;
+  const cases = (Object.keys(placements) as Array<keyof typeof placements>).flatMap((placement) =>
+    (["Application.shutdown", "closing the start scope"] as const).map((route) => ({ placement, route })));
 
-  it.each(["Application.shutdown", "closing the start scope"] as const)("a raw scope finalizer writes nothing into the fiber that stops the application (%s)", async (route) => {
+  it.each(cases)("a raw scope finalizer ($placement) writes nothing into the fiber that stops the application ($route)", async ({ placement, route }) => {
     const level = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* Nexus.Application.start(define(), { platform: rawFinalizerPlatform() }).pipe(Scope.provide(scope));
+      const running = yield* Nexus.Application.start(define(placements[placement].runtime), { platform: placements[placement].platform }).pipe(Scope.provide(scope));
       yield* stop(route, running, scope);
 
       return yield* References.MinimumLogLevel;

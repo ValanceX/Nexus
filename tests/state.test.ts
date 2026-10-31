@@ -52,19 +52,21 @@ describe("State", () => {
   });
 
   // v4's Equal.equals compares plain objects by structure; nothing on the commit path may use it to drop a commit equal to the one before.
-  it("emits a commit whose value is structurally equal to the previous one", async () => {
+  it.each(["changes", "values"] as const)("%s emits a commit whose value is structurally equal to the previous one", async (stream) => {
     const Pair = Schema.Struct({ a: Schema.Number });
+    // `values` starts with the current value, so it takes one more.
+    const count = stream === "changes" ? 2 : 3;
 
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
       Effect.bind("pair", () => State.create(Pair, { a: 0 })),
-      Effect.bind("fiber", ({ pair }) => Effect.forkChild(Stream.runCollect(Stream.take(pair.changes, 2)))),
+      Effect.bind("fiber", ({ pair }) => Effect.forkChild(Stream.runCollect(Stream.take(pair[stream], count)))),
       Effect.tap(() => Effect.sleep("1 millis")),
       Effect.tap(({ pair }) => State.set(pair, { a: 1 })),
       Effect.tap(({ pair }) => State.set(pair, { a: 1 })),
       Effect.andThen(({ fiber }) => Fiber.join(fiber).pipe(Effect.timeout(Duration.seconds(1))))
     )));
 
-    expect(Array.from(result)).toEqual([{ a: 1 }, { a: 1 }]);
+    expect(Array.from(result)).toEqual(stream === "changes" ? [{ a: 1 }, { a: 1 }] : [{ a: 0 }, { a: 1 }, { a: 1 }]);
   });
 
   it("applies concurrent updates atomically — no lost writes", async () => {

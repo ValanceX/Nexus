@@ -52,9 +52,9 @@ export function subscribe<Tag extends string, Payload, Encoded = Payload>(event:
     Effect.andThen(EventBus),
     Effect.tap((bus) => bus.claim(event)),
     Effect.andThen((bus) => bus.subscribe),
-    // One event per pull (D4): an event is taken from the queue only when the
+    // One event per pull (D4): an event is taken from the subscription only when the
     // subscriber asks for the next one, so events still buffered when the bus
-    // closes stay in the queue and are discarded with it, never handed over later.
+    // closes stay in the subscription and are discarded with it, never handed over later.
     // (`Stream.fromSubscription` takes everything buffered in one pull, so the subscription is read through its one-at-a-time channel.)
     Effect.map((subscription) => Stream.fromChannel(Channel.map(Channel.fromSubscription(subscription), (envelope) => [envelope] as const)).pipe(
       Stream.filter((envelope) => envelope._tag === event._tag),
