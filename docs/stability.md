@@ -18,7 +18,9 @@ What each public surface of NEXUS promises. The tiers have one meaning each. (ME
 | `Runtime.ShutdownOptions`, `Runtime.make`'s and `Application.start`'s `shutdown.grace`, `Application.shutdown(running, options)`, and the settling of work started with `run` and `runFork` at termination (since 0.12.0) | Stable |
 | `@valancex/nexus/package.json` is exported, so tools can read the installed version (since 0.12.1) | Stable |
 | `"sideEffects": false`: importing the package does nothing, so a bundler drops what is not used (since 0.12.2) | Stable |
-| `Mesh` (the MESH host adapter, with its optional peer `@valancex/mesh-runtime`), and `Mesh.update` (since 0.12.0) | Stable |
+| `Mesh` (the MESH host adapter, which needs the peer `@valancex/mesh-runtime`: a required peer, loaded by the root entry, so install it even if you never call `Mesh`), and `Mesh.update` (since 0.12.0) | Stable |
+| `Command.define` / `Event.define` accepting a transforming schema (`Schema.Schema<A, I>`, defaulted type parameter), `CommandValidationError.cause` (optional on the type, always present on values Nexus creates), and `Event.subscribe(def, { validate: true })` (since 0.17.0) | Provisional |
+| Event tag identity: a second distinct `EventDef` with a tag already used in the same runtime dies with a `Runtime.Refusal`, `code` `"duplicate-event-tag"` (since 0.17.0; a new member of the Stable `Runtime.RefusalCode`) | Stable |
 | `Semantic` (`build`, `analyze` and its types) | Provisional |
 | `Event.EventBusShape`, `Event.EventBusLive` | Internal: plumbing. A layer may name the bus as a requirement (`Layer.Layer<R, E, EventBusShape>`), and that use is supported, but the shape itself may change in any release |
 | Anything under `dist/` that the package's `exports` doesn't list | Internal |

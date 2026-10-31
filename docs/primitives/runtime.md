@@ -52,7 +52,7 @@ namespace Runtime {
   class Refusal extends Error { readonly code: RefusalCode }
   function isRefusal(value: unknown): value is Refusal;
   function refusalOf(value: unknown): Refusal | undefined;
-  type RefusalCode = "terminating" | "not-a-runtime" | "not-an-application";
+  type RefusalCode = "terminating" | "not-a-runtime" | "not-an-application" | "duplicate-event-tag";
 }
 ```
 
@@ -174,7 +174,7 @@ NEXUS didn't make is refused the same way.
 The defect is a `Runtime.Refusal`, an `Error` whose `code` is stable:
 `"terminating"` (termination has been requested), `"not-a-runtime"` (a handle
 NEXUS didn't make) or `"not-an-application"` (the same, for an application
-handle). `Runtime.isRefusal(defect)` recognizes one, including across two
+handle); `"duplicate-event-tag"` (two distinct `EventDef`s share a tag in one runtime). `Runtime.isRefusal(defect)` recognizes one, including across two
 installed copies of the package. Match on `code`, never on the message. (Thrown and defect errors carry `code`; typed failures in the `E` channel carry `_tag`.) It
 stays a defect and never a typed failure: using a handle after termination
 began is misuse, and an `E` channel on every `run` for it would make each
@@ -206,7 +206,7 @@ code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug. `run`
   completes normally, and only the caller that performed the termination
   re-raises the release's original failure, as a defect.
 - **Concurrent calls.** Calls to `run` and `runFork` run independently and unordered; the runtime serializes nothing. `Application.shutdown` is an Effect, asynchronous.
-- **"Admitted".** In this page "admitted" means work termination waits for (NEXUS's own, such as an application-owned `State` being created). The capability model's "admitted unit" (an effect run through `Runtime.run`) is a different thing and is not waited for.
+- **"Admitted".** In this page "admitted" means work termination waits for (NEXUS's own, such as an application-owned `State` being created). The capability model's "admitted unit" (an effect run through `Runtime.run`) is a different thing: termination settles it separately, waiting up to the grace and then interrupting (see below).
 - **Settling the work (v0.12).** The effects started with `run` and `runFork` are the runtime's work, tracked from the moment they start until they exit, however they exit. After the bus closes, termination waits up to the **grace** for them to finish on their own, then interrupts what is left and waits for each to exit, so an effect has run its own finalizers, and released what it acquired, before the runtime's resources are released. The grace is `shutdown.grace` of `Runtime.make` or `Application.start`, or the one given to a call of `Application.shutdown`; it is a `Duration`, and defaults to `0`. A grace of `0` interrupts at once, after one turn of the event loop in which a subscription that ended with the bus ends its consumer; `Duration.infinity` waits for every effect, however long it takes. New work is refused throughout. The effect asking for the termination (a command may end its own application) is neither waited for nor interrupted, and a fiber an effect forked is the effect's to end. An interrupted `run` rejects with Effect's interruption (`Cause.isInterruptedOnly` is true, `Runtime.refusalOf` finds nothing), and an interrupted `runFork` fiber exits interrupted. Work that never finishes and cannot be interrupted (an uninterruptible effect that waits forever) holds termination, as it holds any `Scope`.
 - **Streams that end with the runtime.** The `changes` and `values` of application-owned `State`, and so of a `Selector` over it, end when termination winds the runtime down (after the bus closes, before the work is settled), not when the last resource is released, so a consumer started with `run` ends normally instead of being interrupted to make room for a release that waits for it. A `State` created in a scope of the caller's own ends with that scope, and a consumer of it that was started with `run` is settled like any other work.
 - `Runtime` must never expose the Effect `Runtime`, the service `Context`

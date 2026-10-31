@@ -5,6 +5,8 @@
  * through an explicit binding. It adds no reactive model, render registry,
  * component lifecycle or command runtime. For a component's unit (state for one occurrence) it passes the host's state to the
  * runtime and the intent to the binding, and keeps none of it: the host holds the state and decides when an occurrence's ends.
+ * The context values (MESH 0.18's context channel: names the manifest declares once and a component lists in `uses`) are passed
+ * the same way, beside the snapshot, and kept nowhere.
  *
  * Normative invariants (spec §5.2):
  * - M1: `dispatch` operates against exactly the `Render` the caller supplied.
@@ -25,13 +27,27 @@ import * as NexusCommand from "../command/index.js";
 export type { IntentArgument, Render, RenderPatches, RuntimeDiagnosticsDocument };
 
 /**
- * A command intent. From MESH 0.15, a command of a component's unit names the occurrence it is for (`instance`) and the fields the caller owned (`controlled`). Written here and not taken from the
- * runtime's types, so that this adapter builds and runs against MESH 0.14, which has neither.
+ * A command intent. A command of a component's unit names the occurrence it is for (`occurrence`, MESH 0.18; `instance` in MESH 0.15 to 0.17) and the fields the caller owned (`controlled`, from
+ * MESH 0.15). Written here and not taken from the runtime's types, so that this adapter builds and runs against MESH 0.14, which has neither.
  */
-export type CommandIntent = RuntimeIntent & { readonly instance?: string; readonly controlled?: ReadonlyArray<string> };
+export type CommandIntent = RuntimeIntent & {
+  readonly occurrence?: string;
+  /**
+   * The old name of `occurrence`: the only one MESH 0.15 to 0.17 give, and a deprecated alias in MESH 0.18 (not enumerable, removed after it).
+   * @deprecated Read `occurrence` (MESH 0.18, refinements C-4).
+   */
+  readonly instance?: string;
+  readonly controlled?: ReadonlyArray<string>;
+};
 
-/** One occurrence of a component with a unit in a render (MESH 0.15's `Render.instances`). */
+/** One occurrence of a component with a unit in a render (MESH 0.18's `Render.occurrences`; `Render.instances` in MESH 0.15 to 0.17). */
 export interface UnitOccurrence {
+  /** The occurrence's key. Present from MESH 0.18; MESH 0.15 to 0.17 give only `instance`, so read `occurrence ?? instance` to support both. */
+  readonly occurrence?: string;
+  /**
+   * The old name of `occurrence`: the only one MESH 0.15 to 0.17 give, and a deprecated alias in MESH 0.18 (not enumerable, removed after it).
+   * @deprecated Read `occurrence` (MESH 0.18, refinements C-4).
+   */
   readonly instance: string;
   readonly component: string;
   readonly state: Readonly<Record<string, unknown>>;
@@ -40,6 +56,9 @@ export interface UnitOccurrence {
 
 /** The state the host holds for the unit occurrences, by the occurrence's key. */
 export type UnitStates = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+
+/** The values of the manifest's context channel the host holds, by context name (MESH 0.18). */
+export type ContextValues = Readonly<Record<string, unknown>>;
 
 export interface Program {
   readonly root: string;
@@ -60,7 +79,7 @@ export interface Dispatched {
 
 /**
  * Translates a command intent's arguments into a NEXUS command's input, then invokes it. The intent itself is the second argument, for
- * a binding that needs more than the arguments: the occurrence of a component's unit it is for (`intent.instance`) and the fields the
+ * a binding that needs more than the arguments: the occurrence of a component's unit it is for (`intent.occurrence`) and the fields the
  * caller owned (`intent.controlled`). It is absent when the command is run by name (`invoke`), not from an event. A binding that does not need it takes one parameter, as before.
  */
 export type Binding<E, R> = (args: ReadonlyArray<IntentArgument>, intent?: CommandIntent) => Effect.Effect<unknown, E, R>;
@@ -86,22 +105,25 @@ export interface Host<E, R> {
  * in `toInput` is a broken binding, so it's a defect, never a
  * `CommandValidationError` (spec §6.3).
  */
-export const bind = <I, O, E, R>(command: Command<I, O, E, R>, toInput: (args: ReadonlyArray<IntentArgument>) => unknown): Binding<E | CommandValidationError, R> =>
+export const bind = <I, O, E, R, X = I>(command: Command<I, O, E, R, X>, toInput: (args: ReadonlyArray<IntentArgument>) => unknown): Binding<E | CommandValidationError, R> =>
   (args) => Effect.sync(() => toInput(args)).pipe(Effect.flatMap((input) => NexusCommand.invoke(command, input)));
 
 // A rejection from the runtime is a programming, package or runtime defect, so
 // it's Effect.promise (a defect), never a typed failure (spec §6.4).
-const renderSnapshot = (program: Program, snapshot: Record<string, unknown>, units?: UnitStates): Effect.Effect<Render, MeshDiagnostics> =>
-  Effect.promise(() => meshRender({ program: { root: program.root, templates: program.templates }, model: program.model, snapshot, ...(units === undefined ? {} : { units }) } as never)).pipe(Effect.flatMap((result) => result.diagnostics === undefined
+// `units` and `context` are left out when absent, so an older MESH is given exactly the input it knows.
+const renderSnapshot = (program: Program, snapshot: Record<string, unknown>, units?: UnitStates, context?: ContextValues): Effect.Effect<Render, MeshDiagnostics> =>
+  Effect.promise(() => meshRender({ program: { root: program.root, templates: program.templates }, model: program.model, snapshot, ...(units === undefined ? {} : { units }), ...(context === undefined ? {} : { context }) } as never)).pipe(Effect.flatMap((result) => result.diagnostics === undefined
     ? Effect.succeed(result.render)
     : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics }))
   );
 
 /**
  * Renders `snapshot` and, beside it, the state the host holds for the unit occurrences (`units`: the occurrence's key, then its state; without it,
- * every occurrence has its unit's defaults). The runtime's operation and nothing more: the adapter keeps no state of the occurrences (M2), the host does.
+ * every occurrence has its unit's defaults) and the context values (`context`: by context name; MESH 0.18, needed when the manifest declares a context
+ * name whose type is not optional). The runtime's operation and nothing more: the adapter keeps no state of the occurrences and no context (M2), the host does.
  */
-export const render = (program: Program, snapshot: Record<string, unknown>, units?: UnitStates): Effect.Effect<Render, MeshDiagnostics> => renderSnapshot(program, snapshot, units);
+export const render = (program: Program, snapshot: Record<string, unknown>, units?: UnitStates, context?: ContextValues): Effect.Effect<Render, MeshDiagnostics> =>
+  renderSnapshot(program, snapshot, units, context);
 
 /** The new render of an update, and the `render-patch-v1` operations that turn the previous render's tree into its tree. */
 export interface Updated {
@@ -112,19 +134,27 @@ export interface Updated {
 /**
  * Updates `previous` to a new `snapshot` of the same program: MESH reuses everything the snapshot leaves unchanged, and returns the new render and the patches a renderer applies
  * in place. Like `render`, it is the runtime's operation and nothing more: it keeps no render (M2), and a rejection from the runtime is a defect. `previous` is untouched, and
- * still dispatches, when MESH refuses the snapshot. `previous` must be a render of the same program, which only the caller knows.
+ * still dispatches, when MESH refuses the snapshot. `previous` must be a render of the same program, which only the caller knows. Without `units`, or without `context`,
+ * MESH keeps the previous render's.
  */
-export const update = (previous: Render, snapshot: Record<string, unknown>, units?: UnitStates): Effect.Effect<Updated, MeshDiagnostics> =>
-  Effect.promise(() => (units === undefined ? meshUpdate(previous, snapshot) : (meshUpdate as (p: Render, s: Record<string, unknown>, u: UnitStates) => ReturnType<typeof meshUpdate>)(previous, snapshot, units))).pipe(Effect.flatMap((result) => result.diagnostics === undefined
+export const update = (previous: Render, snapshot: Record<string, unknown>, units?: UnitStates, context?: ContextValues): Effect.Effect<Updated, MeshDiagnostics> =>
+  Effect.promise(() =>
+    // Trailing absent arguments are not passed, so an older MESH is called exactly as it was before it had them.
+    context !== undefined
+      ? meshUpdate(previous, snapshot, units as UnitStates, context as Record<string, unknown>)
+      : units !== undefined
+        ? meshUpdate(previous, snapshot, units as UnitStates)
+        : meshUpdate(previous, snapshot)
+  ).pipe(Effect.flatMap((result) => result.diagnostics === undefined
     ? Effect.succeed<Updated>({ render: result.render, patches: result.patches })
     : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics })
   ));
 
 /**
- * Raises an event of a unit occurrence (`render.instances` lists them) and gives the intent of the handler the caller bound to it, if it bound one.
+ * Raises an event of a unit occurrence (`render.occurrences` lists them) and gives the intent of the handler the caller bound to it, if it bound one.
  * The runtime's operation and nothing more: it renders nothing and changes nothing, and what the host does with the intent is the host's.
  */
-export const raise = (render: Render, instance: string, event: string, payload?: unknown): Effect.Effect<CommandIntent | undefined, MeshDiagnostics> =>
+export const raise = (render: Render, occurrence: string, event: string, payload?: unknown): Effect.Effect<CommandIntent | undefined, MeshDiagnostics> =>
   Effect.promise(() => {
     const meshRaise = (MeshRuntime as unknown as { readonly raise?: (r: Render, i: string, e: string, p?: unknown) => Promise<{ readonly intent?: CommandIntent; readonly diagnostics?: RuntimeDiagnosticsDocument }> }).raise;
 
@@ -132,7 +162,7 @@ export const raise = (render: Render, instance: string, event: string, payload?:
       throw new Error("NEXUS: raising an event of a unit needs @valancex/mesh-runtime 0.15");
     }
 
-    return meshRaise(render, instance, event, payload);
+    return meshRaise(render, occurrence, event, payload);
   }).pipe(Effect.flatMap((result) => result.diagnostics === undefined
     ? Effect.succeed(result.intent)
     : Effect.fail<MeshDiagnostics>({ _tag: "MeshDiagnostics", diagnostics: result.diagnostics })
@@ -147,11 +177,22 @@ type HostOptions<E, R> = {
    * it every occurrence has its unit's defaults, and a program with no units never needs it.
    */
   readonly units?: Effect.Effect<UnitStates>;
+  /**
+   * Optional (MESH 0.18). The context values the host holds, read each time the host renders and handed to the runtime beside the snapshot as they are, with
+   * no logic. Like `units`, it is read when the scope renders: a change of context alone does not render. A program whose manifest declares no context never needs it.
+   */
+  readonly context?: Effect.Effect<ContextValues>;
 }
 
-export const host = <E, R>({ program, scope, commands, units }: HostOptions<E, R>): Host<E, R> => {
+export const host = <E, R>({ program, scope, commands, units, context }: HostOptions<E, R>): Host<E, R> => {
+  // What the host holds beside the snapshot, read at each render; absent inputs are absent, not empty.
+  const none = Effect.succeed(undefined);
   const rendered = (snapshot: Record<string, unknown>): Effect.Effect<Render, MeshDiagnostics> =>
-    units === undefined ? renderSnapshot(program, snapshot) : Effect.flatMap(units, (held) => renderSnapshot(program, snapshot, held));
+    Effect.Do.pipe(
+      Effect.bind("held", () => units ?? none),
+      Effect.bind("given", () => context ?? none),
+      Effect.flatMap(({ held, given }) => renderSnapshot(program, snapshot, held, given))
+    );
 
   return {
     render: Effect.flatMap(scope.value, rendered),

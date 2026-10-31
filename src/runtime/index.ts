@@ -27,8 +27,9 @@ export type RuntimeInitError = {
   readonly cause: unknown;
 };
 
+// Overloads, not a defaulted R: with the layer omitted R is `never`, never inferred from the target type.
 /**
- * Builds a runtime from `layer`, with its own event bus as an ambient layer: the
+ * Builds a runtime from `layer` (omit it for an application with no services yet: `Layer.empty`), with its own event bus as an ambient layer: the
  * bus is *provide-merged* into `layer`, so it satisfies an `EventBusShape`
  * requirement `layer` declares, and stays in the final context for
  * `Event.publish`/`Event.subscribe` run through `run`/`runFork`.
@@ -36,7 +37,13 @@ export type RuntimeInitError = {
  * The runtime is owned by the caller's Scope, and ends when it closes: new work
  * is refused, the bus closes, then every resource is released (runtime.md).
  */
-export const make = <R>(layer: Layer.Layer<R, unknown, EventBusShape>, options?: RuntimeOptions): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.Do.pipe(
+export function make(layer?: undefined, options?: RuntimeOptions): Effect.Effect<NexusRuntime<EventBusShape>, RuntimeInitError, Scope.Scope>;
+export function make<R>(layer: Layer.Layer<R, unknown, EventBusShape>, options?: RuntimeOptions): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope>;
+export function make(layer?: Layer.Layer<never, unknown, EventBusShape>, options?: RuntimeOptions): Effect.Effect<NexusRuntime<EventBusShape>, RuntimeInitError, Scope.Scope> {
+  return makeFrom(layer ?? Layer.empty, options);
+}
+
+const makeFrom = <R>(layer: Layer.Layer<R, unknown, EventBusShape>, options?: RuntimeOptions): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope> => Effect.Do.pipe(
   Effect.bind("bus", () => makeBus),
   Effect.bind("lifecycle", ({ bus }) => makeLifecycle(bus, Duration.decode(options?.shutdown?.grace ?? 0))),
   // Tied to the *caller's* scope, so an interrupted/failed caller still

@@ -79,7 +79,15 @@ const apps = new WeakMap<object, AppRecord>();
 // Absent platform: the empty environment, exactly v0.5's absent `environment` (D30).
 const noPlatform: Platform = Capability.EnvironmentLive(new Map());
 
-export const define = <R>(definition: ApplicationDefinition<R>): Application<R> => ({ definition });
+// The input may omit `runtime` (an application with no services yet); the stored
+// record always has one, so every reader of `definition.runtime` is unchanged.
+// A definition that already has one is stored as passed (I39). Overloads, not a
+// defaulted R, so `Application<Svc>` can never be inferred for an omitted runtime.
+export function define(definition: { readonly name: string }): Application<never>;
+export function define<R>(definition: ApplicationDefinition<R>): Application<R>;
+export function define(definition: { readonly name: string; readonly runtime?: ApplicationDefinition<never>["runtime"] }): Application<never> {
+  return { definition: definition.runtime === undefined ? { name: definition.name, runtime: Layer.empty } : definition as ApplicationDefinition<never> };
+}
 
 export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Effect<RunningApplication<R>, ApplicationInitError, Scope.Scope> => Effect.Do.pipe(
   Effect.bind("statusRef", () => Ref.make<ApplicationStatus>({ _tag: "Created" })),

@@ -53,9 +53,11 @@ independent buses until a concrete need for that appears (§12, §2.1).
 
 ```ts
 namespace Event {
-  function define<Tag extends string, Payload>(tag: Tag, schema: Schema.Schema<Payload>): EventDef<Tag, Payload>;
-  function publish<Tag extends string, Payload>(event: EventDef<Tag, Payload>, payload: Payload): Effect.Effect<void, never, EventBusShape>;
-  function subscribe<Tag extends string, Payload>(event: EventDef<Tag, Payload>): Stream.Stream<Payload, never, EventBusShape>;
+  function define<Tag extends string, Payload, Encoded = Payload>(tag: Tag, schema: Schema.Schema<Payload, Encoded>): EventDef<Tag, Payload, Encoded>;
+  function publish<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, payload: Payload): Effect.Effect<void, never, EventBusShape>;
+  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options?: { readonly validate?: false }): Stream.Stream<Payload, never, EventBusShape>;
+  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: true }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
+  function subscribe<Tag extends string, Payload, Encoded = Payload>(event: EventDef<Tag, Payload, Encoded>, options: { readonly validate: boolean }): Stream.Stream<Payload, ParseResult.ParseError, EventBusShape>;
 }
 ```
 
@@ -64,6 +66,13 @@ channel) rather than an explicit bus argument, so a `Command` handler
 publishing an event reads the same way as any other NEXUS effect (`yield*
 Event.publish(...)`) instead of needing a bus reference threaded through
 every function signature.
+
+The schema may transform (`Schema.Schema<Payload, Encoded>`); `Encoded` defaults to
+`Payload`. **The bus carries decoded `Payload` values:** `publish` takes the decoded
+payload and `subscribe` delivers it, so neither decodes. `subscribe(def, { validate: true })`
+checks each payload against the schema's decoded (type) side, so a transforming schema is
+never decoded twice; a payload that fails ends the stream with a `ParseError`. The default
+(`validate` omitted) is unchanged: payloads are delivered as given.
 
 ## Errors
 
@@ -76,13 +85,13 @@ that itself), not to `publish`.
 ## Rules
 
 - **Subscription starts when the stream is run, not when `Event.subscribe` is called.** Events published before then are not delivered. Each run is an independent subscription, and each receives every later event in publish order.
-- **Tag uniqueness.** `subscribe` matches on `_tag` only. Two `EventDef`s with the same tag receive each other's payloads, unvalidated. Keep tags unique per application.
+- **Tag uniqueness.** `subscribe` matches on `_tag` only, so two `EventDef`s sharing a tag would receive each other's payloads. Each runtime's bus therefore registers a tag to the first `EventDef` that publishes or subscribes with it, and a second, distinct `EventDef` with that tag dies with a `Runtime.Refusal` whose `code` is `"duplicate-event-tag"` (at its first `publish` or `subscribe`). Using one def any number of times is fine. Because of this, a subscription only ever receives its own def's payloads, which is why delivering the payload as `Payload` without a check is sound. Registration is per runtime, not global. **Reload caveat:** in a long-lived runtime, a logical event that is re-created (for example when a module is re-evaluated on hot reload) is a new, distinct def and is refused. Define each `EventDef` once, in a module that is not re-evaluated, or restart the runtime on reload.
 - **Unbounded buffering.** The bus is an unbounded `PubSub` and each subscriber has an unbounded queue: a slow subscriber's queue grows without limit until the bus closes. With no subscribers nothing is retained.
 - **`publish` returns when the event is enqueued,** not when subscribers have handled it.
 
 - Events are typed and immutable. **`publish` is type-directed:** it accepts
   a `Payload` typed by its `EventDef`, and performs no runtime decode or
-  validation. Runtime validation isn't part of the Event contract. A payload
+  validation. Runtime validation isn't part of the Event contract unless the subscriber opts in with `{ validate: true }`, which delivers the decoded copy (excess keys dropped). A payload
   that gets past the type system through an untyped escape hatch (a cast,
   untyped JavaScript) is the publisher's responsibility, and is delivered as
   given.

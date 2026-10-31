@@ -16,11 +16,11 @@ importers:
         specifier: ^26.6.5
         version: 26.6.5
       '@valancex/mesh-compiler':
-        specifier: ^0.17.0
-        version: 0.17.0
+        specifier: ^0.18.0
+        version: 0.18.0
       '@valancex/mesh-runtime':
-        specifier: ^0.17.0
-        version: 0.17.0
+        specifier: ^0.18.0
+        version: 0.18.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -277,12 +277,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@valancex/mesh-compiler@0.17.0':
-    resolution: {integrity: sha512-HEPYgNaFtsi11mkVvEQt0Isch6C7BQFROa6W/9hGZXd3GxOXH3MikkxT8uy//dDKXnRQHAML/JkWILEz7CkAFw==}
+  '@valancex/mesh-compiler@0.18.0':
+    resolution: {integrity: sha512-twfAUMvaBb+jcmBsP5E5vQtZwhO8pfGQkiXBGQsCKppCM3vUibyecBYUeBYzDPKVrTme/lp3y+Tj6v39NUMtlQ==}
     engines: {node: '>=22'}
 
-  '@valancex/mesh-runtime@0.17.0':
-    resolution: {integrity: sha512-d2q/QzyCeCWp8SdQerQFb8P0jKrTc0WkbKGvTJ3ND6T3RV6SbxHLv5xjBj2jst3tt+zEw3oKO8vY7mZc1PdG+Q==}
+  '@valancex/mesh-runtime@0.18.0':
+    resolution: {integrity: sha512-gfIXGEXCqgXvbJUIzMI+Bw9G+KIADZM2BCWQDLmAiYwpfq18UjZUIgxtWaMRUJAFG7alg/bhFncya9aZTiScpQ==}
     engines: {node: '>=22'}
 
   '@vitest/mocker@5.0.5':
@@ -698,9 +698,9 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@valancex/mesh-compiler@0.17.0': {}
+  '@valancex/mesh-compiler@0.18.0': {}
 
-  '@valancex/mesh-runtime@0.17.0': {}
+  '@valancex/mesh-runtime@0.18.0': {}
 
   '@vitest/mocker@5.0.5(vite@8.3.5(@types/node@26.6.5))':
     dependencies:

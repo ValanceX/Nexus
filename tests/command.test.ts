@@ -76,3 +76,22 @@ describe("Command", () => {
     expect(result).toBe("user:u1");
   });
 });
+
+describe("Command with a transforming schema", () => {
+  const Count = Schema.Struct({ n: Schema.NumberFromString });
+
+  it("decodes encoded input before the handler runs", async () => {
+    const cmd = Command.define("count", Count, ({ n }) => Effect.succeed(n + 1));
+
+    expect(await Effect.runPromise(Command.invoke(cmd, { n: "41" }))).toBe(42);
+  });
+
+  it("carries the parse error as cause beside issues", async () => {
+    const cmd = Command.define("count", Count, () => Effect.void);
+    const error = await Effect.runPromise(Effect.flip(Command.invoke(cmd, { n: 1 })));
+
+    expect(error._tag).toBe("CommandValidationError");
+    expect(error.issues).toHaveLength(1);
+    expect(error.cause?._tag).toBe("ParseError");
+  });
+});
