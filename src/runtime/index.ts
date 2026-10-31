@@ -2,7 +2,7 @@ import type { EventBusShape } from "../event/index.js";
 
 import { Context, Duration, Effect, Fiber, Layer, Scope } from "effect";
 
-import { admitting, isolated, makeLifecycle, recordOf, refusal, register, terminateLifecycle, tracked, type NexusRuntime } from "./internal.js";
+import { admitting, makeLifecycle, recordOf, refusal, register, terminateLifecycle, tracked, type NexusRuntime } from "./internal.js";
 import { EventBus, makeBus } from "../event/internal.js";
 
 export type { NexusRuntime };
@@ -53,14 +53,15 @@ const makeFrom = <R>(layer: Layer.Layer<R, unknown, EventBusShape>, options?: Ru
   // kept in the private registry, never on the handle (N3); every effect run
   // through the handle runs against it.
   //
-  // Built, and the Context captured, in the application's own fiber (I44–I47): it
-  // starts with the caller's Context, so the caller's references (Clock, log
-  // level, …) reach the application under its own layers' values, and nothing the
-  // build does to its fiber reaches the caller's.
-  Effect.bind("context", ({ bus, lifecycle }) => isolated(Layer.buildWithScope(Layer.provideMerge(layer, Layer.succeed(EventBus, bus.shape)), lifecycle.scope).pipe(
+  // Not wrapped in `isolated` (I44–I47): the build starts with the caller's
+  // Context, so the caller's references (Clock, log level, …) reach the
+  // application under its own layers' values, and the build restores the
+  // fiber's Context when it finishes, so nothing it writes there reaches the
+  // caller's.
+  Effect.bind("context", ({ bus, lifecycle }) => Layer.buildWithScope(Layer.provideMerge(layer, Layer.succeed(EventBus, bus.shape)), lifecycle.scope).pipe(
     Effect.mapError((cause): RuntimeInitError => ({ _tag: "LayerBuildFailed", cause })),
     Effect.andThen((context) => Effect.context<R | EventBusShape>().pipe(Effect.provide(context)))
-  ))),
+  )),
   Effect.map(({ lifecycle, context }) => register<R | EventBusShape>({ context, lifecycle }))
 );
 

@@ -153,10 +153,13 @@ export const refusal = (code: RefusalCode): Refusal => new Refusal(code);
 
 /**
  * Runs `effect` in a child fiber of the calling fiber, and returns its result,
- * without ever taking the child's Context (v0.9 C29, C30). The child starts with
- * the caller's Context when it's forked, so the caller's values still enter.
- * Nothing the child writes into its own fiber (`setContext`) comes back: only its
- * Exit is observed, with `Fiber.await` (P1).
+ * without ever taking the child's Context (v0.9 C30). The child starts with the
+ * caller's Context when it's forked. Nothing the child writes into its own fiber
+ * (`setContext`) comes back: only its Exit is observed, with `Fiber.await` (P1).
+ *
+ * Used on the release side only. A finalizer in a sequential scope runs in the
+ * fiber that closes the scope, so it can write into that fiber; the build side
+ * needs no helper, because v4 restores the fiber's Context after a layer build.
  *
  * Interrupting the caller interrupts the child and waits for it to finish, so
  * whatever the child acquired is released before the caller carries on (C31).

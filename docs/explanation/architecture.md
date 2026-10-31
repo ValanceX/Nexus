@@ -1478,14 +1478,22 @@ decision" rule:
         change survived the application.
       - **J1.** `runFork` returned the application's own fiber, so
         `Fiber.join` on it imported the application's FiberRefs.
-    - **The mechanism, in one form, at three places.** An internal helper
-      runs work in a child fiber, observes it with `Fiber.await` (never
+    - **The mechanism (v4).** Build-side isolation holds without a helper:
+      the Context is restored after a layer build, and there is no FiberRef,
+      so nothing the build writes into its fiber reaches the caller (C29).
+      The internal `isolated` helper remains on the release side. It runs
+      work in a child fiber, observes it with `Fiber.await` (never
       `Fiber.join`), and forwards interruption, waiting for the child. It is
       used:
-      - for the service graph build and runtime capture (C29);
-      - for closing the runtime's scope at termination (C30);
-      - behind the fiber `runFork` returns, which is now an execution handle
-        NEXUS controls (C32).
+      - for closing the runtime's scope at termination (C30): a finalizer in
+        a sequential scope runs in the terminating fiber and could write into
+        it;
+      - for the scope close above, and in `settleWork`'s wait (kept
+        interruptible, so its timeout can end it).
+
+      `runFork`'s handle is an execution handle NEXUS controls, not the
+      application's fiber (C32), and stays so because a v4 `Fiber` exposes
+      `context` and `setContext` (N3).
 
       There is no snapshot and restore of FiberRefs, and no list of
       FiberRefs.
