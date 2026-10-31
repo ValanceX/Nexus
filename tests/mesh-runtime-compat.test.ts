@@ -30,10 +30,9 @@ describe("the MESH runtime boundary", () => {
     expect(alternatives.map((alternative) => alternative.slice(1).split(".")[1])).toContain(minor);
     expect(major).toBe("0");
     // One MESH runtime in the resolved graph (the lockfile's, not the store directory's, which keeps what was once installed).
-    const locked = [...new Set([...readFileSync(new URL("pnpm-lock.yaml", root), "utf8").matchAll(/^ {2}'?(@valancex\/mesh-runtime@[^'\s]+?)'?:(?:\s|$)/gm)].map((match) => match[1]))];
+    const locked = [...new Set([...readFileSync(new URL("pnpm-lock.yaml", root), "utf8").matchAll(/^ {2}'?(@valancex\/mesh-runtime@[^:'\s]+)'?:/gm)].map((match) => match[1]))];
 
-    // DO NOT MERGE BEFORE THE RELEASES: the one runtime is the local pack of MESH 0.18 (revert with the pack commit).
-    expect(locked).toEqual([`@valancex/mesh-runtime@file:local-packs/valancex-mesh-runtime-${installed}.tgz`]);
+    expect(locked).toEqual([`@valancex/mesh-runtime@${installed}`]);
   });
 
   it("a host passes through MESH's keyed repeat (the `{#each}` block): the same item has the same key across reorder, insert and removal", async () => {
