@@ -4,7 +4,9 @@ Every release of NEXUS, newest first, in the [Keep a Changelog](https://keepacha
 
 Each entry links to the version's full release notes: what changed, how to upgrade, and what was verified.
 
-## [Unreleased]
+## [0.18.0] - 2026-10-31
+
+See the [0.18.0 release notes](docs/reference/releases/v0.18.md#v0180).
 
 ## [0.17.0] - 2026-10-31
 

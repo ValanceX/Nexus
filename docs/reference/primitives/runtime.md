@@ -50,7 +50,7 @@ only in who owns them:
 namespace Runtime {
   function make<R>(layer: Layer.Layer<R, unknown, EventBusShape>): Effect.Effect<NexusRuntime<R | EventBusShape>, RuntimeInitError, Scope.Scope>;
   function run<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Promise<A>;
-  function runFork<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.RuntimeFiber<A, E>;
+  function runFork<R, A, E>(runtime: NexusRuntime<R>, effect: Effect.Effect<A, E, R>): Fiber.Fiber<A, E>;
   class Refusal extends Error { readonly code: RefusalCode }
   function isRefusal(value: unknown): value is Refusal;
   function refusalOf(value: unknown): Refusal | undefined;
@@ -70,26 +70,26 @@ that need a `Fiber` handle back, e.g. to interrupt a long-running command.
 
 **The `runFork` handle** (v0.9, C32). The fiber `runFork` returns is an
 execution handle NEXUS controls. It is not the fiber the effect runs in: the
-effect runs in the application's own fiber, with the application's FiberRefs.
+effect runs in the application's own fiber, against the application's Context.
+A fiber publicly exposes its `context` and `setContext()`, so the application's
+own fiber would hand the caller the application's services (N3).
 
 The handle guarantees:
-- **completion:** `Fiber.await`, `Fiber.poll` and `Fiber.status` observe the
+- **completion:** `Fiber.await` and `fiber.pollUnsafe()` observe the
   effect's completion;
-- **results:** `Fiber.join` and `Effect.fromFiber` give the effect's own
-  result, and its typed failures and defects, unchanged;
+- **results:** `Fiber.join` gives the effect's own result, and its typed
+  failures and defects, unchanged;
 - **interruption:** `Fiber.interrupt` interrupts the effect, runs its
   finalizers, and returns once it has finished, even if it is called before
   anything has run;
-- **FiberRef isolation:** `Fiber.join`, `Effect.fromFiber`, `Fiber.inheritAll`
-  and any other operation on the handle import none of the application's or
-  platform's FiberRefs into the caller;
+- **Context isolation:** `Fiber.join`, reading the handle's `context`, and any
+  other operation on the handle import none of the application's or
+  platform's services or references into the caller;
 - **refusal:** after termination has been requested, the handle ends as a
   defect, and the effect never runs, as before.
 
 It doesn't guarantee, and nothing may rely on:
-- that `id()` identifies the fiber the effect runs in;
-- that `Fiber.status` describes that fiber's own state (it describes the
-  handle's);
+- that `id` identifies the fiber the effect runs in;
 - that the handle is the same fiber NEXUS uses internally.
 
 NEXUS exposes no way to reach the internal fiber.
@@ -110,22 +110,23 @@ Effect's layer semantics: caller, then platform, then application layer,
 the later one winning. `tests/default-services.test.ts` pins that order.
 The NEXUS core itself reads none of them.
 
-**Caller isolation** (v0.9, I44–I49). The runtime is built, and its Effect
-runtime captured, in a child fiber of the caller. The child inherits the
-caller's FiberRefs, so the precedence above holds inside the runtime. The
-runtime's scope is also closed in a child fiber, at termination. NEXUS never
-joins either child.
+**Caller isolation** (v0.9, I44–I49). The runtime is built, and its Context
+captured, in a child fiber of the caller. The child starts with the caller's
+Context, so the precedence above holds inside the runtime. The runtime's
+scope is also closed in a child fiber, at termination. NEXUS never joins
+either child.
 
-So FiberRefs flow from the caller into the runtime, and never back. A
-FiberRef set by a layer (`Layer.setClock`, `setRandom`, `setConfigProvider`,
-`Layer.locallyScoped`, …), in its acquisition or its release, reaches neither
-of these:
+So Context references flow from the caller into the runtime, and never back.
+A reference set by a layer (`Layer.succeed(Clock.Clock, …)`,
+`Layer.succeed(Random.Random, …)`, `ConfigProvider.layer`,
+`Layer.succeed(References.MinimumLogLevel, …)`, …), or written into its fiber
+by a release, reaches neither of these:
 - the fiber that builds or terminates the runtime, whether it succeeds, fails
   or is interrupted;
 - another runtime started later.
 
 Code running *in* the runtime sees it. A finalizer sees what its acquisition
-saw, as in Effect. The caller's own FiberRef changes are its own.
+saw, as in Effect. The caller's own Context changes are its own.
 
 **What isolation covers, and what it doesn't.** It covers the execution
 boundaries NEXUS creates and controls:
@@ -135,7 +136,7 @@ boundaries NEXUS creates and controls:
 - `runFork`'s handle.
 
 It doesn't cover values the application's own effects return. An effect
-that returns a fiber it forked, its `FiberRefs` or its Effect `Runtime` hands
+that returns a fiber it forked or its `Context` hands
 that state to its caller by its own choice. `A` is unconstrained, and NEXUS
 doesn't inspect results. Whether that should ever be constrained is open
 (v0.9 outline, O19).
@@ -181,10 +182,10 @@ installed copies of the package. Match on `code`, never on the message. (Thrown 
 stays a defect and never a typed failure: using a handle after termination
 began is misuse, and an `E` channel on every `run` for it would make each
 caller handle what it cannot fix. A command that races a shutdown reads the
-code from the `Cause` (`Cause.dieOption`) to tell this refusal from a bug. `run`'s `Promise` rejects with a
-`FiberFailure`, not with the `Refusal`, so `isRefusal(rejection)` is false there.
-`Runtime.refusalOf(value)` finds the refusal in any of the three places it can be: the
-`Refusal` itself, a `Cause` (take it from an `Exit`), or `run`'s rejection; it returns
+code from the `Cause` (`Cause.findDefect`) to tell this refusal from a bug. `run`'s `Promise` rejects with
+`Cause.squash` of the cause, which for a refusal is the `Refusal` itself, so `isRefusal(rejection)` holds there.
+`Runtime.refusalOf(value)` finds the refusal in either place it can be: the
+`Refusal` itself (`run`'s rejection included) or a `Cause` (take it from an `Exit`); it returns
 `undefined` for a bug or for anything else.
 
 ## Rules

@@ -1,5 +1,5 @@
 // v0.3: the application lifecycle (N1, N2) and application-owned State (D1).
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, ParseResult, Ref, Schedule, Schema, Scope, Stream, Runtime as EffectRuntime } from "effect";
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Result, Schedule, Schema, SchemaGetter, Scope, Stream } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
@@ -16,19 +16,19 @@ const eventually = <A>(get: Effect.Effect<A>, done: (a: A) => boolean): Effect.E
   get.pipe(Effect.filterOrFail(done), Effect.retry(Schedule.spaced("1 millis")), Effect.timeout(Duration.seconds(1)));
 
 // A refused call: a die, and no typed failure.
-const isRefusal = <A, E>(exit: Exit.Exit<A, E>) => Exit.isFailure(exit) && Cause.isDie(exit.cause) && Option.isNone(Cause.failureOption(exit.cause));
+const isRefusal = <A, E>(exit: Exit.Exit<A, E>) => Exit.isFailure(exit) && Cause.hasDies(exit.cause) && Option.isNone(Cause.findErrorOption(exit.cause));
 
 // An application whose one resource counts its releases.
 const counted = (releases: Ref.Ref<number>) => Application.define({
   name: "counted",
-  runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1))),
+  runtime: Layer.effectDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1))),
 });
 
 // Records each change of status, until interrupted.
-const sampleStatus = <R>(running: Application.RunningApplication<R>, seen: Ref.Ref<ReadonlyArray<string>>) => Effect.forkDaemon(Effect.forever(
+const sampleStatus = <R>(running: Application.RunningApplication<R>, seen: Ref.Ref<ReadonlyArray<string>>) => Effect.forkDetach(Effect.forever(
   Application.status(running).pipe(
     Effect.flatMap((status) => Ref.update(seen, (xs) => xs.at(-1) === status._tag ? xs : [...xs, status._tag])),
-    Effect.andThen(Effect.yieldNow())
+    Effect.andThen(Effect.yieldNow)
   )
 ));
 
@@ -50,7 +50,8 @@ describe("Application lifecycle (N2)", () => {
       Effect.bind("consumerExit", ({ consumer }) => Fiber.await(consumer).pipe(Effect.timeout(Duration.seconds(1)))),
       Effect.bind("runExit", ({ running }) => Effect.promise(() => Runtime.run(running.runtime, Effect.sync(() => { ran = true; })).then(
         () => Exit.void,
-        (error: unknown) => EffectRuntime.isFiberFailure(error) ? Exit.failCause(error[EffectRuntime.FiberFailureCauseId]) : Exit.die(error)
+        // v4's run rejects with Cause.squash: a refusal is the defect itself.
+        (error: unknown) => Exit.die(error)
       ))),
       Effect.bind("forkExit", ({ running }) => Fiber.await(Runtime.runFork(running.runtime, Effect.sync(() => { ran = true; }))))
     )));
@@ -67,7 +68,7 @@ describe("Application lifecycle (N2)", () => {
     const result = await Effect.runPromise(Effect.Do.pipe(
       Effect.bind("releases", () => Ref.make(0)),
       Effect.bind("scope", () => Scope.make()),
-      Effect.bind("running", ({ scope, releases }) => Scope.extend(Application.start(counted(releases)), scope)),
+      Effect.bind("running", ({ scope, releases }) => Scope.provide(Application.start(counted(releases)), scope)),
       Effect.let("consumer", ({ running }) => Runtime.runFork(running.runtime, Stream.runDrain(Event.subscribe(Ping)))),
       Effect.tap(() => Effect.sleep("1 millis")),
       Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
@@ -93,7 +94,7 @@ describe("Application lifecycle (N2)", () => {
 
     const Broken = Service.define<BrokenShape>("Broken");
     const acquired = { count: 0, released: 0 };
-    const AcquiredLive = Layer.scopedDiscard(Effect.acquireRelease(
+    const AcquiredLive = Layer.effectDiscard(Effect.acquireRelease(
       Effect.sync(() => { acquired.count += 1; }),
       () => Effect.sync(() => { acquired.released += 1; })
     ));
@@ -129,7 +130,7 @@ describe("Application lifecycle (N2)", () => {
       const result = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("releases", () => Ref.make(0)),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("running", ({ scope, releases }) => Scope.extend(Application.start(counted(releases)), scope)),
+        Effect.bind("running", ({ scope, releases }) => Scope.provide(Application.start(counted(releases)), scope)),
         Effect.bind("seen", () => Ref.make<ReadonlyArray<string>>([])),
         Effect.bind("sampler", ({ running, seen }) => sampleStatus(running, seen)),
         Effect.bind("returned", ({ running, scope }) => Effect.all([
@@ -153,13 +154,13 @@ describe("Application lifecycle (N2)", () => {
       Effect.bind("gate", () => Deferred.make<void>()),
       Effect.bind("running", ({ releasing, gate }) => Application.start(Application.define({
         name: "gated",
-        runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
+        runtime: Layer.effectDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
       }))),
-      Effect.bind("first", ({ running }) => Effect.fork(Application.shutdown(running))),
+      Effect.bind("first", ({ running }) => Effect.forkChild(Application.shutdown(running))),
       Effect.tap(({ releasing }) => Deferred.await(releasing)),
-      Effect.bind("second", ({ running }) => Effect.fork(Application.shutdown(running).pipe(Effect.andThen(Application.status(running))))),
-      Effect.tap(() => Effect.repeatN(Effect.yieldNow(), 20)),
-      Effect.bind("secondBeforeRelease", ({ second }) => Fiber.poll(second)),
+      Effect.bind("second", ({ running }) => Effect.forkChild(Application.shutdown(running).pipe(Effect.andThen(Application.status(running))))),
+      Effect.tap(() => Effect.repeat(Effect.yieldNow, { times: 20 })),
+      Effect.bind("secondBeforeRelease", ({ second }) => Effect.sync(() => Option.fromUndefinedOr(second.pollUnsafe()))),
       Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
       Effect.tap(({ first }) => Fiber.join(first)),
       Effect.bind("secondReturnedAt", ({ second }) => Fiber.join(second))
@@ -180,37 +181,37 @@ describe("Application lifecycle (N2)", () => {
         Effect.bind("gate", () => Deferred.make<void>()),
         Effect.bind("scope", () => Scope.make()),
         // 1. The one resource counts its release, signals, waits for the gate, then dies.
-        Effect.bind("running", ({ scope, releases, releasing, gate }) => Scope.extend(Application.start(Application.define({
+        Effect.bind("running", ({ scope, releases, releasing, gate }) => Scope.provide(Application.start(Application.define({
           name: "throws-on-release",
-          runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1).pipe(
+          runtime: Layer.effectDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1).pipe(
             Effect.andThen(Deferred.succeed(releasing, undefined)),
             Effect.andThen(Deferred.await(gate)),
             Effect.andThen(Effect.die(blowUp))
           ))),
         })), scope)),
         // The performer starts the termination; it's held inside the release.
-        Effect.bind("performing", ({ running, scope }) => Effect.fork(Effect.exit(performer === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void)))),
+        Effect.bind("performing", ({ running, scope }) => Effect.forkChild(Effect.exit(performer === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void)))),
         Effect.tap(({ releasing }) => Deferred.await(releasing)),
         // 4. A concurrent shutdown, issued while the release is in progress.
-        Effect.bind("concurrent", ({ running }) => Effect.fork(Effect.exit(Application.shutdown(running)))),
+        Effect.bind("concurrent", ({ running }) => Effect.forkChild(Effect.exit(Application.shutdown(running)))),
         Effect.tap(() => settle),
-        Effect.bind("concurrentWhileReleasing", ({ concurrent }) => Fiber.poll(concurrent)),
+        Effect.bind("concurrentWhileReleasing", ({ concurrent }) => Effect.sync(() => Option.fromUndefinedOr(concurrent.pollUnsafe()))),
         Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
         // 2. The performer receives the original failure.
         Effect.bind("performerExit", ({ performing }) => Fiber.join(performing)),
         Effect.tap(() => settle),
-        Effect.bind("concurrentExit", ({ concurrent }) => Fiber.poll(concurrent))
+        Effect.bind("concurrentExit", ({ concurrent }) => Effect.sync(() => Option.fromUndefinedOr(concurrent.pollUnsafe())))
       ).pipe(
         // 3. The lifecycle reached Stopped.
         Effect.bind("status", ({ running }) => Application.status(running)),
         // 5. A later shutdown completes.
-        Effect.bind("later", ({ running }) => Effect.fork(Effect.exit(Application.shutdown(running)))),
+        Effect.bind("later", ({ running }) => Effect.forkChild(Effect.exit(Application.shutdown(running)))),
         Effect.tap(() => settle),
-        Effect.bind("laterExit", ({ later }) => Fiber.poll(later)),
+        Effect.bind("laterExit", ({ later }) => Effect.sync(() => Option.fromUndefinedOr(later.pollUnsafe()))),
         // 6. Closing the owning scope completes (for the route 1 performer, this is its first close).
-        Effect.bind("closing", ({ scope }) => Effect.fork(Effect.exit(Scope.close(scope, Exit.void)))),
+        Effect.bind("closing", ({ scope }) => Effect.forkChild(Effect.exit(Scope.close(scope, Exit.void)))),
         Effect.tap(() => settle),
-        Effect.bind("closingExit", ({ closing }) => Fiber.poll(closing)),
+        Effect.bind("closingExit", ({ closing }) => Effect.sync(() => Option.fromUndefinedOr(closing.pollUnsafe()))),
         // 7. The release ran once.
         Effect.bind("released", ({ releases }) => Ref.get(releases))
       ));
@@ -218,7 +219,7 @@ describe("Application lifecycle (N2)", () => {
       const completedNormally = (polled: Option.Option<Exit.Exit<Exit.Exit<void>>>) => Option.map(polled, (fiberExit) => Exit.isSuccess(fiberExit) && Exit.isSuccess(fiberExit.value));
 
       expect(Option.isNone(result.concurrentWhileReleasing)).toBe(true);
-      expect(Exit.isFailure(result.performerExit) && Option.getOrUndefined(Cause.dieOption(result.performerExit.cause))).toBe(blowUp);
+      expect(Exit.isFailure(result.performerExit) && Option.getOrUndefined(Result.getSuccess(Cause.findDefect(result.performerExit.cause)))).toBe(blowUp);
       expect(result.status).toEqual({ _tag: "Stopped" });
       expect(completedNormally(result.concurrentExit)).toEqual(Option.some(true));
       expect(completedNormally(result.laterExit)).toEqual(Option.some(true));
@@ -235,9 +236,9 @@ describe("Application lifecycle (N2)", () => {
       Effect.bind("gate", () => Deferred.make<void>()),
       Effect.bind("running", ({ releasing, gate }) => Application.start(Application.define({
         name: "gated",
-        runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
+        runtime: Layer.effectDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
       }))),
-      Effect.bind("stopping", ({ running }) => Effect.fork(Application.shutdown(running))),
+      Effect.bind("stopping", ({ running }) => Effect.forkChild(Application.shutdown(running))),
       Effect.tap(({ releasing }) => Deferred.await(releasing)),
       Effect.bind("statusWhileStopping", ({ running }) => Application.status(running)),
       Effect.bind("forkExit", ({ running }) => Fiber.await(Runtime.runFork(running.runtime, Effect.sync(() => { ran = true; })))),
@@ -268,27 +269,26 @@ const Counter = Schema.Struct({ count: Schema.Number });
 
 // A Number schema whose decode signals `entered`, then waits for `gate`. A
 // createState using it holds the runtime's admission until the test opens the gate.
-const gatedNumber = (entered: Deferred.Deferred<void>, gate: Deferred.Deferred<void>) => Schema.transformOrFail(Schema.Number, Schema.Number, {
-  strict: true,
-  decode: (n) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(gate)), Effect.as(n)),
-  encode: (n) => ParseResult.succeed(n),
-});
+const gatedNumber = (entered: Deferred.Deferred<void>, gate: Deferred.Deferred<void>) => Schema.Number.pipe(Schema.decodeTo(Schema.Number, {
+  decode: SchemaGetter.transformEffect((n: number) => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(gate)), Effect.as(n))),
+  encode: SchemaGetter.passthrough(),
+}));
 
 // An application whose one resource counts its release, signals `releasing`, and
 // then holds termination in `Stopping` until `gate` opens.
 const gatedRelease = (releases: Ref.Ref<number>, releasing: Deferred.Deferred<void>, gate: Deferred.Deferred<void>) => Application.define({
   name: "gated",
-  runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1).pipe(
+  runtime: Layer.effectDiscard(Effect.addFinalizer(() => Ref.update(releases, (n) => n + 1).pipe(
     Effect.andThen(Deferred.succeed(releasing, undefined)),
     Effect.andThen(Deferred.await(gate))
   ))),
 });
 
 // Lets forked fibers run until they block. Scheduling, not time: no sleeps.
-const settle = Effect.repeatN(Effect.yieldNow(), 20);
+const settle = Effect.repeat(Effect.yieldNow, { times: 20 });
 
 // Route 1 or route 2, as an effect, for one application and its caller's start scope.
-const terminateBy = <R>(route: "shutdown" | "scope", running: Application.RunningApplication<R>, scope: Scope.CloseableScope) =>
+const terminateBy = <R>(route: "shutdown" | "scope", running: Application.RunningApplication<R>, scope: Scope.Closeable) =>
   route === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void);
 
 describe("Application-owned State (D1, Q2 = A)", () => {
@@ -296,10 +296,10 @@ describe("Application-owned State (D1, Q2 = A)", () => {
     for (const route of ["shutdown", "scope"] as const) {
       const exits = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("running", ({ scope }) => Scope.extend(Application.start(Application.define({ name: "owner", runtime: Layer.empty })), scope)),
+        Effect.bind("running", ({ scope }) => Scope.provide(Application.start(Application.define({ name: "owner", runtime: Layer.empty })), scope)),
         Effect.bind("counter", ({ running }) => Application.createState(running, Counter, { count: 0 })),
-        Effect.bind("changes", ({ counter }) => Effect.forkDaemon(Stream.runDrain(counter.changes))),
-        Effect.bind("derived", ({ counter }) => Effect.forkDaemon(Stream.runDrain(Selector.define(counter, (c) => c.count).changes))),
+        Effect.bind("changes", ({ counter }) => Effect.forkDetach(Stream.runDrain(counter.changes))),
+        Effect.bind("derived", ({ counter }) => Effect.forkDetach(Stream.runDrain(Selector.define(counter, (c) => c.count).changes))),
         Effect.tap(({ running, scope }) => route === "shutdown" ? Application.shutdown(running) : Scope.close(scope, Exit.void)),
         Effect.bind("changesExit", ({ changes }) => Fiber.await(changes).pipe(Effect.timeout(Duration.seconds(1)))),
         Effect.bind("derivedExit", ({ derived }) => Fiber.await(derived).pipe(Effect.timeout(Duration.seconds(1)))),
@@ -315,11 +315,10 @@ describe("Application-owned State (D1, Q2 = A)", () => {
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
       Effect.bind("running", () => Application.start(Application.define({ name: "nested", runtime: Layer.empty }))),
       Effect.bind("nested", () => Deferred.make<Exit.Exit<StateHandle<{ readonly count: number }>, StateInitError>>()),
-      Effect.let("reentrant", ({ running, nested }) => Schema.transformOrFail(Schema.Number, Schema.Number, {
-        strict: true,
-        decode: (n) => Effect.exit(Application.createState(running, Counter, { count: 0 })).pipe(Effect.flatMap((exit) => Deferred.succeed(nested, exit)), Effect.as(n)),
-        encode: (n) => ParseResult.succeed(n),
-      })),
+      Effect.let("reentrant", ({ running, nested }) => Schema.Number.pipe(Schema.decodeTo(Schema.Number, {
+        decode: SchemaGetter.transformEffect((n: number) => Effect.exit(Application.createState(running, Counter, { count: 0 })).pipe(Effect.flatMap((exit) => Deferred.succeed(nested, exit)), Effect.as(n))),
+        encode: SchemaGetter.passthrough(),
+      }))),
       Effect.bind("outer", ({ running, reentrant }) => Effect.exit(Application.createState(running, reentrant, 1).pipe(Effect.timeout(Duration.seconds(1))))),
       Effect.bind("inner", ({ nested }) => Deferred.await(nested).pipe(Effect.timeout(Duration.seconds(1))))
     )));
@@ -329,8 +328,8 @@ describe("Application-owned State (D1, Q2 = A)", () => {
   });
 
   it("keeps StateInitError typed, and is the only error in its channel", async () => {
-    expectTypeOf<Effect.Effect.Error<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<StateInitError>();
-    expectTypeOf<Effect.Effect.Context<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<never>();
+    expectTypeOf<Effect.Error<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<StateInitError>();
+    expectTypeOf<Effect.Services<ReturnType<typeof Application.createState<never, { readonly count: number }>>>>().toEqualTypeOf<never>();
 
     const error = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
       Effect.bind("running", () => Application.start(Application.define({ name: "typed", runtime: Layer.empty }))),
@@ -346,9 +345,9 @@ describe("Application-owned State (D1, Q2 = A)", () => {
       Effect.bind("gate", () => Deferred.make<void>()),
       Effect.bind("running", ({ releasing, gate }) => Application.start(Application.define({
         name: "gated",
-        runtime: Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
+        runtime: Layer.effectDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate))))),
       }))),
-      Effect.bind("stopping", ({ running }) => Effect.fork(Application.shutdown(running))),
+      Effect.bind("stopping", ({ running }) => Effect.forkChild(Application.shutdown(running))),
       Effect.tap(({ releasing }) => Deferred.await(releasing)),
       Effect.bind("whileStopping", ({ running }) => Effect.exit(Application.createState(running, Counter, { count: 0 }))),
       Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
@@ -372,18 +371,18 @@ describe("Application-owned State (D1, Q2 = A)", () => {
         Effect.bind("entered", () => Deferred.make<void>()),
         Effect.bind("decodeGate", () => Deferred.make<void>()),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.extend(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
+        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.provide(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
         // Construction is admitted, and holds admission inside its decode.
-        Effect.bind("creating", ({ running, entered, decodeGate }) => Effect.fork(Effect.exit(Application.createState(running, gatedNumber(entered, decodeGate), 1)))),
+        Effect.bind("creating", ({ running, entered, decodeGate }) => Effect.forkChild(Effect.exit(Application.createState(running, gatedNumber(entered, decodeGate), 1)))),
         Effect.tap(({ entered }) => Deferred.await(entered)),
-        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        Effect.bind("terminating", ({ running, scope }) => Effect.forkChild(terminateBy(route, running, scope))),
         // A construction requested once termination has been claimed is refused at once.
-        Effect.bind("late", ({ running }) => Effect.fork(Effect.exit(Application.createState(running, Counter, { count: 0 })))),
+        Effect.bind("late", ({ running }) => Effect.forkChild(Effect.exit(Application.createState(running, Counter, { count: 0 })))),
         Effect.tap(() => settle),
         // Termination is waiting for the admitted construction: it hasn't begun.
         Effect.bind("statusWhileAdmitted", ({ running }) => Application.status(running)),
-        Effect.bind("terminatingWhileAdmitted", ({ terminating }) => Fiber.poll(terminating)),
-        Effect.bind("lateWhileAdmitted", ({ late }) => Fiber.poll(late)),
+        Effect.bind("terminatingWhileAdmitted", ({ terminating }) => Effect.sync(() => Option.fromUndefinedOr(terminating.pollUnsafe()))),
+        Effect.bind("lateWhileAdmitted", ({ late }) => Effect.sync(() => Option.fromUndefinedOr(late.pollUnsafe()))),
         Effect.bind("releasedWhileAdmitted", ({ releases }) => Ref.get(releases))
       ).pipe(
         Effect.tap(({ decodeGate }) => Deferred.succeed(decodeGate, undefined)),
@@ -431,19 +430,20 @@ describe("Application-owned State (D1, Q2 = A)", () => {
         Effect.bind("entered", () => Deferred.make<void>()),
         Effect.bind("decodeGate", () => Deferred.make<void>()),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.extend(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
+        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.provide(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
         // 1. An admitted createState holds admission inside its decode.
-        Effect.bind("creating", ({ running, entered, decodeGate }) => Effect.fork(Effect.exit(Application.createState(running, gatedNumber(entered, decodeGate), 1)))),
+        Effect.bind("creating", ({ running, entered, decodeGate }) => Effect.forkChild(Effect.exit(Application.createState(running, gatedNumber(entered, decodeGate), 1)))),
         Effect.tap(({ entered }) => Deferred.await(entered)),
         // 2. Termination is claimed, and waits for that admitted work.
-        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        Effect.bind("terminating", ({ running, scope }) => Effect.forkChild(terminateBy(route, running, scope))),
         Effect.tap(() => settle),
         Effect.bind("statusWhileWaiting", ({ running }) => Application.status(running)),
-        Effect.bind("terminatingWhileWaiting", ({ terminating }) => Fiber.poll(terminating)),
+        Effect.bind("terminatingWhileWaiting", ({ terminating }) => Effect.sync(() => Option.fromUndefinedOr(terminating.pollUnsafe()))),
         // 3–4. New work issued while termination waits.
         Effect.bind("runExit", ({ running }) => Effect.promise(() => Runtime.run(running.runtime, Effect.sync(() => { ranViaRun = true; })).then(
           () => Exit.void,
-          (error: unknown) => EffectRuntime.isFiberFailure(error) ? Exit.failCause(error[EffectRuntime.FiberFailureCauseId]) : Exit.die(error)
+          // v4's run rejects with Cause.squash: a refusal is the defect itself.
+        (error: unknown) => Exit.die(error)
         ))),
         Effect.bind("forkExit", ({ running }) => Fiber.await(Runtime.runFork(running.runtime, Effect.sync(() => { ranViaFork = true; }))))
       ).pipe(
@@ -475,21 +475,20 @@ describe("Application-owned State (D1, Q2 = A)", () => {
         Effect.bind("decodeGate", () => Deferred.make<void>()),
         Effect.bind("nested", () => Deferred.make<Exit.Exit<StateHandle<{ readonly count: number }>, StateInitError>>()),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("running", ({ scope }) => Scope.extend(Application.start(Application.define({ name: "nested", runtime: Layer.empty })), scope)),
+        Effect.bind("running", ({ scope }) => Scope.provide(Application.start(Application.define({ name: "nested", runtime: Layer.empty })), scope)),
         // The outer construction's decode, once released, requests a second, nested construction.
-        Effect.let("reentrant", ({ running, entered, decodeGate, nested }) => Schema.transformOrFail(Schema.Number, Schema.Number, {
-          strict: true,
-          decode: (n) => Deferred.succeed(entered, undefined).pipe(
+        Effect.let("reentrant", ({ running, entered, decodeGate, nested }) => Schema.Number.pipe(Schema.decodeTo(Schema.Number, {
+          decode: SchemaGetter.transformEffect((n: number) => Deferred.succeed(entered, undefined).pipe(
             Effect.andThen(Deferred.await(decodeGate)),
             Effect.andThen(Effect.exit(Application.createState(running, Counter, { count: 0 }))),
             Effect.flatMap((exit) => Deferred.succeed(nested, exit)),
             Effect.as(n)
-          ),
-          encode: (n) => ParseResult.succeed(n),
-        })),
-        Effect.bind("creating", ({ running, reentrant }) => Effect.fork(Effect.exit(Application.createState(running, reentrant, 1)))),
+          )),
+          encode: SchemaGetter.passthrough(),
+        }))),
+        Effect.bind("creating", ({ running, reentrant }) => Effect.forkChild(Effect.exit(Application.createState(running, reentrant, 1)))),
         Effect.tap(({ entered }) => Deferred.await(entered)),
-        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        Effect.bind("terminating", ({ running, scope }) => Effect.forkChild(terminateBy(route, running, scope))),
         Effect.tap(() => settle),
         Effect.tap(({ decodeGate }) => Deferred.succeed(decodeGate, undefined)),
         Effect.bind("nestedExit", ({ nested }) => Deferred.await(nested)),
@@ -511,8 +510,8 @@ describe("Application-owned State (D1, Q2 = A)", () => {
         Effect.bind("releasing", () => Deferred.make<void>()),
         Effect.bind("releaseGate", () => Deferred.make<void>()),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.extend(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
-        Effect.bind("terminating", ({ running, scope }) => Effect.fork(terminateBy(route, running, scope))),
+        Effect.bind("running", ({ scope, releases, releasing, releaseGate }) => Scope.provide(Application.start(gatedRelease(releases, releasing, releaseGate)), scope)),
+        Effect.bind("terminating", ({ running, scope }) => Effect.forkChild(terminateBy(route, running, scope))),
         // Termination has begun and is held in Stopping by the gated release.
         Effect.tap(({ releasing }) => Deferred.await(releasing)),
         Effect.bind("statusAtStopping", ({ running }) => Application.status(running)),

@@ -1,15 +1,15 @@
 // Runtime internals. Not re-exported by src/index.ts: nothing here is public.
 import type { Bus } from "../event/internal.js";
 
-import { Cause, Deferred, Duration, Effect, Equal, Exit, Fiber, Option, Runtime as EffectRuntime, Scope } from "effect";
+import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Result, Scope } from "effect";
 
 declare const NexusRuntimeTypeId: unique symbol;
 
 /**
- * An opaque execution handle (N3). It carries no readable member: the Effect
- * runtime, the service Context and the runtime's Scope stay in the module-private
- * registry below, reachable only by the functions that execute through a handle.
- * Contravariant in R, like Effect's own Runtime<in R>, so call sites infer as before.
+ * An opaque execution handle (N3). It carries no readable member: the service
+ * Context and the runtime's Scope stay in the module-private registry below,
+ * reachable only by the functions that execute through a handle.
+ * Contravariant in R, as v3 Effect's Runtime<in R> was, so call sites infer as before.
  */
 export interface NexusRuntime<in R> {
   readonly [NexusRuntimeTypeId]: (_: R) => void;
@@ -20,13 +20,13 @@ export interface NexusRuntime<in R> {
  * built, so a runtime whose build fails still terminates through it.
  */
 export interface Lifecycle {
-  readonly scope: Scope.CloseableScope;
+  readonly scope: Scope.Closeable;
   /**
    * What the runtime's own streams end with. Application-owned State lives in it, so its `changes` and `values` end when termination begins to wind the runtime
    * down (after the bus closes, before work is settled), not when the last resource is released: a consumer of one ends normally, instead of being interrupted
    * to make room for a release that waits for it.
    */
-  readonly winding: Scope.CloseableScope;
+  readonly winding: Scope.Closeable;
   readonly bus: Bus;
   /** Completed when the last admitted effect finishes after termination was claimed. */
   readonly drained: Deferred.Deferred<void>;
@@ -50,13 +50,13 @@ export interface Lifecycle {
    * The effects started with `run` and `runFork` that haven't finished. Registered synchronously as each starts (Effect runs a fiber's first steps in the
    * call that forks it), so an effect admitted before termination was claimed is always in it.
    */
-  readonly work: Set<Fiber.RuntimeFiber<unknown, unknown>>;
+  readonly work: Set<Fiber.Fiber<unknown, unknown>>;
   /** How long termination waits for `work` to finish on its own before it interrupts what is left. */
   readonly grace: Duration.Duration;
 }
 
 export interface RuntimeRecord {
-  readonly runtime: EffectRuntime.Runtime<never>;
+  readonly context: Context.Context<never>;
   readonly lifecycle: Lifecycle;
 }
 
@@ -131,40 +131,41 @@ export const isRefusal = (value: unknown): value is Refusal => {
 };
 
 /**
- * The refusal in `value`, if there is one: `value` itself, or the first defect of
- * a `Cause`, or of the `FiberFailure` that `Runtime.run`'s Promise rejects with.
- * `undefined` for anything else, a bug included.
+ * The refusal in `value`, if there is one: `value` itself (what `Runtime.run`'s
+ * Promise rejects with when a refusal ended the effect), or the first defect of a
+ * `Cause`. `undefined` for anything else, a bug included.
  */
 export const refusalOf = (value: unknown): Refusal | undefined => {
   if (isRefusal(value)) {
     return value;
   }
 
-  const cause = EffectRuntime.isFiberFailure(value) ? value[EffectRuntime.FiberFailureCauseId] : Cause.isCause(value) ? value : undefined;
-
-  if (cause === undefined) {
+  if (!Cause.isCause(value)) {
     return undefined;
   }
 
-  const defect = Cause.dieOption(cause);
+  const defect = Cause.findDefect(value);
 
-  return Option.isSome(defect) && isRefusal(defect.value) ? defect.value : undefined;
+  return Result.isSuccess(defect) && isRefusal(defect.success) ? defect.success : undefined;
 };
 
 export const refusal = (code: RefusalCode): Refusal => new Refusal(code);
 
 /**
  * Runs `effect` in a child fiber of the calling fiber, and returns its result,
- * without ever taking the child's FiberRefs (v0.9 C29, C30). The child inherits
- * the caller's FiberRefs when it's forked, so the caller's values still enter.
- * Nothing the child writes comes back: it's observed with `Fiber.await`, never
- * `Fiber.join`, which would copy its FiberRefs into the caller (P1).
+ * without ever taking the child's Context (v0.9 C30). The child starts with the
+ * caller's Context when it's forked. Nothing the child writes into its own fiber
+ * (`setContext`) comes back: only its Exit is observed, with `Fiber.await` (P1).
+ *
+ * Used on the release side only. A finalizer in a sequential scope runs in the
+ * fiber that closes the scope, so it can write into that fiber; the build side
+ * needs no helper, because v4 restores the fiber's Context after a layer build.
  *
  * Interrupting the caller interrupts the child and waits for it to finish, so
  * whatever the child acquired is released before the caller carries on (C31).
  */
 export const isolated = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> => Effect.uninterruptibleMask((restore) =>
-  Effect.flatMap(Effect.fork(restore(effect)), (fiber) => restore(Fiber.await(fiber)).pipe(
+  Effect.flatMap(Effect.forkChild(restore(effect)), (fiber) => restore(Fiber.await(fiber)).pipe(
     Effect.onInterrupt(() => Fiber.interrupt(fiber)),
     Effect.flatten
   ))
@@ -229,7 +230,7 @@ export const terminateLifecycle = (lifecycle: Lifecycle, grace: Duration.Duratio
     Effect.andThen(Scope.close(lifecycle.winding, Exit.void)),
     Effect.andThen(settleWork(lifecycle, grace)),
     // A failed release must not strand the lifecycle: finish it, then re-raise.
-    // Released in its own fiber, so no release writes a FiberRef into the
+    // Released in its own fiber, so no release changes the Context of the
     // fiber that terminates (I46).
     Effect.andThen(Effect.exit(isolated(Scope.close(lifecycle.scope, Exit.void)))),
     Effect.tap(() => lifecycle.hooks.onEnd),
@@ -243,8 +244,8 @@ export const terminateLifecycle = (lifecycle: Lifecycle, grace: Duration.Duratio
  * not waited for or interrupted: a command may shut its own application down. The wait runs in a fiber of its own, interruptibly, so the termination, which is
  * uninterruptible, can still end a wait that has timed out.
  */
-const settleWork = (lifecycle: Lifecycle, grace: Duration.Duration): Effect.Effect<void> => Effect.fiberIdWith((self) => {
-  const others = [...lifecycle.work].filter((fiber) => !Equal.equals(fiber.id(), self));
+const settleWork = (lifecycle: Lifecycle, grace: Duration.Duration): Effect.Effect<void> => Effect.flatMap(Effect.fiberId, (self) => {
+  const others = [...lifecycle.work].filter((fiber) => fiber.id !== self);
 
   if (others.length === 0) {
     return Effect.void;
@@ -261,10 +262,10 @@ const settleWork = (lifecycle: Lifecycle, grace: Duration.Duration): Effect.Effe
 });
 
 /** Records `effect`, started through `run` or `runFork`, as the runtime's work until it exits, however it exits. */
-export const tracked = <A, E, R>(lifecycle: Lifecycle, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => Effect.withFiberRuntime<A, E, R>((fiber) => {
-  lifecycle.work.add(fiber as Fiber.RuntimeFiber<unknown, unknown>);
+export const tracked = <A, E, R>(lifecycle: Lifecycle, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => Effect.withFiber<A, E, R>((fiber) => {
+  lifecycle.work.add(fiber);
 
-  return effect.pipe(Effect.ensuring(Effect.sync(() => { lifecycle.work.delete(fiber as Fiber.RuntimeFiber<unknown, unknown>); })));
+  return effect.pipe(Effect.ensuring(Effect.sync(() => { lifecycle.work.delete(fiber); })));
 });
 
 export const terminate = (handle: NexusRuntime<never>, grace?: Duration.Duration): Effect.Effect<void> => {

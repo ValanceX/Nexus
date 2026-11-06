@@ -38,7 +38,7 @@ describe("Application", () => {
     expect(Cause.isCause(cause)).toBe(true);
     // The wrapped Cause carries Runtime's own typed LayerBuildFailed, whose
     // cause is the layer's "boom" failure — no defect anywhere in the chain.
-    expect(Option.getOrNull(Cause.failureOption(cause as Cause.Cause<unknown>))).toEqual({
+    expect(Option.getOrNull(Cause.findErrorOption(cause as Cause.Cause<unknown>))).toEqual({
       _tag: "LayerBuildFailed",
       cause: "boom",
     });
@@ -90,7 +90,7 @@ describe("Application", () => {
     interface HeldShape { readonly ok: boolean }
 
     const Held = Service.define<HeldShape>("Held");
-    const HeldLive = Layer.scoped(
+    const HeldLive = Layer.effect(
       Held,
       Effect.acquireRelease(Effect.succeed({ ok: true }), () => Effect.sync(() => { released = true; }))
     );

@@ -8,7 +8,7 @@ import * as Nexus from "../src/index.js";
 const { Application, Runtime } = Nexus;
 
 /** A layer whose resource logs its release. */
-const logged = (log: Array<string>) => Layer.scopedDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); })));
+const logged = (log: Array<string>) => Layer.effectDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); })));
 
 /** An effect that takes `ms` to finish, logging how it ended. */
 const slow = (log: Array<string>, ms: number) => Effect.sleep(Duration.millis(ms)).pipe(
@@ -26,7 +26,7 @@ describe("shutdown: the work a runtime started", () => {
     const log: Array<string> = [];
     const rejected = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
       const work = Runtime.run(running.runtime, slow(log, 5000)).then(() => "resolved", () => "rejected");
 
       yield* Effect.sleep(5);
@@ -44,7 +44,7 @@ describe("shutdown: the work a runtime started", () => {
     const log: Array<string> = [];
     const result = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
       const work = Runtime.run(running.runtime, slow(log, 30).pipe(Effect.as("done")));
 
       yield* Effect.sleep(5);
@@ -61,7 +61,7 @@ describe("shutdown: the work a runtime started", () => {
     const log: Array<string> = [];
     const took = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
 
       Runtime.runFork(running.runtime, slow(log, 5000));
       yield* Effect.sleep(5);
@@ -83,7 +83,7 @@ describe("shutdown: the work a runtime started", () => {
 
     await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
 
       Runtime.runFork(running.runtime, slow(log, 80));
       yield* Effect.sleep(5);
@@ -97,12 +97,12 @@ describe("shutdown: the work a runtime started", () => {
     const log: Array<string> = [];
     const refused = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
 
       Runtime.runFork(running.runtime, slow(log, 100));
       yield* Effect.sleep(5);
 
-      const shutting = yield* Effect.fork(Application.shutdown(running, { grace: "1 second" }));
+      const shutting = yield* Effect.forkChild(Application.shutdown(running, { grace: "1 second" }));
 
       yield* Effect.sleep(20);
 
@@ -120,7 +120,7 @@ describe("shutdown: the work a runtime started", () => {
     const log: Array<string> = [];
     const exit = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
       const fiber = Runtime.runFork(running.runtime, slow(log, 5000));
 
       yield* Effect.sleep(5);
@@ -129,7 +129,7 @@ describe("shutdown: the work a runtime started", () => {
       return yield* Fiber.await(fiber);
     }));
 
-    expect(Exit.isFailure(exit) && Cause.isInterruptedOnly(exit.cause)).toBe(true);
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
     expect(Exit.isFailure(exit) && Runtime.refusalOf(exit.cause)).toBeFalsy();
   });
 
@@ -138,7 +138,7 @@ describe("shutdown: the work a runtime started", () => {
 
     await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log, { grace: "1 second" }).pipe(Scope.extend(scope));
+      const running = yield* start(log, { grace: "1 second" }).pipe(Scope.provide(scope));
 
       Runtime.runFork(running.runtime, slow(log, 30));
       yield* Effect.sleep(5);
@@ -153,7 +153,7 @@ describe("shutdown: the work a runtime started", () => {
 
     await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log, { grace: "1 second" }).pipe(Scope.extend(scope));
+      const running = yield* start(log, { grace: "1 second" }).pipe(Scope.provide(scope));
 
       Runtime.runFork(running.runtime, slow(log, 5000));
       yield* Effect.sleep(5);
@@ -167,7 +167,7 @@ describe("shutdown: the work a runtime started", () => {
     const log: Array<string> = [];
     const outcome = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
 
       return yield* Effect.promise(() => Runtime.run(running.runtime, Application.shutdown(running).pipe(Effect.andThen(Effect.sync(() => { log.push("command done"); })))).then(() => "resolved", () => "rejected"));
     }));
@@ -181,7 +181,7 @@ describe("shutdown: the work a runtime started", () => {
     const Counter = Schema.Struct({ count: Schema.Number });
     const exit = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
       const counter = yield* Application.createState(running, Counter, { count: 0 });
       const consumer = Runtime.runFork(running.runtime, Stream.runCollect(counter.changes));
 
@@ -199,7 +199,7 @@ describe("shutdown: the work a runtime started", () => {
     const log: Array<string> = [];
     const settled = await Effect.runPromise(Effect.gen(function* () {
       const scope = yield* Scope.make();
-      const running = yield* start(log).pipe(Scope.extend(scope));
+      const running = yield* start(log).pipe(Scope.provide(scope));
       const done = yield* Ref.make(0);
 
       for (let n = 0; n < 50; n += 1) {

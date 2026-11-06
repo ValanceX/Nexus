@@ -405,7 +405,7 @@ type IsPlainData<T, D extends number = 10> =
     : [T] extends [string | number | boolean] ? true
     : T extends (...args: never) => unknown ? false
     : T extends ReadonlyArray<infer E> ? IsPlainData<E, Depth[D]>
-    : T extends ReadonlyMap<unknown, unknown> | ReadonlySet<unknown> | Date | Error | Promise<unknown> | Context.Tag<unknown, unknown> ? false
+    : T extends ReadonlyMap<unknown, unknown> | ReadonlySet<unknown> | Date | Error | Promise<unknown> | Context.Key<unknown, unknown> ? false
     : T extends object ? (false extends { [K in keyof T]-?: IsPlainData<Exclude<T[K], undefined>, Depth[D]> }[keyof T] ? false : true)
     : false;
 

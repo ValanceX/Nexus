@@ -1,4 +1,4 @@
-import { Chunk, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Queue, Ref, Schedule, Schema, Scope, Stream } from "effect";
+import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, PubSub, Queue, Ref, Result, Schedule, Schema, Scope, Stream } from "effect";
 import { describe, it, expect, expectTypeOf } from "vitest";
 
 import { refusalOf } from "../src/runtime/internal.js";
@@ -9,14 +9,14 @@ const OrderPlaced = EventModule.define("OrderPlaced", Schema.Struct({ orderId: S
 
 describe("Event", () => {
   it("rejects a malformed payload when validated against its schema", async () => {
-    const exit = await Effect.runPromiseExit(Schema.decodeUnknown(UserSelected.schema)({ userId: 42 }));
+    const exit = await Effect.runPromiseExit(Schema.decodeUnknownEffect(UserSelected.schema)({ userId: 42 }));
     expect(exit).is.satisfies(Exit.isFailure);
   });
 
   it("delivers published events to a subscriber, in order", async () => {
     const result = await Effect.runPromise(Effect.Do.pipe(
       Effect.andThen(Effect.scoped(Effect.Do.pipe(
-        Effect.andThen(Effect.fork(Stream.runCollect(Stream.take(EventModule.subscribe(UserSelected), 2)))),
+        Effect.andThen(Effect.forkChild(Stream.runCollect(Stream.take(EventModule.subscribe(UserSelected), 2)))),
         Effect.andThen((fiber) => Effect.Do.pipe(
           Effect.andThen(Effect.sleep("1 millis")),
           Effect.andThen(EventModule.publish(UserSelected, { userId: "u1" })),
@@ -33,7 +33,7 @@ describe("Event", () => {
   it("only delivers events matching the subscribed tag", async () => {
     const result = await Effect.runPromise(Effect.Do.pipe(
       Effect.andThen(Effect.scoped(Effect.Do.pipe(
-        Effect.andThen(Effect.fork(Stream.runCollect(Stream.take(EventModule.subscribe(UserSelected), 1)))),
+        Effect.andThen(Effect.forkChild(Stream.runCollect(Stream.take(EventModule.subscribe(UserSelected), 1)))),
         Effect.andThen((fiber) => Effect.Do.pipe(
           Effect.andThen(Effect.sleep("1 millis")),
           Effect.andThen(EventModule.publish(OrderPlaced, { orderId: "o1" })),
@@ -48,20 +48,20 @@ describe("Event", () => {
   });
 
   it("publishes without runtime validation: a payload past the types is delivered as given (Q3 = B)", async () => {
-    expectTypeOf<Effect.Effect.Error<ReturnType<typeof EventModule.publish<"UserSelected", { readonly userId: string }>>>>().toEqualTypeOf<never>();
+    expectTypeOf<Effect.Error<ReturnType<typeof EventModule.publish<"UserSelected", { readonly userId: string }>>>>().toEqualTypeOf<never>();
 
     // Only an untyped escape hatch can produce this; publish neither decodes nor rejects it.
     const malformed = { userId: 42 } as unknown as { readonly userId: string };
 
     const result = await Effect.runPromise(Effect.scoped(Effect.Do.pipe(
-      Effect.bind("fiber", () => Effect.fork(Stream.runCollect(Stream.take(EventModule.subscribe(UserSelected), 1)))),
+      Effect.bind("fiber", () => Effect.forkChild(Stream.runCollect(Stream.take(EventModule.subscribe(UserSelected), 1)))),
       Effect.tap(() => Effect.sleep("1 millis")),
       Effect.bind("published", () => Effect.exit(EventModule.publish(UserSelected, malformed))),
       Effect.bind("received", ({ fiber }) => Fiber.join(fiber))
     )).pipe(Effect.provide(EventModule.EventBusLive)));
 
     expect(Exit.isSuccess(result.published)).toBe(true);
-    expect(Chunk.toReadonlyArray(result.received)).toEqual([{ userId: 42 }]);
+    expect(result.received).toEqual([{ userId: 42 }]);
   });
 
   describe("closing (N1, D4)", () => {
@@ -74,7 +74,7 @@ describe("Event", () => {
         Effect.bind("busScope", () => Scope.make()),
         Effect.bind("bus", ({ busScope }) => Layer.buildWithScope(EventModule.EventBusLive, busScope)),
         Effect.bind("seen", () => Ref.make<ReadonlyArray<{ readonly userId: string }>>([])),
-        Effect.bind("consumer", ({ bus, seen }) => Effect.forkDaemon(Stream.runForEach(EventModule.subscribe(UserSelected), (event) => Ref.update(seen, (xs) => [...xs, event])).pipe(Effect.provide(bus)))),
+        Effect.bind("consumer", ({ bus, seen }) => Effect.forkDetach(Stream.runForEach(EventModule.subscribe(UserSelected), (event) => Ref.update(seen, (xs) => [...xs, event])).pipe(Effect.provide(bus)))),
         Effect.tap(() => Effect.sleep("1 millis")),
         Effect.tap(({ bus }) => EventModule.publish(UserSelected, { userId: "before" }).pipe(Effect.provide(bus))),
         Effect.tap(({ seen }) => eventually(Ref.get(seen), (xs) => xs.length === 1)),
@@ -88,7 +88,7 @@ describe("Event", () => {
       expect(Exit.isSuccess(result.exit)).toBe(true);
       expect(result.seenAtEnd).toEqual([{ userId: "before" }]);
       expect(Exit.isSuccess(result.publishAfter)).toBe(true);
-      expect(Chunk.toReadonlyArray(result.late)).toEqual([]);
+      expect(result.late).toEqual([]);
     });
 
     it("lets the event being handled finish, but hands over no buffered event after closing (B2)", async () => {
@@ -102,12 +102,12 @@ describe("Event", () => {
         Effect.bind("handling1", () => Deferred.make<void>()),
         Effect.bind("hold1", () => Deferred.make<void>()),
         // Event 0 keeps the subscriber busy while 1..5 queue up; event 1 is then held mid-handling.
-        Effect.bind("consumer", ({ bus, busy, handling1, hold1 }) => Effect.forkDaemon(Stream.runForEach(EventModule.subscribe(Tick), ({ n }) =>
+        Effect.bind("consumer", ({ bus, busy, handling1, hold1 }) => Effect.forkDetach(Stream.runForEach(EventModule.subscribe(Tick), ({ n }) =>
           Effect.sync(() => { delivered.push(n); }).pipe(Effect.andThen(
             n === 0 ? Deferred.await(busy) : n === 1 ? Deferred.succeed(handling1, undefined).pipe(Effect.andThen(Deferred.await(hold1))) : Effect.void
           ))
         ).pipe(Effect.provide(bus)))),
-        Effect.tap(() => Effect.repeatN(Effect.yieldNow(), 20)),
+        Effect.tap(() => Effect.repeat(Effect.yieldNow, { times: 20 })),
         Effect.tap(({ bus }) => Effect.forEach([0, 1, 2, 3, 4, 5], (n) => EventModule.publish(Tick, { n }), { discard: true }).pipe(Effect.provide(bus))),
         Effect.tap(({ busy }) => Deferred.succeed(busy, undefined)),
         Effect.tap(({ handling1 }) => Deferred.await(handling1)),
@@ -122,20 +122,21 @@ describe("Event", () => {
       expect(Exit.isSuccess(result.exit)).toBe(true);
       expect(delivered).toEqual([0, 1]);
       expect(Exit.isSuccess(result.publishAfter)).toBe(true);
-      expect(Chunk.toReadonlyArray(result.late)).toEqual([]);
+      expect(result.late).toEqual([]);
     });
 
-    it("shuts down a queue taken directly from the bus service", async () => {
-      // The service tag isn't exported; a GenericTag with the same key resolves the same service.
-      const Bus = Context.GenericTag<EventModule.EventBusShape>("nexus/EventBus");
+    it("shuts down a subscription taken directly from the bus service", async () => {
+      // The service key isn't exported; a key with the same id resolves the same service.
+      const Bus = Context.Service<EventModule.EventBusShape>("nexus/EventBus");
 
       const shutDown = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("busScope", () => Scope.make()),
         Effect.bind("bus", ({ busScope }) => Layer.buildWithScope(EventModule.EventBusLive, busScope)),
         Effect.bind("subscriberScope", () => Scope.make()),
-        Effect.bind("queue", ({ bus, subscriberScope }) => Scope.extend(Context.get(bus, Bus).subscribe, subscriberScope)),
+        Effect.bind("subscription", ({ bus, subscriberScope }) => Scope.provide(Context.get(bus, Bus).subscribe, subscriberScope)),
         Effect.tap(({ busScope }) => Scope.close(busScope, Exit.void)),
-        Effect.flatMap(({ queue }) => Queue.isShutdown(queue))
+        // A shut-down subscription has no remaining count.
+        Effect.map(({ subscription }) => Option.isNone(PubSub.remainingUnsafe(subscription)))
       ));
 
       expect(shutDown).toBe(true);
@@ -147,7 +148,7 @@ describe("Event with a transforming schema and validated subscribe", () => {
   const Tick = EventModule.define("Tick", Schema.Struct({ n: Schema.NumberFromString }));
 
   const collect = <E>(stream: Stream.Stream<{ readonly n: number }, E, EventModule.EventBusShape>, publish: ReadonlyArray<unknown>) => Effect.scoped(Effect.Do.pipe(
-    Effect.andThen(Effect.fork(Stream.runCollect(stream).pipe(Effect.either))),
+    Effect.andThen(Effect.forkChild(Stream.runCollect(stream).pipe(Effect.result))),
     Effect.andThen((fiber) => Effect.Do.pipe(
       Effect.andThen(Effect.sleep("1 millis")),
       Effect.andThen(Effect.forEach(publish, (p) => EventModule.publish(Tick, p as { n: number }))),
@@ -158,19 +159,19 @@ describe("Event with a transforming schema and validated subscribe", () => {
   it("publishes and delivers the decoded payload", async () => {
     const out = await Effect.runPromise(collect(Stream.take(EventModule.subscribe(Tick, { validate: true }), 1), [{ n: 7 }]));
 
-    expect(out._tag === "Right" && Array.from(out.right)).toEqual([{ n: 7 }]);
+    expect(Result.isSuccess(out) && Array.from(out.success)).toEqual([{ n: 7 }]);
   });
 
   it("without validate, delivers a bad payload as given", async () => {
     const out = await Effect.runPromise(collect(Stream.take(EventModule.subscribe(Tick), 1), [{ n: "x" }]));
 
-    expect(out._tag === "Right" && Array.from(out.right)).toEqual([{ n: "x" }]);
+    expect(Result.isSuccess(out) && Array.from(out.success)).toEqual([{ n: "x" }]);
   });
 
   it("with validate, a bad payload fails the stream with the parse error", async () => {
     const out = await Effect.runPromise(collect(Stream.take(EventModule.subscribe(Tick, { validate: true }), 1), [{ n: "x" }]));
 
-    expect(out._tag === "Left" && out.left._tag).toBe("ParseError");
+    expect(Result.isFailure(out) && out.failure._tag).toBe("SchemaError");
   });
 });
 

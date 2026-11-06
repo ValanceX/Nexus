@@ -25,7 +25,7 @@ calls into NEXUS (§9's clarified diagram).
 ```ts
 interface Command<Input, Output, Err, R, Encoded = Input> {
   readonly name: string;
-  readonly input: Schema.Schema<Input, Encoded>;
+  readonly input: Schema.Codec<Input, Encoded>;
   readonly handler: (input: Input) => Effect.Effect<Output, Err, R>;
 }
 ```
@@ -40,12 +40,12 @@ and MESH intents are matched by their `component/name` in the binding table.
 
 ```ts
 namespace Command {
-  function define<Input, Output, Err, R, Encoded = Input>(name: string, input: Schema.Schema<Input, Encoded>, handler: (input: Input) => Effect.Effect<Output, Err, R>): Command<Input, Output, Err, R, Encoded>;
+  function define<Input, Output, Err, R, Encoded = Input>(name: string, input: Schema.Codec<Input, Encoded>, handler: (input: Input) => Effect.Effect<Output, Err, R>): Command<Input, Output, Err, R, Encoded>;
   function invoke<Input, Output, Err, R, Encoded = Input>(command: Command<Input, Output, Err, R, Encoded>, rawInput: unknown): Effect.Effect<Output, Err | CommandValidationError, R>;
 }
 ```
 
-The input schema may transform (`Schema.Schema<Input, Encoded>`, for example
+The input schema may transform (`Schema.Codec<Input, Encoded>`, for example
 `Schema.NumberFromString`): `invoke` takes the raw `Encoded` shape and the handler
 receives the decoded `Input`. `Encoded` defaults to `Input`, so `Command<I, O, E, R>`
 still names a non-transforming command.
@@ -66,7 +66,7 @@ type CommandValidationError = {
   readonly _tag: "CommandValidationError";
   readonly command: string;
   readonly issues: ReadonlyArray<string>;
-  readonly cause?: ParseResult.ParseError;
+  readonly cause?: Schema.SchemaError;
 };
 ```
 
@@ -75,7 +75,7 @@ own typed failures are never conflated with "the input didn't match the
 schema." A caller (the MESH adapter, a test) can always tell input rejection
 apart from a domain failure by matching on `_tag`. `issues` are
 human-readable messages describing why the input failed its schema; `cause` (optional on the type, always set by `invoke`) is
-the structured `ParseError` they were flattened from, for callers that need the
+the structured `SchemaError` they were flattened from, for callers that need the
 failing paths.
 
 ## Rules

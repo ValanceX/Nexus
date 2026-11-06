@@ -1,4 +1,4 @@
-import { Effect, Either, Layer, Schema, Scope } from "effect";
+import { Cause, Effect, Layer, Option, Result, Schema, Scope } from "effect";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as Application from "../src/application/index.js";
@@ -78,7 +78,7 @@ const withApplication = <R, A>(
 )));
 
 const run = <R, A, E>(running: Application.RunningApplication<R>, effect: Effect.Effect<A, E, R | Capability.EnvironmentShape>) =>
-  Effect.promise(() => Runtime.run(running.runtime, Effect.either(effect)));
+  Effect.promise(() => Runtime.run(running.runtime, Effect.result(effect)));
 
 const listUnder = (runtime: Layer.Layer<UserRepositoryShape, never, Capability.EnvironmentShape>) =>
   withApplication("composition", runtime, none, (running) => run(running, Command.invoke(listUsers, {})));
@@ -88,8 +88,8 @@ describe("Application semantics: characterizations (v0.8)", () => {
     const http = await listUnder(Http);
     const inMemory = await listUnder(InMemory);
 
-    expect(Either.isLeft(http) && http.left._tag).toBe("CapabilityUnavailableError");
-    expect(inMemory).toEqual(Either.right(["ada", "grace"]));
+    expect(Result.isFailure(http) && http.failure._tag).toBe("CapabilityUnavailableError");
+    expect(inMemory).toEqual(Result.succeed(["ada", "grace"]));
   });
 
   it("two compositions are two contexts, and analyzing either changes neither behavior (C24)", async () => {
@@ -104,8 +104,8 @@ describe("Application semantics: characterizations (v0.8)", () => {
     const http = await listUnder(Http);
     const inMemory = await listUnder(InMemory);
 
-    expect(Either.isLeft(http) && http.left._tag).toBe("CapabilityUnavailableError");
-    expect(inMemory).toEqual(Either.right(["ada", "grace"]));
+    expect(Result.isFailure(http) && http.failure._tag).toBe("CapabilityUnavailableError");
+    expect(inMemory).toEqual(Result.succeed(["ada", "grace"]));
   });
 
   it("overlapping units are accepted and undetected: Semantic has no containment (C25, Y2)", () => {
@@ -293,7 +293,7 @@ describe("Application semantics: units in the lifecycle (v0.8 C27)", () => {
     )));
 
     expect(exit._tag).toBe("Failure");
-    expect(exit._tag === "Failure" && exit.cause._tag === "Fail" && exit.cause.error._tag).toBe("ServiceGraphFailed");
+    expect(exit._tag === "Failure" && Cause.findErrorOption(exit.cause).pipe(Option.map((error) => error._tag), Option.getOrUndefined)).toBe("ServiceGraphFailed");
   });
 
   it("an admitted unit's requirement is only that unit's: the application keeps running (Y5)", async () => {
@@ -306,8 +306,8 @@ describe("Application semantics: units in the lifecycle (v0.8 C27)", () => {
     }));
 
     expect(observed.before).toEqual({ _tag: "Running" });
-    expect(Either.isLeft(observed.saved) && observed.saved.left._tag).toBe("CapabilityUnavailableError");
-    expect(observed.listed).toEqual(Either.right(["doc"]));
+    expect(Result.isFailure(observed.saved) && observed.saved.failure._tag).toBe("CapabilityUnavailableError");
+    expect(observed.listed).toEqual(Result.succeed(["doc"]));
     expect(observed.after).toEqual({ _tag: "Running" });
   });
 
@@ -339,7 +339,7 @@ describe("Application semantics: units in the lifecycle (v0.8 C27)", () => {
     }));
 
     expect(observed.status).toEqual({ _tag: "Running" });
-    expect(observed.listed).toEqual(Either.right(["doc"]));
+    expect(observed.listed).toEqual(Result.succeed(["doc"]));
   });
 
   it("requirement set ≠ runtime resolution ≠ verdict: resolution is the Layer's, and starting leaves the analysis unchanged", async () => {
@@ -407,7 +407,7 @@ describe("Application semantics: independence and no attachment (v0.8)", () => {
         expect(aggregate(before, declarations).classification).toBe(classification);
         expect(observed.status).toEqual({ _tag: "Running" });
         expect(observed.resolved).toEqual(layers[supplied].get(Storage.id));
-        expect(Either.isRight(observed.required)).toBe(supplied === "Available");
+        expect(Result.isSuccess(observed.required)).toBe(supplied === "Available");
         expect(analyzed(context)).toStrictEqual(before);
       });
     }
@@ -418,6 +418,6 @@ describe("Application semantics: independence and no attachment (v0.8)", () => {
     const saved = await withApplication("documents", Layer.empty, withStorage, (running) => run(running, Command.invoke(saveCommand, {})));
 
     expect(outcome.operations[0]?.classification).toBe("incompatible");
-    expect(saved).toEqual(Either.right("stored:doc"));
+    expect(saved).toEqual(Result.succeed("stored:doc"));
   });
 });

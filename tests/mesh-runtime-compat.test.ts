@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 import * as Nexus from "../src/index.js";
 
 const root = new URL("../", import.meta.url);
-const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { readonly dependencies: Record<string, string>; readonly peerDependencies: Record<string, string> };
+const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { readonly dependencies?: Record<string, string>; readonly peerDependencies: Record<string, string> };
 
 describe("the MESH runtime boundary", () => {
   it("the runtime is the application's peer, not NEXUS's own dependency, and the development install is the only one", () => {
@@ -22,7 +22,7 @@ describe("the MESH runtime boundary", () => {
     const [major, minor] = installed.split(".");
 
     // No private copy can be installed beside the application's.
-    expect(manifest.dependencies["@valancex/mesh-runtime"]).toBeUndefined();
+    expect(manifest.dependencies?.["@valancex/mesh-runtime"]).toBeUndefined();
     // Each alternative is `^0.minor.patch`, which on a 0.x version admits only that minor (semver caret); the installed runtime is admitted.
     const alternatives = range.split(" || ");
 

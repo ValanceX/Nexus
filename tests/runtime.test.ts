@@ -1,4 +1,4 @@
-import { Cause, Chunk, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Schedule, Schema, Scope, Stream, Runtime as EffectRuntime } from "effect";
+import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer, Option, Ref, Result, Schedule, Schema, Scope, Stream } from "effect";
 import { describe, it, expect } from "vitest";
 
 import * as Event from "../src/event/index.js";
@@ -48,7 +48,7 @@ describe("Runtime", () => {
       ))
     )));
 
-    expect(Array.from(Chunk.toReadonlyArray(events))).toEqual([{ n: 7 }]);
+    expect(events).toEqual([{ n: 7 }]);
   });
 
   it("interrupting a runFork fiber stops the running effect and runs its finalizer", async () => {
@@ -80,7 +80,7 @@ describe("Runtime", () => {
     let released = false;
 
     const Held = Service.define<HeldShape>("Held");
-    const HeldLive = Layer.scoped(
+    const HeldLive = Layer.effect(
       Held,
       Effect.acquireRelease(Effect.succeed({ held: true }), () => Effect.sync(() => { released = true; }))
     );
@@ -88,7 +88,7 @@ describe("Runtime", () => {
     // A standalone runtime ends when the Scope its owner passed to make closes.
     await Effect.runPromise(Effect.Do.pipe(
       Effect.bind("scope", () => Scope.make()),
-      Effect.tap(({ scope }) => Scope.extend(Runtime.make(HeldLive), scope)),
+      Effect.tap(({ scope }) => Scope.provide(Runtime.make(HeldLive), scope)),
       Effect.tap(({ scope }) => Scope.close(scope, Exit.void))
     ));
 
@@ -128,8 +128,8 @@ describe("Runtime", () => {
       return Array.from(seen);
     };
 
-    const isScope = (value: unknown) => typeof value === "object" && value !== null && Scope.ScopeTypeId in value;
-    const isEffectRuntime = (value: unknown) => typeof value === "object" && value !== null && "runtimeFlags" in value && "fiberRefs" in value;
+    // A Scope carries its type id as a public string key; v4 exports no guard for it.
+    const isScope = (value: unknown) => typeof value === "object" && value !== null && "~effect/Scope" in value;
 
     it("exposes no scope, Effect runtime or context, by type or at runtime", async () => {
       const found = await Effect.runPromise(Effect.scoped(Effect.map(Runtime.make(ClockLive), (runtime) => {
@@ -142,7 +142,7 @@ describe("Runtime", () => {
 
         return {
           keys: Reflect.ownKeys(runtime),
-          leaks: reachable(runtime).filter((value) => Context.isContext(value) || isScope(value) || isEffectRuntime(value)).length,
+          leaks: reachable(runtime).filter((value) => Context.isContext(value) || isScope(value) || Fiber.isFiber(value)).length,
         };
       })));
 
@@ -171,8 +171,8 @@ describe("Runtime", () => {
       const rejection = await Runtime.run(forged, Effect.sync(() => { ran = true; })).then(() => undefined, (error: unknown) => error);
 
       expect(ran).toBe(false);
-      expect(EffectRuntime.isFiberFailure(rejection)).toBe(true);
-      expect(EffectRuntime.isFiberFailure(rejection) && Cause.isDie(rejection[EffectRuntime.FiberFailureCauseId])).toBe(true);
+      // run rejects with the squashed Cause: the refusal itself, which only ever ends an effect as a defect.
+      expect(Runtime.refusalOf(rejection)?.code).toBe("not-a-runtime");
     });
   });
 
@@ -181,7 +181,7 @@ describe("Runtime", () => {
       get.pipe(Effect.filterOrFail(done), Effect.retry(Schedule.spaced("1 millis")), Effect.timeout(Duration.seconds(1)));
 
     // The defect a refused call ends with: a die, and no typed failure.
-    const isRefusal = <A, E>(exit: Exit.Exit<A, E>) => Exit.isFailure(exit) && Cause.isDie(exit.cause) && Option.isNone(Cause.failureOption(exit.cause));
+    const isRefusal = <A, E>(exit: Exit.Exit<A, E>) => Exit.isFailure(exit) && Cause.hasDies(exit.cause) && Option.isNone(Cause.findErrorOption(exit.cause));
 
     const Ping = Event.define("Ping", Schema.Struct({ n: Schema.Number }));
 
@@ -190,14 +190,14 @@ describe("Runtime", () => {
 
       const { runRejection, forkExit } = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("runtime", ({ scope }) => Scope.extend(Runtime.make(ClockLive), scope)),
+        Effect.bind("runtime", ({ scope }) => Scope.provide(Runtime.make(ClockLive), scope)),
         Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
         Effect.bind("runRejection", ({ runtime }) => Effect.promise(() => Runtime.run(runtime, Effect.sync(() => { ran = true; })).then(() => undefined, (error: unknown) => error))),
         Effect.bind("forkExit", ({ runtime }) => Fiber.await(Runtime.runFork(runtime, Effect.sync(() => { ran = true; }))))
       ));
 
       expect(ran).toBe(false);
-      expect(EffectRuntime.isFiberFailure(runRejection) && Cause.isDie(runRejection[EffectRuntime.FiberFailureCauseId])).toBe(true);
+      expect(Runtime.refusalOf(runRejection)?.code).toBe("terminating");
       expect(isRefusal(forkExit)).toBe(true);
     });
 
@@ -207,10 +207,10 @@ describe("Runtime", () => {
       const refused = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("releasing", () => Deferred.make<void>()),
         Effect.bind("gate", () => Deferred.make<void>()),
-        Effect.let("GatedLive", ({ releasing, gate }) => Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate)))))),
+        Effect.let("GatedLive", ({ releasing, gate }) => Layer.effectDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate)))))),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("runtime", ({ scope, GatedLive }) => Scope.extend(Runtime.make(GatedLive), scope)),
-        Effect.bind("closing", ({ scope }) => Effect.fork(Scope.close(scope, Exit.void))),
+        Effect.bind("runtime", ({ scope, GatedLive }) => Scope.provide(Runtime.make(GatedLive), scope)),
+        Effect.bind("closing", ({ scope }) => Effect.forkChild(Scope.close(scope, Exit.void))),
         Effect.tap(({ releasing }) => Deferred.await(releasing)),
         Effect.bind("exit", ({ runtime }) => Fiber.await(Runtime.runFork(runtime, Effect.sync(() => { ran = true; })))),
         Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
@@ -227,21 +227,22 @@ describe("Runtime", () => {
 
       const result = await Effect.runPromise(Effect.Do.pipe(
         // Release takes time, leaving a window in which a still-open bus would deliver.
-        Effect.let("LoggedLive", () => Layer.scopedDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); }).pipe(Effect.andThen(Effect.sleep("5 millis")))))),
+        Effect.let("LoggedLive", () => Layer.effectDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); }).pipe(Effect.andThen(Effect.sleep("5 millis")))))),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("runtime", ({ scope, LoggedLive }) => Scope.extend(Runtime.make(LoggedLive), scope)),
+        Effect.bind("runtime", ({ scope, LoggedLive }) => Scope.provide(Runtime.make(LoggedLive), scope)),
         Effect.let("consumer", ({ runtime }) => Runtime.runFork(runtime, Stream.runForEach(Event.subscribe(Ping), ({ n }) => Effect.sync(() => { log.push(`delivered ${n}`); })))),
         Effect.tap(() => Effect.sleep("1 millis")),
         // Admitted before termination, so it keeps publishing through it.
-        Effect.let("publisher", ({ runtime }) => Runtime.runFork(runtime, Effect.iterate(0, {
-          while: () => true,
-          body: (n) => Event.publish(Ping, { n }).pipe(Effect.andThen(Effect.yieldNow()), Effect.as(n + 1)),
+        Effect.let("publisher", ({ runtime }) => Runtime.runFork(runtime, Effect.suspend(() => {
+          let n = 0;
+
+          return Effect.forever(Effect.suspend(() => Event.publish(Ping, { n: n++ })).pipe(Effect.andThen(Effect.yieldNow)));
         }))),
         Effect.tap(() => eventually(Effect.sync(() => log.length), (length) => length >= 3)),
         Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
         Effect.bind("consumerExit", ({ consumer }) => Fiber.await(consumer).pipe(Effect.timeout(Duration.seconds(1)))),
         Effect.tap(() => Effect.sleep("10 millis")),
-        Effect.bind("publisherExit", ({ publisher }) => Fiber.interrupt(publisher))
+        Effect.bind("publisherExit", ({ publisher }) => Fiber.interrupt(publisher).pipe(Effect.andThen(Fiber.await(publisher))))
       ));
 
       const released = log.indexOf("released");
@@ -250,16 +251,16 @@ describe("Runtime", () => {
       expect(log.slice(released + 1).filter((entry) => entry.startsWith("delivered"))).toEqual([]);
       expect(Exit.isSuccess(result.consumerExit)).toBe(true);
       // The publisher never failed: it ran until we interrupted it.
-      expect(Exit.isInterrupted(result.publisherExit)).toBe(true);
+      expect(Exit.hasInterrupts(result.publisherExit)).toBe(true);
     });
 
     it("hands no buffered event to a subscriber once resource release has begun (B2)", async () => {
       const log: Array<string> = [];
 
       const result = await Effect.runPromise(Effect.Do.pipe(
-        Effect.let("LoggedLive", () => Layer.scopedDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); })))),
+        Effect.let("LoggedLive", () => Layer.effectDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); })))),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("runtime", ({ scope, LoggedLive }) => Scope.extend(Runtime.make(LoggedLive), scope)),
+        Effect.bind("runtime", ({ scope, LoggedLive }) => Scope.provide(Runtime.make(LoggedLive), scope)),
         Effect.bind("busy", () => Deferred.make<void>()),
         Effect.bind("handling1", () => Deferred.make<void>()),
         Effect.bind("hold1", () => Deferred.make<void>()),
@@ -268,7 +269,7 @@ describe("Runtime", () => {
             n === 0 ? Deferred.await(busy) : n === 1 ? Deferred.succeed(handling1, undefined).pipe(Effect.andThen(Deferred.await(hold1))) : Effect.void
           ))
         ))),
-        Effect.tap(() => Effect.repeatN(Effect.yieldNow(), 20)),
+        Effect.tap(() => Effect.repeat(Effect.yieldNow, { times: 20 })),
         Effect.tap(({ runtime }) => Effect.promise(() => Runtime.run(runtime, Effect.forEach([0, 1, 2, 3, 4, 5], (n) => Event.publish(Ping, { n }), { discard: true })))),
         Effect.tap(({ busy }) => Deferred.succeed(busy, undefined)),
         Effect.tap(({ handling1 }) => Deferred.await(handling1)),
@@ -280,21 +281,21 @@ describe("Runtime", () => {
 
       // The consumer was still handling event 1 when termination began: it is interrupted (the default is not to wait), never handed 2 to 5, and has exited before the release.
       expect(log).toEqual(["delivered 0", "delivered 1", "released"]);
-      expect(Exit.isInterrupted(result.consumerExit)).toBe(true);
+      expect(Exit.hasInterrupts(result.consumerExit)).toBe(true);
     });
 
     it("a second termination waits for the first to finish releasing", async () => {
       const result = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("releasing", () => Deferred.make<void>()),
         Effect.bind("gate", () => Deferred.make<void>()),
-        Effect.let("GatedLive", ({ releasing, gate }) => Layer.scopedDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate)))))),
+        Effect.let("GatedLive", ({ releasing, gate }) => Layer.effectDiscard(Effect.addFinalizer(() => Deferred.succeed(releasing, undefined).pipe(Effect.andThen(Deferred.await(gate)))))),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("runtime", ({ scope, GatedLive }) => Scope.extend(Runtime.make(GatedLive), scope)),
-        Effect.bind("first", ({ runtime }) => Effect.fork(terminate(runtime))),
+        Effect.bind("runtime", ({ scope, GatedLive }) => Scope.provide(Runtime.make(GatedLive), scope)),
+        Effect.bind("first", ({ runtime }) => Effect.forkChild(terminate(runtime))),
         Effect.tap(({ releasing }) => Deferred.await(releasing)),
-        Effect.bind("second", ({ runtime }) => Effect.fork(terminate(runtime))),
-        Effect.tap(() => Effect.repeatN(Effect.yieldNow(), 20)),
-        Effect.bind("secondBeforeRelease", ({ second }) => Fiber.poll(second)),
+        Effect.bind("second", ({ runtime }) => Effect.forkChild(terminate(runtime))),
+        Effect.tap(() => Effect.repeat(Effect.yieldNow, { times: 20 })),
+        Effect.bind("secondBeforeRelease", ({ second }) => Effect.sync(() => Option.fromUndefinedOr(second.pollUnsafe()))),
         Effect.tap(({ gate }) => Deferred.succeed(gate, undefined)),
         Effect.tap(({ first, second }) => Effect.all([Fiber.join(first), Fiber.join(second)])),
         Effect.tap(({ scope }) => Scope.close(scope, Exit.void))
@@ -306,9 +307,9 @@ describe("Runtime", () => {
     it("terminates once, however often termination is requested", async () => {
       const releases = await Effect.runPromise(Effect.Do.pipe(
         Effect.bind("count", () => Ref.make(0)),
-        Effect.let("CountedLive", ({ count }) => Layer.scopedDiscard(Effect.addFinalizer(() => Ref.update(count, (n) => n + 1)))),
+        Effect.let("CountedLive", ({ count }) => Layer.effectDiscard(Effect.addFinalizer(() => Ref.update(count, (n) => n + 1)))),
         Effect.bind("scope", () => Scope.make()),
-        Effect.bind("runtime", ({ scope, CountedLive }) => Scope.extend(Runtime.make(CountedLive), scope)),
+        Effect.bind("runtime", ({ scope, CountedLive }) => Scope.provide(Runtime.make(CountedLive), scope)),
         Effect.tap(({ runtime }) => Effect.all([terminate(runtime), terminate(runtime), terminate(runtime)], { concurrency: "unbounded" })),
         Effect.tap(({ scope }) => Scope.close(scope, Exit.void)),
         Effect.flatMap(({ count }) => Ref.get(count))
@@ -324,7 +325,7 @@ describe("Runtime termination and work started with run and runFork", () => {
     const log: Array<string> = [];
 
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-      const runtime = yield* Runtime.make(Layer.scopedDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); }))));
+      const runtime = yield* Runtime.make(Layer.effectDiscard(Effect.addFinalizer(() => Effect.sync(() => { log.push("released"); }))));
       const gate = yield* Deferred.make<void>();
 
       Runtime.runFork(runtime, Effect.gen(function* () {
@@ -350,8 +351,8 @@ describe("Runtime refusals", () => {
       const late = yield* Fiber.await(Runtime.runFork(runtime, Effect.void));
       const reasonOf = (exit: Exit.Exit<unknown, unknown>) => {
         if (Exit.isSuccess(exit)) { return "succeeded"; }
-        const defect = Cause.dieOption(exit.cause);
-        return Option.isSome(defect) && Runtime.isRefusal(defect.value) ? defect.value.code : "not a refusal";
+        const defect = Cause.findDefect(exit.cause);
+        return Result.isSuccess(defect) && Runtime.isRefusal(defect.success) ? defect.success.code : "not a refusal";
       };
       return [reasonOf(foreign), reasonOf(late)];
     })));
@@ -372,7 +373,8 @@ describe("Runtime.refusalOf", () => {
       return yield* Effect.promise(() => Runtime.run(runtime, Effect.void).then(() => undefined, (error: unknown) => error));
     }).pipe(Effect.scoped));
 
-    expect(Runtime.isRefusal(rejection)).toBe(false);
+    // v4's run rejects with Cause.squash: the refusal itself, no FiberFailure around it.
+    expect(Runtime.isRefusal(rejection)).toBe(true);
     expect(Runtime.refusalOf(rejection)?.code).toBe("terminating");
     expect(Runtime.refusalOf(Cause.die(new Runtime.Refusal("not-a-runtime")))?.code).toBe("not-a-runtime");
     expect(Runtime.refusalOf(new Runtime.Refusal("terminating"))?.code).toBe("terminating");

@@ -122,7 +122,7 @@ export const start = <R>(app: Application<R>, options?: StartOptions): Effect.Ef
 
     return record === undefined
       ? Effect.die(refusal("not-a-runtime"))
-      : Effect.succeed(Context.get(record.runtime.context as Context.Context<Capability.EnvironmentShape>, Capability.Environment));
+      : Effect.succeed(Context.get(record.context as Context.Context<Capability.EnvironmentShape>, Capability.Environment));
   }),
   Effect.tap(({ statusRef }) => Ref.set(statusRef, { _tag: "Running" })),
   // The application's lifecycle is its runtime's (N2). The runtime's termination
@@ -150,7 +150,7 @@ export const shutdown = <R>(running: RunningApplication<R>, options?: Runtime.Sh
 
   return record === undefined
     ? Effect.die(refusal("not-an-application"))
-    : terminate(record.runtime, options?.grace === undefined ? undefined : Duration.decode(options.grace));
+    : terminate(record.runtime, options?.grace === undefined ? undefined : Duration.fromInputUnsafe(options.grace));
 };
 
 export const status = <R>(running: RunningApplication<R>): Effect.Effect<ApplicationStatus> => running.status;
@@ -164,10 +164,10 @@ export const status = <R>(running: RunningApplication<R>): Effect.Effect<Applica
  * State then ends with the application, or it is refused as a defect. The error
  * channel is exactly StateInitError; there is no lifecycle error type.
  */
-export const createState = <R, A>(running: RunningApplication<R>, schema: Schema.Schema<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError> => {
+export const createState = <R, A>(running: RunningApplication<R>, schema: Schema.Codec<A>, initial: A): Effect.Effect<StateHandle<A>, StateInitError> => {
   const scope = windingScopeOf(running.runtime);
 
   return scope === undefined || !apps.has(running)
     ? Effect.die(refusal("not-an-application"))
-    : admit(running.runtime, Scope.extend(State.create(schema, initial), scope));
+    : admit(running.runtime, Scope.provide(State.create(schema, initial), scope));
 };

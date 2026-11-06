@@ -32,12 +32,12 @@ export interface EnvironmentShape {
   readonly resolutions: ReadonlyMap<string, CapabilityResolution<unknown>>;
 }
 
-export const Environment = Context.GenericTag<EnvironmentShape>("nexus/Environment");
+export const Environment = Context.Service<EnvironmentShape>("nexus/Environment");
 
 export const EnvironmentLive = (resolutions: ReadonlyMap<string, CapabilityResolution<unknown>>): Layer.Layer<EnvironmentShape> => Layer.succeed(Environment, { resolutions });
 
 export const resolve = <Shape>(capability: Capability<Shape>): Effect.Effect<CapabilityResolution<Shape>, never, EnvironmentShape> => Effect.map(Environment, (env) => Option.Do.pipe(
-  Option.andThen(() => Option.fromNullable(env.resolutions.get(capability.id))),
+  Option.andThen(() => Option.fromNullishOr(env.resolutions.get(capability.id))),
   Option.getOrElse(() => ({ _tag: "Unavailable", reason: `no resolution registered for '${capability.id}'` }))
 ) as CapabilityResolution<Shape>);
 

@@ -1,8 +1,8 @@
 import { Context, Effect, Layer } from "effect";
 
-export type Service<Shape> = Context.Tag<Shape, Shape>;
+export type Service<Shape> = Context.Service<Shape, Shape>;
 
-export const define = <Shape>(name: string): Service<Shape> => Context.GenericTag<Shape>(name);
+export const define = <Shape>(name: string): Service<Shape> => Context.Service<Shape>(name);
 
 export const layer = <Shape, E = never, R = never>(service: Service<Shape>, implementation: Effect.Effect<Shape, E, R>): Layer.Layer<Shape, E, R> => Layer.effect(service, implementation);
 

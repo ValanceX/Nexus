@@ -110,7 +110,9 @@ To work on NEXUS itself, see [Contributing](CONTRIBUTING.md).
 
 ## Status
 
-Current version: 0.16.0; 0.17.0 is prepared. Newest first.
+Current version: 0.16.0; 0.17.0 and 0.18.0 are prepared. Newest first.
+
+**v0.18.0 (prepared 2026-10-31):** NEXUS moves to Effect 4: `effect` is a peer dependency (`^4.1.0`) and Node is `>=22.19`. Public signatures that named Effect types follow Effect 4 (`Runtime.runFork` returns `Fiber.Fiber`, schemas are `Schema.Codec`); a `Runtime.run` rejection is the refusal itself. No NEXUS API is added. See the [release notes](docs/reference/releases/v0.18.md).
 
 **v0.17.0 (prepared 2026-10-31):** the north-star refinements: `Runtime.make()` and `Application.define({ name })` need no layer or runtime; `Command` and `Event` accept transforming schemas; `Event.subscribe(def, { validate: true })`; duplicate event tags are refused (`duplicate-event-tag`); `occurrence` beside the deprecated `instance`, and the `context` channel on `Mesh.render`, `Mesh.update` and `Mesh.host`. The `@valancex/mesh-runtime` peer range admits MESH 0.18 (`^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0`); occurrence and context need MESH 0.18.0. See the [release notes](docs/reference/releases/v0.17.md).
 

@@ -18,15 +18,15 @@ Infrastructure provides implementations as `Layer`s.
 
 ## Data Model
 
-A `Service<Shape>` is exactly an Effect `Context.Tag<Shape, Shape>` — NEXUS
+A `Service<Shape>` is exactly an Effect `Context.Service<Shape, Shape>` — NEXUS
 does not wrap it in additional runtime machinery. The value in defining it
-through `Service.define` rather than calling `Context.GenericTag` directly
+through `Service.define` rather than calling `Context.Service` directly
 is a consistent naming/discovery convention across the codebase (every tag
 lives in `src/service/` and is findable). MESH never reaches a service:
 only commands are reachable, through explicit adapter bindings (§15).
 
 ```ts
-type Service<Shape> = Context.Tag<Shape, Shape>;
+type Service<Shape> = Context.Service<Shape, Shape>;
 ```
 
 ## API
